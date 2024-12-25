@@ -1,0 +1,61 @@
+# See http://help.github.com/ignore-files/ for more about ignoring files.
+
+# compiled output
+/dist
+/tmp
+/out-tsc
+
+# dependencies
+node_modules
+node_modules_ignore
+node_modules_old
+
+# IDEs and editors
+/.idea
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+
+# misc
+/.sass-cache
+/connect.lock
+/libpeerconnection.log
+npm-debug.log
+debug.log
+pnpm-error.log
+yarn-error.log
+testem.log
+/typings
+
+# System Files
+.DS_Store
+Thumbs.db
+
+.env
+.idea
+.env.local
+
+.history
+
+**/temp/*
+.eslintcache
+.nx/cache
+.nx/workspace-data
+**/coverage
+
+logs/migrations/*
+prepare-commit-msg
+
+**/reports
+**/downloads
+**/screenshots
+**/report
+.ignore*
+*.ignore
+**/*.log
+
+
+*.code-workspace
