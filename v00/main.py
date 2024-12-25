@@ -16,32 +16,32 @@ except:
     time.sleep(1)
     reset()
 
-led = Pin(8, Pin.OUT)
+led: Pin = Pin(8, Pin.OUT)
 led.on()  
 
 # Global flag to control blinking
-is_blinking = False
+is_blinking: bool = False
 
-def led_turn_on():
+def led_turn_on() -> None:
     led.off()
 
-def led_turn_off():
+def led_turn_off() -> None:
     led.on()
 
-def blink_startup():
+def blink_startup() -> None:
     for _ in range(5):
         led_turn_on()
         time.sleep(0.5)
         led_turn_off()
         time.sleep(0.5)
 
-def long_blink():
+def long_blink() -> None:
     led_turn_on()
     time.sleep(2)
     led_turn_off()
 
 # Blink cycle function to run in separate thread
-def blink_cycle():
+def blink_cycle() -> None:
     global is_blinking
     while True:
         if is_blinking:
@@ -54,7 +54,7 @@ def blink_cycle():
 
 blink_startup()
 
-def connect_wifi(ssid, password):
+def connect_wifi(ssid: str, password: str) -> str:
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
     
