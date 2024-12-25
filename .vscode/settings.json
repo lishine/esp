@@ -4,10 +4,12 @@
   "python.analysis.diagnosticMode": "workspace",
   "python.analysis.stubPath": "typings",
   "python.analysis.typeshedPaths": ["typings/micropython"],
+  "python.analysis.useLibraryCodeForTypes": true,
   "python.analysis.diagnosticSeverityOverrides": {
     "reportMissingModuleSource": "none",
     "reportMissingImports": "none",
-    "reportMissingTypeStubs": "none"
+    "reportMissingTypeStubs": "none",
+    "reportGeneralTypeIssues": "none"
   },
   "python.analysis.autoImportCompletions": true,
   "python.analysis.indexing": true,
@@ -16,5 +18,10 @@
       "name": "typings",
       "depth": 2
     }
-  ]
+  ],
+  "python.languageServer": "Pylance",
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.diagnosticMode": "workspace",
+  "python.analysis.inlayHints.functionReturnTypes": true,
+  "python.analysis.inlayHints.variableTypes": true
 }
