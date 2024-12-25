@@ -1,0 +1,6 @@
+{
+    "venvPath": ".",
+    "typingsPath": "typings",
+    "extraPaths": ["typings/micropython"],
+    "typeCheckingMode": "basic"
+}
