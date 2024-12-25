@@ -28,7 +28,6 @@ debug.log
 pnpm-error.log
 yarn-error.log
 testem.log
-/typings
 
 # System Files
 .DS_Store
@@ -58,4 +57,7 @@ prepare-commit-msg
 **/*.log
 
 
+typings/**/*
+
 *.code-workspace
+.aider*

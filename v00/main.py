@@ -1,4 +1,3 @@
-# main.py
 from machine import Pin, reset
 import time
 import network
@@ -27,6 +26,20 @@ def led_turn_on() -> None:
 
 def led_turn_off() -> None:
     led.on()
+
+def multiply(a: int, b: int) -> int:
+    return a * b
+
+def divide(a: int, b: int) -> float:
+    if b == 0:
+        raise ValueError("Cannot divide by zero")
+    return a / b
+
+def add(a: int, b: int) -> int:
+    return a + b
+
+def subtract(a: int, b: int) -> int:
+    return a - b
 
 def blink_startup() -> None:
     for _ in range(5):
@@ -76,7 +89,7 @@ ip = connect_wifi('Bucha', 'yesandyes')
 html = """<!DOCTYPE html>
 <html>
 <head>
-    <title>ESP32 Web Server</title>
+    <title>ESP32 LED Controller</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body { font-family: Arial; text-align: center; margin:0px auto; padding: 25px; }
