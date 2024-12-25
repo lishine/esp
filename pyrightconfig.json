@@ -2,5 +2,8 @@
     "venvPath": ".",
     "typingsPath": "typings",
     "extraPaths": ["typings/micropython"],
-    "typeCheckingMode": "basic"
+    "typeCheckingMode": "basic",
+    "useLibraryCodeForTypes": true,
+    "reportMissingImports": true,
+    "reportMissingTypeStubs": false
 }
