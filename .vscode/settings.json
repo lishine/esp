@@ -6,6 +6,15 @@
   "python.analysis.typeshedPaths": ["typings/micropython"],
   "python.analysis.diagnosticSeverityOverrides": {
     "reportMissingModuleSource": "none",
-    "reportMissingImports": "none"
-  }
+    "reportMissingImports": "none",
+    "reportMissingTypeStubs": "none"
+  },
+  "python.analysis.autoImportCompletions": true,
+  "python.analysis.indexing": true,
+  "python.analysis.packageIndexDepths": [
+    {
+      "name": "typings",
+      "depth": 2
+    }
+  ]
 }
