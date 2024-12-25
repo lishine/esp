@@ -1,9 +1,9 @@
 {
   "python.languageServer": "Pylance",
   "python.analysis.diagnosticMode": "workspace",
-  "python.analysis.extraPaths": ["typings"],
-  "python.analysis.stubPath": "typings",
-  "python.analysis.typeshedPaths": ["typings"],
+  "python.analysis.extraPaths": ["typings/micropython"],
+  "python.analysis.stubPath": "typings/micropython",
+  "python.analysis.typeshedPaths": ["typings/micropython"],
   "python.analysis.useLibraryCodeForTypes": true,
   "python.analysis.autoImportCompletions": true,
   "python.analysis.indexing": true,
@@ -17,8 +17,8 @@
   },
   "python.analysis.packageIndexDepths": [
     {
-      "name": "typings",
-      "depth": 20
+      "name": "typings/micropython",
+      "depth": 2
     }
   ],
   "python.analysis.inlayHints.functionReturnTypes": true,
