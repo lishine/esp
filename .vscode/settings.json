@@ -1,11 +1,11 @@
 {
-    "python.analysis.typeCheckingMode": "basic",
-    "python.analysis.extraPaths": ["typings/micropython"],
-    "python.analysis.diagnosticMode": "workspace",
-    "python.analysis.stubPath": "typings",
-    "python.analysis.typeshedPaths": ["typings/micropython"],
-    "python.analysis.diagnosticSeverityOverrides": {
-        "reportMissingModuleSource": "none",
-        "reportMissingImports": "none"
-    }
+  "python.analysis.typeCheckingMode": "basic",
+  "python.analysis.extraPaths": ["typings/micropython"],
+  "python.analysis.diagnosticMode": "workspace",
+  "python.analysis.stubPath": "typings",
+  "python.analysis.typeshedPaths": ["typings/micropython"],
+  "python.analysis.diagnosticSeverityOverrides": {
+    "reportMissingModuleSource": "none",
+    "reportMissingImports": "none"
+  }
 }
