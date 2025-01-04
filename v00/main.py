@@ -1,11 +1,16 @@
-from machine import Pin, reset, ADC,UART
-import machine
+from machine import Pin, reset, ADC,UART,I2C
 import time
 import network
 import socket
 import _thread
 import json
 import struct
+import time
+
+i2c = I2C(0, scl=Pin(10), sda=Pin(9), freq=100000)
+# devices = i2c.scan()
+# print("I2C devices found:", [hex(device) for device in devices])
+
 
 led = Pin(8, Pin.OUT)
 led.on()
@@ -17,10 +22,82 @@ def led_turn_on():
 def led_turn_off():
     led.on()
 
-import time
 
-uart = UART(1, 115200)  # UART2, baud rate 115200
-uart.init(115200, bits=8, parity=None, stop=1, rx=20, tx=21)
+# while True:
+#     led.value(not led.value())
+#     time.sleep(1)
+
+
+# INA226 Register addresses
+CONFIG_REG = 0x00
+SHUNT_VOLTAGE_REG = 0x01
+BUS_VOLTAGE_REG = 0x02
+INA226_ADDR = 0x40  # Modified I2C address
+
+def write_register(reg_addr, value):
+    data = bytearray([reg_addr, (value >> 8) & 0xFF, value & 0xFF])
+    i2c.writeto(INA226_ADDR, data)
+
+def read_register(reg_addr):
+    i2c.writeto(INA226_ADDR, bytes([reg_addr]))
+    data = i2c.readfrom(INA226_ADDR, 2)
+    return (data[0] << 8) | data[1]
+
+def configure_ina226():
+    # Configure INA226
+    # Reset bit[15] = 1, 16 avg samples bit[11:9]=111, 1.1ms conv time bit[8:6]=111,
+    # 1.1ms conv time bit[5:3]=111, continuous mode bit[2:0]=111
+    config = 0x4727
+    write_register(CONFIG_REG, config)
+    time.sleep_ms(1)  # Wait for configuration to take effect
+
+def read_shunt_voltage():
+    raw = read_register(SHUNT_VOLTAGE_REG)
+    if raw > 32767:  # Handle negative values
+        raw -= 65536
+    return raw * 2.5e-6  # Convert to volts (LSB = 2.5µV)
+
+def read_bus_voltage():
+    raw = read_register(BUS_VOLTAGE_REG)
+    return raw * 1.25e-3  # Convert to volts (LSB = 1.25mV)
+
+# Main program
+try:
+    # First, scan I2C bus to verify device is present
+    devices = i2c.scan()
+    print("I2C devices found:", [hex(device) for device in devices])
+    
+    # Configure INA226
+    configure_ina226()
+    
+    # while True:
+    #     shunt_voltage = read_shunt_voltage()
+    #     bus_voltage = read_bus_voltage()
+    #     current = shunt_voltage / 0.001  # Using 0.1Ω shunt resistor
+        
+    #     print(f"Bus Voltage: {bus_voltage:.3f}V")
+    #     print(f"Shunt Voltage: {shunt_voltage*1000:.3f}mV")
+    #     print(f"Current: {current:.3f}A")
+    #     print("-" * 20)
+        
+    #     led.value(not led.value())
+    #     time.sleep(1)
+
+except Exception as e:
+    print("Error:", e)
+
+
+
+
+
+# while True:
+#     led.value(not led.value())
+#     time.sleep(1)
+
+
+# uart = UART(1, 115200)  # UART2, baud rate 115200
+# uart.init(115200, bits=8, parity=None, stop=1, rx=20, tx=21)
+uart = UART(1, baudrate=115200, tx=21, rx=20, bits=8, parity=None, stop=1)
 
 def update_crc8(crc, crc_seed):
     crc_u = crc ^ crc_seed
@@ -45,26 +122,32 @@ def parse_kiss_telemetry(data):
                 return None
 
             temperature = data[0]  # °C
+            # print(f"Temperature: {temperature}°C")
             voltage = (data[1] << 8 | data[2]) / 100.0  # Volts
             current = (data[3] << 8 | data[4]) / 100.0  # Amps
             consumption = (data[5] << 8 | data[6])  # mAh
             erpm = (data[7] << 8 | data[8]) * 100   # Electrical RPM
-
             rpm = erpm // (12//2)  # For a 12-pole motor
 
-            return f"V:{voltage:06.2f} I:{current:06.1f} RPM:{rpm:06d} CON:{consumption:06d} T:{temperature:03d}C"
+            return {
+                'voltage': voltage,
+                'rpm': rpm,
+                'temperature': temperature,
+                'current': current,
+                'consumption': consumption
+            }
         except Exception as e:
             print(f"Error: {e}")
             return None
     return None
 
-while True:
-    led.value(not led.value())
-    if uart.any():
-        data = uart.read()
-        telemetry = parse_kiss_telemetry(data)
-        print(telemetry)
-    time.sleep(1)
+# while True:
+#     led.value(not led.value())
+#     if uart.any():
+#         data = uart.read()
+#         telemetry = parse_kiss_telemetry(data)
+#         print(telemetry)
+#     time.sleep(1)
 
 
 # def parse_status_byte(status):
@@ -132,6 +215,7 @@ def reset_wifi():
 
 reset_wifi()
 
+# reset()
 # Setup ADC
 fsr_pin = Pin(4, Pin.IN)
 fsr_adc = ADC(fsr_pin)
@@ -145,6 +229,9 @@ fsr_adc = ADC(fsr_pin)
 latest_voltage_min = 0
 latest_voltage_max = 0
 latest_voltage_avg = 0
+esc_voltage = 0
+esc_rpm = 0
+esc_temp = 0
 
 # Basic HTML template
 html = """<!DOCTYPE html>
@@ -230,6 +317,11 @@ html = """<!DOCTYPE html>
         <p>Min: <span id="min">--</span>V</p>
         <p>Max: <span id="max">--</span>V</p>
         <p>Avg: <span id="avg">--</span>V</p>
+        <p>Current: <span id="current">--</span>A</p>
+        <h2>ESC Telemetry</h2>
+        <p>ESC Voltage: <span id="esc_voltage">--</span>V</p>
+        <p>ESC RPM: <span id="esc_rpm">--</span></p>
+        <p>ESC Temp: <span id="esc_temp">--</span>&deg;C</p>
         <div class="progress-container">
             <div id="progress-bar" class="progress-bar"></div>
         </div>
@@ -247,6 +339,10 @@ html = """<!DOCTYPE html>
                 document.getElementById('min').textContent = data.min.toFixed(3);
                 document.getElementById('max').textContent = data.max.toFixed(3);
                 document.getElementById('avg').textContent = data.avg.toFixed(3);
+                document.getElementById('current').textContent = data.current.toFixed(1);
+                document.getElementById('esc_voltage').textContent = data.esc_voltage;
+                document.getElementById('esc_rpm').textContent = data.esc_rpm;
+                document.getElementById('esc_temp').textContent = data.esc_temp;
                 
                 const percentage = (data.avg / 3.3) * 100;
                 const progressBar = document.getElementById('progress-bar');
@@ -292,6 +388,18 @@ def blink_cycle():
         else:
             time.sleep(0.1)
 
+def read_esc_telemetry():
+    global esc_voltage, esc_rpm, esc_temp
+    while True:
+        if uart.any():
+            data = uart.read()
+            telemetry = parse_kiss_telemetry(data)
+            if telemetry:
+                esc_voltage = telemetry['voltage']
+                esc_rpm = telemetry['rpm']
+                esc_temp = telemetry['temperature']
+        time.sleep(0.02)
+
 def read_fsr():
     global latest_voltage_min, latest_voltage_max, latest_voltage_avg
     while True:
@@ -320,7 +428,7 @@ def read_fsr():
         latest_voltage_max = 3.3 * max_val / 865000
  #       print(f"Min: {latest_voltage_min:.3f}V, Max: {latest_voltage_max:.3f}V, Avg: {latest_voltage_avg:.3f}V")
         time.sleep(0.02)
-        
+
 def connect_wifi(ssid, password):
     wlan = network.WLAN(network.STA_IF)
     wlan.active(True)
@@ -336,6 +444,8 @@ def connect_wifi(ssid, password):
     print(f"IP address: {wlan.ifconfig()[0]}")
     return wlan.ifconfig()[0]
 
+_thread.start_new_thread(blink_cycle, ())
+
 # Connect to WiFi
 ip = connect_wifi('Bucha', 'yesandyes')
 
@@ -344,9 +454,10 @@ s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.bind(('', 80))
 s.listen(5)
 
+
 # Start background threads
-_thread.start_new_thread(blink_cycle, ())
 _thread.start_new_thread(read_fsr, ())
+_thread.start_new_thread(read_esc_telemetry, ())
 
 print('Server listening on port 80...')
 print(f'You can now connect to http://{ip}')
@@ -360,10 +471,15 @@ while True:
         
         if '/data' in request:
             # Send JSON data
+            shunt_voltage = read_shunt_voltage()
             response = {
                 'min': latest_voltage_min,
                 'max': latest_voltage_max,
-                'avg': latest_voltage_avg
+                'avg': latest_voltage_avg,
+                'current': shunt_voltage / 0.0002,
+                'esc_voltage': esc_voltage,
+                'esc_rpm': esc_rpm,
+                'esc_temp': esc_temp
             }
             conn.send('HTTP/1.1 200 OK\n')
             conn.send('Content-Type: application/json\n')
@@ -400,7 +516,7 @@ while True:
         conn.close()
 
     except Exception as e:
-        print('Error:', e)
+        print('eError:', e)
         try:
             conn.close()
         except:
