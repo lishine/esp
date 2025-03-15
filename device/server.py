@@ -31,7 +31,7 @@ def reset(request):
     import time
 
     def delayed_reset():
-        time.sleep(0.1)  # Very short delay to allow response to be sent
+        time.sleep(0.1)
         machine.reset()
 
     _thread.start_new_thread(delayed_reset, ())
@@ -65,7 +65,6 @@ def view_file(request, filename):
 
 
 def render_template(template_content, **context):
-    """Replace {{variable}} patterns in the template with values from context"""
     for key, value in context.items():
         template_content = template_content.replace("{{" + key + "}}", str(value))
     return template_content
@@ -73,22 +72,18 @@ def render_template(template_content, **context):
 
 @app.route("/settings", methods=["GET"])
 def get_settings(request):
-    # Read the HTML file content using your fs module
     html_content = read_file("settings.html")
     if html_content is None:
         return "Settings file not found", 404
 
-    # Get current WiFi status for template
     context = {
         "is_connected": str(is_connected()),
         "ip_address": get_ip(),
         "ssid": wifi_config.get("ssid", ""),
     }
 
-    # Process template
     rendered_html = render_template(html_content, **context)
 
-    # Return as response
     return Response(body=rendered_html, headers={"Content-Type": "text/html"})
 
 
@@ -114,9 +109,8 @@ def remove_file(request, target_path):
 
 @app.route("/settings", methods=["POST"])
 def save_settings(request):
-    config = request.json  # Use json instead of form
+    config = request.json
     save_wifi_config(config)
-    # Start a new thread to connect to wifi with new settings
     _thread.start_new_thread(wifi_connect_thread, ())
 
     return json.dumps({"success": True, "message": "Settings saved"})
@@ -169,6 +163,5 @@ async def upload_file(request, target_path):
 
 
 def start_server():
-    """Start the web server in a separate thread"""
     _thread.start_new_thread(lambda: app.run(port=80), ())
     log("Web server started")

@@ -1,18 +1,18 @@
 import sys
-import log
+from log import log
 import wifi
 import ap
 import server
 
-log.log("\n" + "=" * 40)
-log.log("ESP32 Device Starting...")
-log.log("=" * 40)
+log("\n" + "=" * 40)
+log("ESP32 Device Starting...")
+log("=" * 40)
 
 try:
     ap.start_ap(essid="DDDEV", password="")
     wifi.start_wifi()
     server.start_server()
-    log.log(
+    log(
         f"""
 Device is ready:
 - AP mode: http://{ap.get_ap_ip()} (SSID: DDDEV)
@@ -21,5 +21,5 @@ Device is ready:
     )
 
 except Exception as e:
-    log.log("Error during initialization:", e)
+    log("Error during initialization:", e)
     sys.print_exception(e)
