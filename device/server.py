@@ -1,10 +1,18 @@
 from microdot import Microdot, Response
+import json
 import _thread
 import json
 import machine
 
 from log import log, log_buffer
-from wifi import is_connected, get_ip, save_wifi_config, load_wifi_config
+from wifi import (
+    is_connected,
+    get_ip,
+    save_wifi_config,
+    load_wifi_config,
+    wifi_config,
+    wifi_connect_thread,
+)
 from fs import (
     get_file_list,
     read_file,
@@ -56,9 +64,32 @@ def view_file(request, filename):
     return content
 
 
+def render_template(template_content, **context):
+    """Replace {{variable}} patterns in the template with values from context"""
+    for key, value in context.items():
+        template_content = template_content.replace("{{" + key + "}}", str(value))
+    return template_content
+
+
 @app.route("/settings", methods=["GET"])
 def get_settings(request):
-    return Response.send_file("device/settings.html")
+    # Read the HTML file content using your fs module
+    html_content = read_file("settings.html")
+    if html_content is None:
+        return "Settings file not found", 404
+
+    # Get current WiFi status for template
+    context = {
+        "is_connected": str(is_connected()),
+        "ip_address": get_ip(),
+        "ssid": wifi_config.get("ssid", ""),
+    }
+
+    # Process template
+    rendered_html = render_template(html_content, **context)
+
+    # Return as response
+    return Response(body=rendered_html, headers={"Content-Type": "text/html"})
 
 
 @app.route("/rm/<path:target_path>")
@@ -83,9 +114,12 @@ def remove_file(request, target_path):
 
 @app.route("/settings", methods=["POST"])
 def save_settings(request):
-    config = request.form
+    config = request.json  # Use json instead of form
     save_wifi_config(config)
-    return "Settings saved"
+    # Start a new thread to connect to wifi with new settings
+    _thread.start_new_thread(wifi_connect_thread, ())
+
+    return json.dumps({"success": True, "message": "Settings saved"})
 
 
 @app.route("/log")

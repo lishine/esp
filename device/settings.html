@@ -63,10 +63,15 @@
 </head>
 <body>
     <h1>ESP32 Wi-Fi Settings</h1>
+    <div class="status">
+        <div class="status-item"><strong>Connection Status:</strong> {{is_connected}}</div>
+        <div class="status-item"><strong>IP Address:</strong> {{ip_address}}</div>
+        <div class="status-item"><strong>Current Network:</strong> {{ssid}}</div>
+    </div>
     <form id="settingsForm">
         <div class="form-group">
             <label for="ssid">Wi-Fi Name (SSID):</label>
-            <input type="text" id="ssid" name="ssid">
+            <input type="text" id="ssid" name="ssid" value="{{ssid}}">
         </div>
         <div class="form-group">
             <label for="password">Password:</label>

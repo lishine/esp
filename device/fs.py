@@ -52,7 +52,7 @@ def read_file(filename):
         with open(filename, "r") as f:
             return f.read()
     except Exception as e:
-        log(f"Error reading file {filename}: {e}")
+        log(f"Error reading file {filename}: {e} (current directory: {os.getcwd()})")
         return f"Error reading file: {str(e)}"
 
 
