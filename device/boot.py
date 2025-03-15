@@ -1,9 +1,5 @@
-import time
 import sys
-import machine
-
 import log
-import led
 import wifi
 import ap
 import server
