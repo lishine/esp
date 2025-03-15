@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ESP32 Wi-Fi Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            max-width: 600px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            color: #333;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+
+        input[type="text"],
+        input[type="password"] {
+            width: 100%;
+            padding: 8px;
+            box-sizing: border-box;
+        }
+
+        button {
+            background-color: #4CAF50;
+            color: white;
+            padding: 10px 15px;
+            border: none;
+            cursor: pointer;
+        }
+
+        button:hover {
+            background-color: #45a049;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 10px;
+            background-color: #f8f8f8;
+            border-radius: 4px;
+        }
+
+        .status-item {
+            margin-bottom: 8px;
+        }
+
+        .log-link {
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>ESP32 Wi-Fi Settings</h1>
+    <form id="settingsForm">
+        <div class="form-group">
+            <label for="ssid">Wi-Fi Name (SSID):</label>
+            <input type="text" id="ssid" name="ssid">
+        </div>
+        <div class="form-group">
+            <label for="password">Password:</label>
+            <input type="password" id="password" name="password">
+            <input type="checkbox" onclick="togglePasswordVisibility()">Show Password
+        </div>
+        <button type="submit">Save & Connect</button>
+    </form>
+
+    <script>
+        document.getElementById('settingsForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            const ssid = document.getElementById('ssid').value;
+            const password = document.getElementById('password').value;
+
+            fetch('/settings', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ ssid: ssid, password: password })
+            })
+                .then(response => {
+                    console.log('Response received:', response);
+                    // Don't reload or redirect yet - let's debug first
+                    return response.json(); // Parse the JSON response
+                })
+                .then(data => {
+                    console.log('Data received:', data);
+                    // Uncomment this when ready to enable auto-reload
+                    // window.location.reload();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Failed to save settings. Check console for details.');
+                });
+        });
+
+        function togglePasswordVisibility() {
+            var passwordInput = document.getElementById("password");
+            if (passwordInput.type === "password") {
+                passwordInput.type = "text";
+            } else {
+                passwordInput.type = "password";
+            }
+        }
+    </script>
+</body>
+</html>
