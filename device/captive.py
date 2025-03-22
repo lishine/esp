@@ -1,4 +1,4 @@
-from microdot import Response
+from server import Response
 
 
 # Captive portal detection endpoints for various operating systems
@@ -10,7 +10,7 @@ def register_captive_portal_routes(app):
     @app.route("/ncsi.txt")
     def captive_portal_detector(request):
         # Redirect to settings page
-        return Response(status_code=302, headers={"Location": "/settings"})
+        return Response.redirect("/settings")
 
     # Apple-specific captive portal detection endpoints
     @app.route("/hotspot-detect.html")
@@ -44,10 +44,9 @@ def register_captive_portal_routes(app):
 """
             return Response(body=apple_response, headers={"Content-Type": "text/html"})
 
-    # Handle full domain paths that macOS might send
-    @app.route("/<path:domain>/hotspot-detect.html")
-    @app.route("/<path:domain>/library/test/success.html")
-    def apple_domain_captive_portal_detector(request, domain):
+    # Handle domain paths that might be sent
+    @app.route("/hotspot-detect.html")
+    def apple_domain_captive_portal_detector(request):
         # Return a non-success response to trigger the captive portal
         apple_response = """
 <!DOCTYPE html>
@@ -69,27 +68,10 @@ def register_captive_portal_routes(app):
         return Response(body=apple_response, headers={"Content-Type": "text/html"})
 
     # Special handlers for specific Apple domains
-    @app.route("/captive.apple.com/hotspot-detect.html")
-    @app.route("/www.apple.com/library/test/success.html")
-    @app.route("/www.itools.info/library/test/success.html")
-    @app.route("/www.ibook.info/library/test/success.html")
+    @app.route("/captive.apple.com")
+    @app.route("/www.apple.com")
+    @app.route("/www.itools.info")
+    @app.route("/www.ibook.info")
     def captive_apple_detector(request):
         # For domain-specific requests, ensure we're handling captive.apple.com properly
-        apple_response = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>ESP32 Captive Portal</title>
-    <meta http-equiv="refresh" content="0;url=/settings">
-</head>
-<body>
-    <h1>Please wait...</h1>
-    <p>You are being redirected to the ESP32 settings page.</p>
-    <script>
-        // Redirect immediately to settings page
-        window.location.href = "/settings";
-    </script>
-</body>
-</html>
-"""
-        return Response(body=apple_response, headers={"Content-Type": "text/html"})
+        return Response.redirect("/settings")
