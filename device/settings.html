@@ -3,6 +3,7 @@
 <head>
     <title>ESP32 Wi-Fi Settings</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta http-equiv="refresh" content="0;url=/settings">
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -61,7 +62,7 @@
         }
     </style>
 </head>
-<body>
+<body onload="showSettingsPopup()">
     <h1>ESP32 Wi-Fi Settings</h1>
     <div class="status">
         <div class="status-item"><strong>Connection Status:</strong> {{is_connected}}</div>
@@ -79,6 +80,8 @@
             <input type="checkbox" onclick="togglePasswordVisibility()">Show Password
         </div>
         <button type="submit">Save & Connect</button>
+        <button type="button" id="resetButton" style="background-color: #f44336; margin-left: 10px;">Reset
+            Device</button>
     </form>
 
     <h2>File Upload</h2>
@@ -95,7 +98,45 @@
     </form>
     <div id="uploadStatus" class="status"></div>
 
+    <!-- Settings Popup -->
+    <div id="settingsPopup"
+        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
+        <div
+            style="position: relative; background-color: white; margin: 10% auto; padding: 20px; width: 80%; max-width: 500px; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+            <h2>Welcome to ESP32 Setup</h2>
+            <p>You've connected to the ESP32 access point. Configure your Wi-Fi settings below to connect the device to
+                your network.</p>
+            <button onclick="closeSettingsPopup()"
+                style="background-color: #4CAF50; color: white; padding: 10px 15px; border: none; cursor: pointer; margin-top: 10px;">Got
+                it!</button>
+        </div>
+    </div>
+
     <script>
+        // Auto-open settings popup when page loads
+        function showSettingsPopup() {
+            // Only show popup if this is a new connection (could use localStorage to track)
+            document.getElementById('settingsPopup').style.display = 'block';
+        }
+
+        function closeSettingsPopup() {
+            document.getElementById('settingsPopup').style.display = 'none';
+        }
+
+        document.getElementById('resetButton').addEventListener('click', function () {
+            if (confirm('Are you sure you want to reset the device? This will restart the ESP32.')) {
+                fetch('/reset', {
+                    method: 'POST'
+                })
+                    .then(response => {
+                        alert('Device is resetting. Please wait a few seconds and reconnect if necessary.');
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        alert('Failed to reset device. Check console for details.');
+                    });
+            }
+        });
         document.getElementById('settingsForm').addEventListener('submit', function (event) {
             event.preventDefault();
 

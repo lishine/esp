@@ -40,14 +40,54 @@ def make_dns_response(data, ip_addr):
     return packet
 
 
+def extract_domain_from_dns_query(data):
+    """Extract the domain name from a DNS query packet"""
+    try:
+        # Skip the header (12 bytes)
+        domain_parts = []
+        i = 12
+        while i < len(data):
+            length = data[i]
+            if length == 0:
+                break
+            part = data[i + 1 : i + 1 + length].decode("utf-8")
+            domain_parts.append(part)
+            i += length + 1
+        return ".".join(domain_parts)
+    except Exception:
+        return "unknown_domain"
+
+
 def dns_server():
-    """DNS server for AP mode"""
+    """DNS server for AP mode - acts as a captive portal by responding to all DNS queries with the AP's IP"""
     udps = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     udps.bind(("", 53))
+    ap_ip = "192.168.4.1"
+    log(f"DNS server started - redirecting all queries to {ap_ip}")
+
+    # Apple-specific domains that need special handling
+    apple_domains = [
+        "captive.apple.com",
+        "www.apple.com",
+        "apple.com",
+        "appleiphonecell.com",
+        "itools.info",
+        "ibook.info",
+        "airport.us",
+        "thinkdifferent.us",
+    ]
+
     while True:
         try:
             data, addr = udps.recvfrom(512)
-            response = make_dns_response(data, "192.168.4.1")
+            domain = extract_domain_from_dns_query(data)
+
+            # Log the domain being queried
+            if any(apple_domain in domain for apple_domain in apple_domains):
+                log(f"Apple domain DNS query: {domain}")
+
+            # Respond to all DNS queries with the AP's IP to create a captive portal effect
+            response = make_dns_response(data, ap_ip)
             udps.sendto(response, addr)
         except Exception as e:
             log(f"DNS Error: {e}")
