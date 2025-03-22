@@ -142,7 +142,7 @@
             const ssid = document.getElementById('ssid').value;
             const password = document.getElementById('password').value;
 
-            fetch('/settings', {
+            fetch('/settings/save', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'

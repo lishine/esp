@@ -311,16 +311,56 @@ def log_request(request):
 # register_captive_portal_routes(app)
 
 
+# Debug route to check if server is responding
+@app.route("/ping")
+def ping(request):
+    return json.dumps({"success": True, "message": "Server is running"})
+
+
+# Direct upload route (without path parameter)
+@app.route("/upload", methods=["POST"])
+def upload_file_direct(request):
+    log("Direct upload request received (no trailing slash)")
+    # Forward to the main upload handler with a default filename
+    try:
+        # Use the filename from Content-Disposition header if available
+        filename = None
+        content_disposition = request.headers.get("Content-Disposition", "")
+        if "filename=" in content_disposition:
+            filename = content_disposition.split("filename=")[1].strip("\"'")
+
+        # Default filename if none provided
+        if not filename:
+            filename = "uploaded_file"
+
+        log(f"Using filename: {filename}")
+        result = handle_upload(request, filename)
+        log(f"Direct upload result: {result}")
+        return result
+    except Exception as e:
+        log(f"Direct upload error: {str(e)}")
+        return json.dumps({"success": False, "error": str(e)}), 500
+
+
 # Upload route with path parameter
 @app.route("/upload/", methods=["POST"])
 def upload_file(request):
     # Extract target_path from the actual path
     target_path = request.path[len("/upload/") :]
 
+    log(f"Upload request received for path: {target_path}")
+
     if not target_path:
+        log("No target path specified")
         return json.dumps({"success": False, "error": "No target path specified"}), 400
 
-    return handle_upload(request, target_path)
+    try:
+        result = handle_upload(request, target_path)
+        log(f"Upload result: {result}")
+        return result
+    except Exception as e:
+        log(f"Upload error: {str(e)}")
+        return json.dumps({"success": False, "error": str(e)}), 500
 
 
 @app.route("/reset", methods=["GET", "POST"])
@@ -399,13 +439,13 @@ def get_settings(request):
         return f"Error loading settings page: {str(e)}", 500
 
 
-# @app.route("/settings", methods=["POST"])
-# def save_settings_post(request):
-#     config = json.loads(request.body.decode())
-#     save_wifi_config(config)
-#     _thread.start_new_thread(wifi_connect_thread, ())
+@app.route("/settings/save", methods=["POST"])
+def save_settings(request):
+    config = json.loads(request.body.decode())
+    save_wifi_config(config)
+    _thread.start_new_thread(wifi_connect_thread, ())
 
-#     return json.dumps({"success": True, "message": "Settings saved"})
+    return json.dumps({"success": True, "message": "Settings saved"})
 
 
 #     return json.dumps({"success": True, "message": "Settings saved"})
