@@ -172,7 +172,7 @@ def read_file(filename):
             return f.read()
     except Exception as e:
         log(f"Error reading file {filename}: {e} (current directory: {os.getcwd()})")
-        return f"Error reading file: {str(e)}"
+        return None
 
 
 def write_file(filename, content):

@@ -12,7 +12,89 @@ async def handle_upload(request, target_path=None):
         total_chunks = request.headers.get("X-Total-Chunks")
         is_complete = request.headers.get("X-Is-Complete") == "true"
 
-        if chunk_index is not None and total_chunks is not None:
+        # Check for direct binary upload (small files)
+        content_type = request.headers.get("Content-Type", "").lower()
+        if (
+            content_type == "application/octet-stream"
+            and chunk_index is None
+            and total_chunks is None
+        ):
+            log(f"Direct binary upload detected for {target_path}")
+
+            # MicroPython-compatible directory creation
+            if target_path and "/" in target_path:
+                try:
+                    dir_path = target_path.rsplit("/", 1)[0]
+                    try:
+                        os.mkdir(dir_path)
+                    except:
+                        # Directory might already exist
+                        pass
+                except:
+                    # If any error occurs, continue anyway
+                    pass
+
+            # Write the file directly
+            f = open(target_path, "wb")
+            f.write(request.body)
+            f.close()
+
+            file_size = len(request.body)
+            log(f"Saved file: {target_path} ({file_size} bytes)")
+
+            return (
+                json.dumps(
+                    {
+                        "success": True,
+                        "path": target_path,
+                        "size": file_size,
+                    }
+                ),
+                200,
+            )
+
+        # If there's only one chunk, handle it as a regular upload
+        if (
+            chunk_index is not None
+            and total_chunks is not None
+            and int(total_chunks) == 1
+        ):
+            log(f"Single chunk upload detected, handling as regular upload")
+
+            # MicroPython-compatible directory creation
+            if target_path and "/" in target_path:
+                try:
+                    dir_path = target_path.rsplit("/", 1)[0]
+                    try:
+                        os.mkdir(dir_path)
+                    except:
+                        # Directory might already exist
+                        pass
+                except:
+                    # If any error occurs, continue anyway
+                    pass
+
+            # Write the file directly
+            f = open(target_path, "wb")
+            f.write(request.body)
+            f.close()
+
+            file_size = len(request.body)
+            log(f"Saved file: {target_path} ({file_size} bytes)")
+
+            return (
+                json.dumps(
+                    {
+                        "success": True,
+                        "path": target_path,
+                        "size": file_size,
+                    }
+                ),
+                200,
+            )
+
+        # Handle multi-chunk uploads
+        elif chunk_index is not None and total_chunks is not None:
             # Handle chunked upload
             chunk_index = int(chunk_index)
             total_chunks = int(total_chunks)
@@ -152,9 +234,17 @@ async def handle_upload(request, target_path=None):
         content_type = request.headers.get("Content-Type", "").lower()
         log(f"Content-Type: {content_type}")
 
-        if "multipart/form-data" not in content_type:
+        if (
+            "multipart/form-data" not in content_type
+            and content_type != "application/octet-stream"
+        ):
             return (
-                json.dumps({"success": False, "error": "Only form uploads supported"}),
+                json.dumps(
+                    {
+                        "success": False,
+                        "error": "Only form uploads or binary uploads supported",
+                    }
+                ),
                 400,
             )
 

@@ -82,26 +82,33 @@ def view_file(request, filename):
 
 
 def render_template(template_content, **context):
-    for key, value in context.items():
-        template_content = template_content.replace("{{" + key + "}}", str(value))
-    return template_content
+    try:
+        for key, value in context.items():
+            template_content = template_content.replace("{{" + key + "}}", str(value))
+        return template_content
+    except Exception as e:
+        log(f"Error rendering template: {e}")
+        return f"Error rendering template: {str(e)}"
 
 
 @app.route("/settings", methods=["GET"])
 def get_settings(request):
-    html_content = read_file("settings.html")
-    if html_content is None:
-        return "Settings file not found", 404
+    try:
+        html_content = read_file("settings.html")
+        if html_content is None:
+            return "Settings file not found", 404
 
-    context = {
-        "is_connected": str(is_connected()),
-        "ip_address": get_ip(),
-        "ssid": wifi_config.get("ssid", ""),
-    }
+        context = {
+            "is_connected": str(is_connected()),
+            "ip_address": get_ip(),
+            "ssid": wifi_config.get("ssid", ""),
+        }
 
-    rendered_html = render_template(html_content, **context)
-
-    return Response(body=rendered_html, headers={"Content-Type": "text/html"})
+        rendered_html = render_template(html_content, **context)
+        return Response(body=rendered_html, headers={"Content-Type": "text/html"})
+    except Exception as e:
+        log(f"Error in settings page: {e}")
+        return f"Error loading settings page: {str(e)}", 500
 
 
 @app.route("/rm/<path:target_path>")

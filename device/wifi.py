@@ -5,7 +5,7 @@ import network
 from machine import Pin
 
 from log import log
-from led import blink
+from led import blink, start_continuous_blink, stop_continuous_blink
 
 
 def load_wifi_config():
@@ -59,17 +59,43 @@ WiFi connected successfully:
         """
         )
         blink(3)
+        # Start continuous blinking with 3 second interval when WiFi is connected
+        start_continuous_blink(3.0)
     else:
         log("WiFi connection failed")
         blink(1, 1, 0.1)
+        # Ensure continuous blinking is stopped if connection fails
+        stop_continuous_blink()
 
 
 def start_wifi():
     """Start WiFi connection in a separate thread"""
     if wifi_config.get("ssid") and wifi_config.get("password"):
         _thread.start_new_thread(wifi_connect_thread, ())
+        # Start WiFi monitoring thread
+        _thread.start_new_thread(monitor_wifi_connection, ())
     else:
         log("No Wi-Fi credentials configured. Use settings page to configure.")
+
+
+def monitor_wifi_connection():
+    """Monitor WiFi connection status and handle disconnections"""
+    prev_connected = False
+
+    while True:
+        current_connected = sta.isconnected()
+
+        # Connection state changed
+        if current_connected != prev_connected:
+            if current_connected:
+                log("WiFi connection restored")
+                start_continuous_blink(3.0)
+            else:
+                log("WiFi connection lost")
+                stop_continuous_blink()
+
+        prev_connected = current_connected
+        time.sleep(5)  # Check every 5 seconds
 
 
 def get_ip():

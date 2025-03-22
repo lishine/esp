@@ -62,6 +62,32 @@ fi
 
 UPLOAD_URL="http://$ESP_IP/upload/$TARGET_PATH"
 
+# If file is smaller than CHUNK_SIZE, use regular upload instead of chunked
+if [ $FILE_SIZE -le $CHUNK_SIZE ]; then
+    echo "File size ($FILE_SIZE bytes) is smaller than chunk size ($CHUNK_SIZE bytes). Using regular upload."
+    
+    echo "Uploading $FILE_PATH ($FILE_SIZE bytes) to $TARGET_PATH"
+    
+    # Use the original file directly - no need for temp files
+    echo "Using simplified upload for small file"
+    RESPONSE=$(curl -s -X POST \
+        -H "X-Chunk-Index: 0" \
+        -H "X-Total-Chunks: 1" \
+        -H "Content-Type: application/octet-stream" \
+        --data-binary "@${FILE_PATH}" \
+        "$UPLOAD_URL")
+    
+    echo "Server response: $RESPONSE"
+    
+    if echo "$RESPONSE" | grep -q "success.*true"; then
+        echo "Upload completed successfully"
+        exit 0
+    else
+        echo "Error uploading file"
+        exit 1
+    fi
+fi
+
 echo "Uploading $FILE_PATH ($FILE_SIZE bytes) to $TARGET_PATH in $CHUNK_COUNT chunks"
 
 # Create temp directory for chunks
