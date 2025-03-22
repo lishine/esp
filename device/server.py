@@ -16,6 +16,8 @@ from wifi import (
 )
 from fs import (
     get_file_list,
+    get_file_details,
+    get_hierarchical_list_with_sizes,
     read_file,
     write_file,
     exists,
@@ -40,7 +42,7 @@ async def upload_file(request, target_path):
     return await handle_upload(request, target_path)
 
 
-@app.route("/reset", methods=["POST"])
+@app.route("/reset", methods=["GET", "POST"])
 def reset(request):
     import _thread
     import time
@@ -64,9 +66,10 @@ def download(request, filename):
     )
 
 
-@app.route("/list")
-def list_files(request):
-    files = get_file_list()
+@app.route("/la")
+def list_files_hierarchical(request):
+    """List files in a hierarchical format with sizes"""
+    files = get_hierarchical_list_with_sizes()
     return "\n".join(files)
 
 

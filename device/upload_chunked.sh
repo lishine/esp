@@ -125,25 +125,30 @@ while [ $CHUNK_INDEX -lt $CHUNK_COUNT ]; do
     CHUNK_INDEX=$(($CHUNK_INDEX + 1))
 done
 
-# If we have multiple chunks, send a completion request
-if [ $CHUNK_COUNT -gt 1 ]; then
-    echo "All chunks uploaded. Finalizing..."
-    RESPONSE=$(curl -s -X POST \
-        -H "Content-Length: 0" \
-        -H "Content-Type: application/octet-stream" \
-        -H "X-Is-Complete: true" \
-        -H "X-Total-Chunks: $CHUNK_COUNT" \
-        "$UPLOAD_URL")
-    
-    echo "Server response: $RESPONSE"
-    
-    if echo "$RESPONSE" | grep -q "success.*true"; then
-        echo "Upload completed successfully"
-    else
-        echo "Error finalizing upload"
-        rm -rf "$TEMP_DIR"
-        exit 1
+# Check if the last response contained "chunks", which means the server already combined them
+if ! echo "$RESPONSE" | grep -q "chunks"; then
+    # If not, and we have multiple chunks, send a completion request
+    if [ $CHUNK_COUNT -gt 1 ]; then
+        echo "All chunks uploaded. Finalizing..."
+        RESPONSE=$(curl -s -X POST \
+            -H "Content-Length: 0" \
+            -H "Content-Type: application/octet-stream" \
+            -H "X-Is-Complete: true" \
+            -H "X-Total-Chunks: $CHUNK_COUNT" \
+            "$UPLOAD_URL")
+        
+        echo "Server response: $RESPONSE"
+        
+        if echo "$RESPONSE" | grep -q "success.*true"; then
+            echo "Upload completed successfully"
+        else
+            echo "Error finalizing upload"
+            rm -rf "$TEMP_DIR"
+            exit 1
+        fi
     fi
+else
+    echo "Server already combined chunks on last chunk upload"
 fi
 
 # Clean up
