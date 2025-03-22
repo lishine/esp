@@ -5,8 +5,149 @@ from log import log
 
 
 async def handle_upload(request, target_path=None):
-    """Handle multipart/form-data file uploads"""
+    """Handle file uploads, including chunked uploads"""
     try:
+        # Check if this is a chunked upload
+        chunk_index = request.headers.get("X-Chunk-Index")
+        total_chunks = request.headers.get("X-Total-Chunks")
+        is_complete = request.headers.get("X-Is-Complete") == "true"
+
+        if chunk_index is not None and total_chunks is not None:
+            # Handle chunked upload
+            chunk_index = int(chunk_index)
+            total_chunks = int(total_chunks)
+
+            # MicroPython-compatible directory creation
+            if target_path and "/" in target_path:
+                try:
+                    dir_path = target_path.rsplit("/", 1)[0]
+                    try:
+                        os.mkdir(dir_path)
+                    except:
+                        # Directory might already exist
+                        pass
+                except:
+                    # If any error occurs, continue anyway
+                    pass
+
+            # Save this chunk to a temporary file
+            temp_path = f"{target_path}.part{chunk_index}"
+            f = open(temp_path, "wb")
+            f.write(request.body)
+            f.close()
+
+            log(
+                f"Saved chunk {chunk_index+1}/{total_chunks} ({len(request.body)} bytes) to {temp_path}"
+            )
+
+            # If this is the last chunk or we received a completion request, combine chunks
+            if chunk_index == total_chunks - 1 or is_complete:
+                try:
+                    # Combine all chunks
+                    final_file = open(target_path, "wb")
+                    total_size = 0
+                    for i in range(total_chunks):
+                        part_path = f"{target_path}.part{i}"
+                        # Skip if part file doesn't exist
+                        try:
+                            # Check if file exists by trying to open it
+                            part_file = open(part_path, "rb")
+                            part_file.close()
+                        except:
+                            log(f"Warning: Chunk {i+1}/{total_chunks} is missing")
+                            continue
+
+                        # Get file size
+                        try:
+                            part_size = os.stat(part_path)[6]  # st_size is at index 6
+                        except:
+                            part_size = 0
+
+                        total_size += part_size
+
+                        # Read in small chunks to avoid memory issues
+                        part_file = open(part_path, "rb")
+                        bytes_processed = 0
+                        while True:
+                            data = part_file.read(512)  # Read in 512-byte blocks
+                            if not data:
+                                break
+                            final_file.write(data)
+                            bytes_processed += len(data)
+
+                            # Log progress percentage for this chunk
+                            if (
+                                bytes_processed % 1024 == 0
+                                or bytes_processed == part_size
+                            ):
+                                percent = (bytes_processed / part_size) * 100
+                                log(
+                                    f"Combining chunk {i+1}/{total_chunks}: {percent:.1f}% ({bytes_processed}/{part_size} bytes)"
+                                )
+
+                        part_file.close()
+
+                        # Delete this part file
+                        try:
+                            os.remove(part_path)
+                        except:
+                            log(f"Warning: Could not delete temporary file {part_path}")
+
+                    final_file.close()
+
+                    # Get final file size
+                    try:
+                        file_size = os.stat(target_path)[6]  # st_size is at index 6
+                    except:
+                        file_size = total_size
+
+                    log(
+                        f"Successfully combined {total_chunks} chunks into {target_path} (Total: {total_size} bytes)"
+                    )
+
+                    return (
+                        json.dumps(
+                            {
+                                "success": True,
+                                "path": target_path,
+                                "size": file_size,
+                                "chunks": total_chunks,
+                            }
+                        ),
+                        200,
+                    )
+                except Exception as e:
+                    log(f"Error combining chunks: {str(e)}")
+                    # Clean up any temporary files
+                    for i in range(total_chunks):
+                        try:
+                            os.remove(f"{target_path}.part{i}")
+                        except:
+                            pass
+                    return (
+                        json.dumps(
+                            {
+                                "success": False,
+                                "error": f"Error combining chunks: {str(e)}",
+                            }
+                        ),
+                        500,
+                    )
+            else:
+                # Return success for this chunk
+                return (
+                    json.dumps(
+                        {
+                            "success": True,
+                            "chunk": chunk_index,
+                            "total": total_chunks,
+                            "path": temp_path,
+                        }
+                    ),
+                    200,
+                )
+
+        # Original upload code for non-chunked uploads
         # Get content type and validate
         content_type = request.headers.get("Content-Type", "").lower()
         log(f"Content-Type: {content_type}")
@@ -81,8 +222,9 @@ async def handle_upload(request, target_path=None):
                     log(f"Clean content: {clean_content}")
 
                 # Write the file
-                with open(target_path, "wb") as f:
-                    f.write(clean_content)
+                f = open(target_path, "wb")
+                f.write(clean_content)
+                f.close()
 
                 log(f"Saved file: {target_path} ({len(clean_content)} bytes)")
                 return (
