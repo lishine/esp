@@ -76,7 +76,8 @@ if [ $FILE_SIZE -le $CHUNK_SIZE ]; then
         -H "Content-Type: application/octet-stream" \
         --data-binary "@${FILE_PATH}" \
         "$UPLOAD_URL")
-    
+    echo "$FILE_PATH"
+    echo "$UPLOAD_URL"
     echo "Server response: $RESPONSE"
     
     if echo "$RESPONSE" | grep -q "success.*true"; then
