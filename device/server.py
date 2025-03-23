@@ -183,6 +183,45 @@ def get_free_space(request):
 
 @app.route("/")
 def index(request):
+    # Get the Host header from the request
+    host = request.headers.get("Host", "")
+
+    # Log all requests with their Host header for debugging
+    log(f"Root Request: {request.method} {request.path} Host: {host}")
+
+    # Check if this is an Apple-related domain
+    apple_domains = [
+        "captive.apple.com",
+        "www.apple.com",
+        "apple.com",
+        "gsp-ssl.ls.apple.com",
+        "gspe1-ssl.ls.apple.com",
+        "courier.push.apple.com",
+        "push.apple.com",
+    ]
+
+    is_apple_domain = any(domain in host for domain in apple_domains)
+
+    # If this is an Apple domain, return the captive portal page
+    if is_apple_domain:
+        log(f"Detected Apple domain in Host header: {host}")
+        # Return a non-Success response to trigger captive portal
+        captive_response = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Network Login Required</title>
+</head>
+<body>
+    <h1>Network Login Required</h1>
+    <p>Click the button below to access the network.</p>
+    <p><a href="http://192.168.4.1/settings" style="display: inline-block; background-color: #4CAF50; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px;">Login to Network</a></p>
+</body>
+</html>
+"""
+        return Response(body=captive_response, headers={"Content-Type": "text/html"})
+
+    # For all other requests to the root, redirect to settings
     return Response(status_code=302, headers={"Location": "/settings"})
 
 

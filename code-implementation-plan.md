@@ -1,95 +1,84 @@
-# ESP32 Code Implementation Plan
+# ESP32 Auto Sync Implementation Plan
 
-## Issue Summary
+## Overview
 
-We're facing two specific issues that need to be addressed:
+This plan outlines an approach to automate the process of identifying and uploading modified files in the `device/` directory to an ESP32 device, eliminating the need for manual file selection.
 
-1. **Settings Route Conflict**: The POST route for `/settings` interferes with the GET route when uncommented.
-2. **Captive Portal Code Organization**: All captive portal functionality should be moved from server.py to captive.py.
+## Current Workflow
 
-## Implementation Plan
+Currently, you manually identify which files have changed and upload them using a comma-separated list:
 
-### 1. Fix the Settings POST Route
-
-The current code in server.py has a commented-out POST route for `/settings` that's causing issues with the GET route. The problem is likely because:
-
-- The server's route handling may not properly distinguish between different HTTP methods for the same path.
-- The current implementation of the POST route is incomplete (missing the proper return statement).
-
-#### Changes Required:
-
-```python
-# Current commented code in server.py:
-# @app.route("/settings", methods=["POST"])
-# def save_settings(request):
-#     config = json.loads(request.body.decode())
-#     save_wifi_config(config)
-#     _thread.start_new_thread(wifi_connect_thread, ())
-#
-#     return json.dumps({"success": True, "message": "Settings saved"})
+```bash
+./run upload x,y,z
 ```
 
-The fix is to create a fixed version that properly handles the POST route:
+## Proposed Solution
 
-```python
-@app.route("/settings", methods=["POST"])
-def save_settings_post(request):
-    config = json.loads(request.body.decode())
-    save_wifi_config(config)
-    _thread.start_new_thread(wifi_connect_thread, ())
+Add a new `sync` command to the `run` script that automatically:
 
-    return json.dumps({"success": True, "message": "Settings saved"})
+1. Detects which files in the `device/` directory have been modified since the last upload
+2. Uploads only those modified files to the ESP32
+3. Tracks when files were last synced for future comparison
+
+```mermaid
+flowchart TD
+    A[Start: run sync] --> B{Check for timestamp file}
+    B -->|Not found| C[Create timestamp file]
+    B -->|Found| D[Find files modified since timestamp]
+    C --> D
+    D -->|No modified files| E[Display "No files to upload"]
+    D -->|Files found| F[Display list of modified files]
+    F --> G[Upload modified files]
+    G --> H[Update timestamp file]
+    H --> I[End: Display success message]
 ```
 
-Key changes:
+## Implementation Details
 
-- Rename the function from `save_settings` to `save_settings_post` to ensure it has a distinct name from the GET route handler
-- Ensure it properly returns the JSON response
+### 1. Add the `sync` Command
 
-### 2. Move Captive Portal Code
+Add a new case to the `run` script for the `sync` command that will:
 
-The captive portal functionality needs to be fully moved to captive.py, while keeping the import line commented in server.py.
+- Maintain a timestamp file (`.last_sync`) to track when files were last uploaded
+- Find all files in the `device/` directory that have been modified since the last upload
+- Automatically upload those modified files to the ESP32
+- Update the timestamp after successful upload
 
-#### Changes Required:
+### 2. Command Options
 
-1. **Remove from server.py**:
+The sync command will have options:
 
-   - The entire `register_captive_portal_routes` function definition (lines 308-380)
-   - Keep the commented import line:
+- `./run sync` - Auto-detect and upload modified files
+- `./run sync --dry-run` - Just show which files would be uploaded without actually uploading
+- `./run sync --force` - Force upload of all files in device/ directory
 
-   ```python
-   # from captive import register_captive_portal_routes
-   # register_captive_portal_routes(app)
-   ```
+### 3. Code Changes
 
-2. **Update captive.py**:
-   - Ensure captive.py uses the same implementation as the function in server.py
-   - Ensure it properly imports the Response class
-   - Verify it includes all the routes and handlers found in the server.py implementation
+The implementation will require:
 
-## Testing Plan
+1. Adding a new case to the `run` script's command handling
+2. Implementing file modification time check functionality
+3. Maintaining a timestamp file to track the last sync
+4. Leveraging the existing upload functionality to handle the actual file uploads
 
-After implementing these changes:
+### 4. Benefits
 
-1. Test the settings functionality:
+This approach:
 
-   - Access the `/settings` GET route to verify the page loads correctly
-   - Submit the form to verify the POST route works and doesn't interfere with the GET route
+- Doesn't require external dependencies (like git)
+- Is fast and efficient (only uploads changed files)
+- Works with your existing upload mechanism
+- Requires minimal changes to your workflow
 
-2. Test the captive portal functionality:
-   - Uncomment the captive portal import line to verify it works
-   - Test various captive portal detection endpoints
+## Example Usage
 
-## Implementation Steps
+```bash
+# Automatically upload all modified files
+./run sync
 
-1. **Switch to Code mode** to make the actual changes to the Python files
-2. Update the server.py file:
-   - Add the fixed POST route for settings
-   - Remove the captive portal function
-3. Verify the captive.py file has the correct implementation
-4. Test the functionality to ensure both issues are resolved
+# Just show which files would be uploaded
+./run sync --dry-run
 
-## Future Considerations
-
-- Consider refactoring the route handling mechanism to better handle different HTTP methods for the same path
-- Consider adding more robust error handling for the settings routes
+# Force upload of all files in device/ directory
+./run sync --force
+```

@@ -1,77 +1,123 @@
 from server import Response
+from log import log
 
 
 # Captive portal detection endpoints for various operating systems
 def register_captive_portal_routes(app):
-    """Register all captive portal related routes with the provided app"""
+    """Register captive portal routes with improved handling"""
 
-    @app.route("/generate_204")
-    @app.route("/connecttest.txt")
-    @app.route("/ncsi.txt")
-    def captive_portal_detector(request):
-        # Redirect to settings page
+    # Add our root handler for all incoming requests
+    @app.route("/", methods=["GET"])
+    def root_handler(request):
+        # Get the Host header from the request
+        host = request.headers.get("Host", "")
+
+        # Log all requests with their Host header for debugging
+        log(f"Captive Portal Request: {request.method} {request.path} Host: {host}")
+
+        # Check if this is an Apple-related domain
+        apple_domains = [
+            "captive.apple.com",
+            "www.apple.com",
+            "apple.com",
+            "gsp-ssl.ls.apple.com",
+            "gspe1-ssl.ls.apple.com",
+            "courier.push.apple.com",
+            "push.apple.com",
+        ]
+
+        is_apple_domain = any(domain in host for domain in apple_domains)
+
+        # If this is an Apple domain or specific captive portal path, return the captive portal page
+        if is_apple_domain or request.path in [
+            "/hotspot-detect.html",
+            "/library/test/success.html",
+            "/success.txt",
+            "/generate_204",
+            "/connecttest.txt",
+            "/ncsi.txt",
+        ]:
+            # Return a non-Success response to trigger captive portal
+            captive_response = """
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Network Login Required</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+</head>
+<body>
+    <h1>Network Login Required</h1>
+    <p>Click the button below to access the network.</p>
+    <p><a href="http://192.168.4.1/settings" style="display: inline-block; background-color: #4CAF50; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px;">Login to Network</a></p>
+</body>
+</html>
+"""
+            return Response(
+                body=captive_response,
+                headers={
+                    "Content-Type": "text/html",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
+
+        # If it's a specific settings or API path, let it pass through to be handled by other routes
+        if request.path.startswith("/settings") or request.path.startswith("/api/"):
+            return None  # Let other routes handle these paths
+
+        # For all other requests, redirect to settings
         return Response.redirect("/settings")
 
-    # Apple-specific captive portal detection endpoints
+    # Keep specific routes for common captive portal detection endpoints
+    # These are backups in case the root handler doesn't catch them
+
     @app.route("/hotspot-detect.html")
     @app.route("/library/test/success.html")
     @app.route("/success.txt")
-    def apple_captive_portal_detector(request):
-        # For macOS captive portal detection, we need to return a non-success response
-        # that doesn't contain the string "<SUCCESS>" to trigger the captive portal window
+    @app.route("/generate_204")
+    @app.route("/connecttest.txt")
+    @app.route("/ncsi.txt")
+    def specific_captive_portal_detector(request):
+        log(
+            f"Specific captive portal endpoint: {request.path} Host: {request.headers.get('Host', '')}"
+        )
+
         if request.path.endswith(".txt"):
-            # For .txt files, return a non-success response
-            return Response(body="Not Success", headers={"Content-Type": "text/plain"})
+            return Response(
+                body="Not Success",
+                headers={
+                    "Content-Type": "text/plain",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
         else:
-            # For HTML files, return a minimal HTML that doesn't contain "<SUCCESS>"
-            # but includes a redirect to our settings page
-            apple_response = """
+            captive_response = """
 <!DOCTYPE html>
 <html>
 <head>
-    <title>ESP32 Captive Portal</title>
-    <meta http-equiv="refresh" content="0;url=/settings">
+    <title>Network Login Required</title>
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
 </head>
 <body>
-    <h1>Please wait...</h1>
-    <p>You are being redirected to the ESP32 settings page.</p>
-    <script>
-        // Redirect immediately to settings page
-        window.location.href = "/settings";
-    </script>
+    <h1>Network Login Required</h1>
+    <p>Click the button below to access the network.</p>
+    <p><a href="http://192.168.4.1/settings" style="display: inline-block; background-color: #4CAF50; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px;">Login to Network</a></p>
 </body>
 </html>
 """
-            return Response(body=apple_response, headers={"Content-Type": "text/html"})
-
-    # Handle domain paths that might be sent
-    @app.route("/hotspot-detect.html")
-    def apple_domain_captive_portal_detector(request):
-        # Return a non-success response to trigger the captive portal
-        apple_response = """
-<!DOCTYPE html>
-<html>
-<head>
-    <title>ESP32 Captive Portal</title>
-    <meta http-equiv="refresh" content="0;url=/settings">
-</head>
-<body>
-    <h1>Please wait...</h1>
-    <p>You are being redirected to the ESP32 settings page.</p>
-    <script>
-        // Redirect immediately to settings page
-        window.location.href = "/settings";
-    </script>
-</body>
-</html>
-"""
-        return Response(body=apple_response, headers={"Content-Type": "text/html"})
-
-    # Special handlers for specific Apple domains
-    @app.route("/captive.apple.com")
-    @app.route("/www.apple.com")
-    @app.route("/www.itools.info")
-    @app.route("/www.ibook.info")
-    def captive_apple_detector(request):
-        # For domain-specific requests, ensure we're handling captive.apple.com properly
-        return Response.redirect("/settings")
+            return Response(
+                body=captive_response,
+                headers={
+                    "Content-Type": "text/html",
+                    "Cache-Control": "no-cache, no-store, must-revalidate",
+                    "Pragma": "no-cache",
+                    "Expires": "0",
+                },
+            )
