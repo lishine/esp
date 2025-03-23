@@ -25,13 +25,15 @@ show_usage() {
     echo "  rm <path>              - Remove a file from the device"
     echo "  download <path>        - Download a file from the device"
     echo "  view <path>            - View the contents of a file on the device"
-    echo "  upload <file> [target] - Upload a file using upload_chunked.sh"
+    echo "  upload <file(s)> [target] - Upload one or more files (comma-separated) using upload_chunked.sh"
     echo ""
     echo "Examples:"
     echo "  ./run reset            - Reset the device"
     echo "  ./run log              - View device logs"
     echo "  ./run rm main.py       - Remove main.py from the device"
     echo "  ./run upload settings.html - Upload settings.html to the device"
+    echo "  ./run upload main.py,config.txt - Upload multiple files"
+    echo "  ./run upload main.py /app/ - Upload main.py to /app/ directory"
 }
 
 # Check if a command was provided
@@ -102,21 +104,38 @@ case "$COMMAND" in
     
     upload)
         if [ $# -lt 1 ]; then
-            echo "Error: Missing file path"
-            echo "Usage: ./run upload <file> [target]"
+            echo "Error: Missing file path(s)"
+            echo "Usage: ./run upload <file(s)> [target]"
             exit 1
         fi
-        FILE_PATH="$1"
-        TARGET_PATH="${2:-$(basename "$FILE_PATH")}"
+        FILES="$1"
+        TARGET_PATH="${2:-}"
+
+        # Convert comma-separated files into array
+        IFS=',' read -r -a FILE_ARRAY <<< "$FILES"
+        TOTAL_FILES=${#FILE_ARRAY[@]}
         
-        echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $TARGET_PATH..."
-        if [ -n "$2" ]; then
-            # If target path is specified, we need to pass it to the upload script
-            "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH" "$TARGET_PATH"
-        else
-            # If no target path, just pass the file
-            "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH"
-        fi
+        for ((i=0; i<${#FILE_ARRAY[@]}; i++)); do
+            FILE_PATH=$(echo "${FILE_ARRAY[$i]}" | xargs)  # Trim whitespace
+            
+            if [ ! -f "$FILE_PATH" ]; then
+                echo "Error: File '$FILE_PATH' not found"
+                continue
+            fi
+
+            # Print separator with current file number
+            echo "------$((i+1)) of $TOTAL_FILES---------"
+            
+            if [ -n "$TARGET_PATH" ]; then
+                # If target path is specified
+                echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $TARGET_PATH$(basename "$FILE_PATH")..."
+                "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH" "$TARGET_PATH$(basename "$FILE_PATH")"
+            else
+                # If no target path
+                echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $(basename "$FILE_PATH")..."
+                "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH"
+            fi
+        done
         ;;
     
     *)
