@@ -186,13 +186,25 @@ case "$COMMAND" in
     else
       echo "Found ${#FILES[@]} files to upload."
       
-      # Upload each file
+      # Prepare comma-separated list of files
+      FILE_LIST=""
       for file in "${FILES[@]}"; do
-        echo "Uploading file: $file"
-        if [ "$DRY_RUN" == false ]; then
-          "$SCRIPT_DIR/device/upload_chunked.sh" "$file"
+        if [ -z "$FILE_LIST" ]; then
+          FILE_LIST="$file"
+        else
+          FILE_LIST="$FILE_LIST,$file"
         fi
       done
+      
+      # Upload all files at once using the upload command
+      if [ "$DRY_RUN" == false ]; then
+        echo "Uploading files using comma-separated list feature:"
+        echo "$FILE_LIST"
+        "$0" upload "$FILE_LIST"
+      else
+        echo "Would upload these files (dry run):"
+        echo "$FILE_LIST"
+      fi
     fi
 
     # Update timestamp file
