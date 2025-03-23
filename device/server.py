@@ -127,7 +127,7 @@ def save_settings(request):
     return json.dumps({"success": True, "message": "Settings saved"})
 
 
-@app.route("/rm/<path:target_path>")
+@app.route("/rm/<path:target_path>", methods=["DELETE"])
 def remove_file(request, target_path):
     try:
         if not exists(target_path):

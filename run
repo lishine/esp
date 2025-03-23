@@ -1,0 +1,127 @@
+#!/bin/bash
+# ESP32 Device Management Script
+# Simplifies interactions with ESP32 device
+
+# Get the script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Read IP from file
+if [ -f "$SCRIPT_DIR/device/ip" ]; then
+    ESP_IP=$(cat "$SCRIPT_DIR/device/ip")
+else
+    echo "Error: IP file not found at $SCRIPT_DIR/device/ip"
+    exit 1
+fi
+
+# Display usage information
+show_usage() {
+    echo "Usage: ./run <command> [arguments]"
+    echo ""
+    echo "Commands:"
+    echo "  reset                  - Reset the ESP32 device"
+    echo "  log                    - View device logs"
+    echo "  la                     - List all files on the device"
+    echo "  free                   - Show free memory on the device"
+    echo "  rm <path>              - Remove a file from the device"
+    echo "  download <path>        - Download a file from the device"
+    echo "  view <path>            - View the contents of a file on the device"
+    echo "  upload <file> [target] - Upload a file using upload_chunked.sh"
+    echo ""
+    echo "Examples:"
+    echo "  ./run reset            - Reset the device"
+    echo "  ./run log              - View device logs"
+    echo "  ./run rm main.py       - Remove main.py from the device"
+    echo "  ./run upload settings.html - Upload settings.html to the device"
+}
+
+# Check if a command was provided
+if [ $# -lt 1 ]; then
+    show_usage
+    exit 1
+fi
+
+COMMAND="$1"
+shift
+
+# Execute the appropriate command
+case "$COMMAND" in
+    reset)
+        echo "Resetting ESP32 at $ESP_IP..."
+        curl -s "http://$ESP_IP/reset" -X POST
+        echo "Reset command sent."
+        ;;
+    
+    log)
+        echo "Fetching logs from ESP32 at $ESP_IP..."
+        curl -s "http://$ESP_IP/log"
+        ;;
+    
+    la)
+        echo "Listing all files on ESP32 at $ESP_IP..."
+        curl -s "http://$ESP_IP/la"
+        ;;
+    
+    free)
+        echo "Checking free memory on ESP32 at $ESP_IP..."
+        curl -s "http://$ESP_IP/free"
+        ;;
+    
+    rm)
+        if [ $# -lt 1 ]; then
+            echo "Error: Missing file path"
+            echo "Usage: ./run rm <path>"
+            exit 1
+        fi
+        FILE_PATH="$1"
+        echo "Removing file $FILE_PATH from ESP32 at $ESP_IP..."
+        curl -s "http://$ESP_IP/rm/$FILE_PATH" -X DELETE
+        ;;
+    
+    download)
+        if [ $# -lt 1 ]; then
+            echo "Error: Missing file path"
+            echo "Usage: ./run download <path>"
+            exit 1
+        fi
+        FILE_PATH="$1"
+        echo "Downloading $FILE_PATH from ESP32 at $ESP_IP..."
+        curl -s "http://$ESP_IP/fs/get/$FILE_PATH" -o "$(basename "$FILE_PATH")"
+        echo "Downloaded to $(basename "$FILE_PATH")"
+        ;;
+    
+    view)
+        if [ $# -lt 1 ]; then
+            echo "Error: Missing file path"
+            echo "Usage: ./run view <path>"
+            exit 1
+        fi
+        FILE_PATH="$1"
+        echo "Viewing file $FILE_PATH from ESP32 at $ESP_IP..."
+        curl -s "http://$ESP_IP/view/$FILE_PATH"
+        ;;
+    
+    upload)
+        if [ $# -lt 1 ]; then
+            echo "Error: Missing file path"
+            echo "Usage: ./run upload <file> [target]"
+            exit 1
+        fi
+        FILE_PATH="$1"
+        TARGET_PATH="${2:-$(basename "$FILE_PATH")}"
+        
+        echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $TARGET_PATH..."
+        if [ -n "$2" ]; then
+            # If target path is specified, we need to pass it to the upload script
+            "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH" "$TARGET_PATH"
+        else
+            # If no target path, just pass the file
+            "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH"
+        fi
+        ;;
+    
+    *)
+        echo "Error: Unknown command '$COMMAND'"
+        show_usage
+        exit 1
+        ;;
+esac
