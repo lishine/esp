@@ -59,6 +59,33 @@
         .log-link {
             margin-left: 10px;
         }
+
+        /* Password visibility toggle styles */
+        #eyeIcon {
+            transition: all 0.2s ease;
+            pointer-events: none;
+        }
+
+        #togglePassword {
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            transition: opacity 0.2s ease;
+        }
+
+        #togglePassword:hover {
+            opacity: 0.7;
+        }
+
+        #togglePassword:active #eyeIcon {
+            transform: scale(0.9);
+        }
+
+        #togglePassword:hover #eyeIcon {
+            transform: scale(1.1);
+        }
     </style>
 </head>
 <body onload="showSettingsPopup()">
@@ -78,7 +105,7 @@
             <div style="position: relative;">
                 <input type="password" id="password" name="password" style="padding-right: 30px;">
                 <span id="togglePassword" onclick="togglePasswordVisibility()" aria-label="Toggle password visibility"
-                    style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer;">
+                    style="position: absolute; right: 10px; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; width: 30px;">
                     <svg id="eyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -129,13 +156,20 @@
         function togglePasswordVisibility() {
             var passwordInput = document.getElementById("password");
             var eyeIcon = document.getElementById("eyeIcon");
-            if (passwordInput.type === "password") {
-                passwordInput.type = "text";
-                eyeIcon.innerHTML = openEye;
-            } else {
-                passwordInput.type = "password";
-                eyeIcon.innerHTML = closedEye;
-            }
+
+            // Add transition effect
+            eyeIcon.style.opacity = "0";
+
+            setTimeout(function () {
+                if (passwordInput.type === "password") {
+                    passwordInput.type = "text";
+                    eyeIcon.innerHTML = openEye;
+                } else {
+                    passwordInput.type = "password";
+                    eyeIcon.innerHTML = closedEye;
+                }
+                eyeIcon.style.opacity = "1";
+            }, 100);
         }
 
         // Fetch settings data and update page
