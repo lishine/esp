@@ -64,9 +64,9 @@
 <body onload="showSettingsPopup()">
     <h1>ESP32 Wi-Fi Settings</h1>
     <div class="status">
-        <div class="status-item"><strong>Connection Status:</strong> {{is_connected}}</div>
-        <div class="status-item"><strong>IP Address:</strong> {{ip_address}}</div>
-        <div class="status-item"><strong>Current Network:</strong> {{ssid}}</div>
+        <div class="status-item"><strong>Connection Status:</strong> <span id="connectionStatus">Loading...</span></div>
+        <div class="status-item"><strong>IP Address:</strong> <span id="ipAddress">Loading...</span></div>
+        <div class="status-item"><strong>Current Network:</strong> <span id="currentSSID">Loading...</span></div>
     </div>
     <form id="settingsForm">
         <div class="form-group">
@@ -112,10 +112,27 @@
     </div>
 
     <script>
+        // Fetch settings data and update page
+        function loadSettingsData() {
+            fetch('/api/settings/data')
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById('connectionStatus').textContent = data.is_connected ? 'Connected' : 'Not Connected';
+                    document.getElementById('ipAddress').textContent = data.ip_address;
+                    document.getElementById('currentSSID').textContent = data.ssid;
+                    document.getElementById('ssid').value = data.ssid;
+                })
+                .catch(error => {
+                    console.error('Error loading settings:', error);
+                    document.getElementById('connectionStatus').textContent = 'Error loading data';
+                });
+        }
+
         // Auto-open settings popup when page loads
         function showSettingsPopup() {
             // Only show popup if this is a new connection (could use localStorage to track)
-            document.getElementById('settingsPopup').style.display = 'block';
+            // document.getElementById('settingsPopup').style.display = 'block';
+            loadSettingsData(); // Load settings when popup appears
         }
 
         function closeSettingsPopup() {
