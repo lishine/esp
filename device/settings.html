@@ -75,8 +75,17 @@
         </div>
         <div class="form-group">
             <label for="password">Password:</label>
-            <input type="password" id="password" name="password">
-            <input type="checkbox" onclick="togglePasswordVisibility()">Show Password
+            <div style="position: relative;">
+                <input type="password" id="password" name="password" style="padding-right: 30px;">
+                <span id="togglePassword" onclick="togglePasswordVisibility()" aria-label="Toggle password visibility"
+                    style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer;">
+                    <svg id="eyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                        <path d="M1 1l22 22"></path>
+                    </svg>
+                </span>
+            </div>
         </div>
         <button type="submit">Save & Connect</button>
         <button type="button" id="resetButton" style="background-color: #f44336; margin-left: 10px;">Reset
@@ -112,6 +121,23 @@
     </div>
 
     <script>
+        // Define SVG paths for open and closed eye icons
+        const closedEye = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><path d="M1 1l22 22"></path>';
+        const openEye = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>';
+
+        // Toggle password visibility and update eye icon
+        function togglePasswordVisibility() {
+            var passwordInput = document.getElementById("password");
+            var eyeIcon = document.getElementById("eyeIcon");
+            if (passwordInput.type === "password") {
+                passwordInput.type = "text";
+                eyeIcon.innerHTML = openEye;
+            } else {
+                passwordInput.type = "password";
+                eyeIcon.innerHTML = closedEye;
+            }
+        }
+
         // Fetch settings data and update page
         function loadSettingsData() {
             fetch('/api/settings/data')
@@ -153,12 +179,11 @@
                     });
             }
         });
+
         document.getElementById('settingsForm').addEventListener('submit', function (event) {
             event.preventDefault();
-
             const ssid = document.getElementById('ssid').value;
             const password = document.getElementById('password').value;
-
             fetch('/settings/save', {
                 method: 'POST',
                 headers: {
@@ -166,11 +191,7 @@
                 },
                 body: JSON.stringify({ ssid: ssid, password: password })
             })
-                .then(response => {
-                    console.log('Response received:', response);
-                    // Don't reload or redirect yet - let's debug first
-                    return response.json(); // Parse the JSON response
-                })
+                .then(response => response.json())
                 .then(data => {
                     console.log('Data received:', data);
                     alert('Settings saved successfully');
@@ -183,14 +204,11 @@
 
         document.getElementById('uploadForm').addEventListener('submit', function (event) {
             event.preventDefault();
-
             const fileInput = document.getElementById('file');
             const targetPath = document.getElementById('targetPath').value;
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
-
             const uploadUrl = targetPath ? `/upload/${targetPath}` : '/upload';
-
             fetch(uploadUrl, {
                 method: 'POST',
                 body: formData
@@ -200,10 +218,10 @@
                     const statusDiv = document.getElementById('uploadStatus');
                     if (data.success) {
                         statusDiv.innerHTML = `
-                        <div class="status-item">File uploaded successfully!</div>
-                        <div class="status-item">Path: ${data.path}</div>
-                        <div class="status-item">Size: ${data.size} bytes</div>
-                    `;
+                            <div class="status-item">File uploaded successfully!</div>
+                            <div class="status-item">Path: ${data.path}</div>
+                            <div class="status-item">Size: ${data.size} bytes</div>
+                        `;
                     } else {
                         statusDiv.innerHTML = `<div class="status-item">Upload failed: ${data.error || 'Unknown error'}</div>`;
                     }
@@ -214,15 +232,6 @@
                         `<div class="status-item">Upload failed: ${error.message}</div>`;
                 });
         });
-
-        function togglePasswordVisibility() {
-            var passwordInput = document.getElementById("password");
-            if (passwordInput.type === "password") {
-                passwordInput.type = "text";
-            } else {
-                passwordInput.type = "password";
-            }
-        }
     </script>
 </body>
 </html>
