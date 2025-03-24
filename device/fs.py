@@ -162,45 +162,6 @@ def get_file_list(path=".", prefix="", is_last=True):
         return ["Error listing files"]
 
 
-def read_file(filename):
-    """Read the contents of a file
-    Args:
-        filename: Path to the file
-    """
-    try:
-        with open(filename, "r") as f:
-            return f.read()
-    except Exception as e:
-        log(f"Error reading file {filename}: {e} (current directory: {os.getcwd()})")
-        return None
-
-
-def write_file(filename, content):
-    """Write content to a file"""
-    try:
-        # Create directories if needed
-        if "/" in filename:
-            dir_path = "/".join(filename.split("/")[:-1])
-            if dir_path and not create_dirs(dir_path):
-                return False
-
-        if isinstance(content, str):
-            content = content.encode("utf-8")
-        f = None
-        try:
-            f = open(filename, "wb")
-            f.write(content)
-        except Exception as e:
-            log(f"Error writing to file {filename}: {e}")
-            return False
-        finally:
-            getattr(f, "close", lambda: None)()
-        return True
-    except Exception as e:
-        log(f"Error writing to file {filename}: {e}")
-        return False
-
-
 def exists(path):
     """Check if a file or directory exists"""
     try:

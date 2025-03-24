@@ -2,7 +2,6 @@ from microdot import Microdot, Response
 import json
 import _thread
 import machine
-import os
 from upload import handle_upload
 
 from log import log, log_buffer
@@ -10,16 +9,11 @@ from wifi import (
     is_connected,
     get_ip,
     save_wifi_config,
-    load_wifi_config,
     wifi_config,
     wifi_connect_thread,
 )
 from fs import (
-    get_file_list,
-    get_file_details,
     get_hierarchical_list_with_sizes,
-    read_file,
-    write_file,
     exists,
     remove_if_empty_or_file,
     remove_empty_parents,
@@ -57,12 +51,23 @@ def reset(request):
 
 @app.route("/download/<path:filename>")
 def download(request, filename):
-    content = read_file(filename)
-    if content is None:
+    if not exists(filename):
         return "File not found", 404
+
+    def generate_content():
+        with open(filename, "rb") as f:
+            while True:
+                chunk = f.read(4096)  # 4KB chunks
+                if not chunk:
+                    break
+                yield chunk
+
     return Response(
-        body=content,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        body=generate_content(),  # type: ignore
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Content-Type": "application/octet-stream",
+        },
     )
 
 
@@ -75,16 +80,18 @@ def list_files_hierarchical(request):
 
 @app.route("/view/<path:filename>")
 def view_file(request, filename):
-    content = read_file(filename)
-    if content is None:
+    if not exists(filename):
         return "File not found", 404
-    return content
 
+    def generate_content():
+        with open(filename, "rb") as f:
+            while True:
+                chunk = f.read(4096)  # 4KB chunks
+                if not chunk:
+                    break
+                yield chunk
 
-def render_template(template_content, **context):
-    for key, value in context.items():
-        template_content = template_content.replace("{{" + key + "}}", str(value))
-    return template_content
+    return Response(body=generate_content())  # type: ignore
 
 
 @app.route("/settings", methods=["GET"])
