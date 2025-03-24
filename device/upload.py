@@ -4,7 +4,7 @@ import os
 from log import log
 
 
-def handle_upload(request, target_path: str | None = None) -> tuple[str, int]:
+async def handle_upload(request, target_path: str | None = None) -> tuple[str, int]:
     """Handle file uploads, including chunked uploads"""
     try:
         # Check if this is a chunked upload
@@ -149,48 +149,54 @@ def handle_upload(request, target_path: str | None = None) -> tuple[str, int]:
                     with open(target_path, "wb") as final_file:
                         for i in range(total_chunks):
                             part_path = f"{target_path}.part{i}"
-                        # Skip if part file doesn't exist
-                        try:
-                            # Check if file exists by trying to open it
-                            part_file = open(part_path, "rb")
-                            part_file.close()
-                        except:
-                            log(f"Warning: Chunk {i+1}/{total_chunks} is missing")
-                            continue
+                            # Skip if part file doesn't exist
+                            try:
+                                # Check if file exists by trying to open it
+                                part_file = open(part_path, "rb")
+                                part_file.close()
+                            except:
+                                log(f"Warning: Chunk {i+1}/{total_chunks} is missing")
+                                continue
 
-                        # Get file size
-                        try:
-                            part_size = os.stat(part_path)[6]  # st_size is at index 6
-                        except:
-                            part_size = 0
+                            # Get file size
+                            try:
+                                part_size = os.stat(part_path)[
+                                    6
+                                ]  # st_size is at index 6
+                            except:
+                                part_size = 0
 
-                        total_size += part_size
+                            total_size += part_size
 
-                        # Read in small chunks to avoid memory issues
-                        bytes_processed = 0
-                        with open(part_path, "rb") as part_file:
-                            while True:
-                                data = part_file.read(512)  # Read in 512-byte blocks
-                                if not data:
-                                    break
-                                final_file.write(data)
-                                bytes_processed += len(data)
+                            # Read in small chunks to avoid memory issues
+                            bytes_processed = 0
+                            with open(part_path, "rb") as part_file:
+                                while True:
+                                    data = part_file.read(
+                                        512
+                                    )  # Read in 512-byte blocks
+                                    if not data:
+                                        break
+                                    final_file.write(data)
+                                    bytes_processed += len(data)
 
-                                # Log progress percentage for this chunk
-                                if (
-                                    bytes_processed % 1024 == 0
-                                    or bytes_processed == part_size
-                                ):
-                                    percent = (bytes_processed / part_size) * 100
-                                    log(
-                                        f"Combining chunk {i+1}/{total_chunks}: {percent:.1f}% ({bytes_processed}/{part_size} bytes)"
-                                    )
+                                    # Log progress percentage for this chunk
+                                    if (
+                                        bytes_processed % 1024 == 0
+                                        or bytes_processed == part_size
+                                    ):
+                                        percent = (bytes_processed / part_size) * 100
+                                        log(
+                                            f"Combining chunk {i+1}/{total_chunks}: {percent:.1f}% ({bytes_processed}/{part_size} bytes)"
+                                        )
 
-                        # Delete this part file
-                        try:
-                            os.remove(part_path)
-                        except:
-                            log(f"Warning: Could not delete temporary file {part_path}")
+                            # Delete this part file
+                            try:
+                                os.remove(part_path)
+                            except:
+                                log(
+                                    f"Warning: Could not delete temporary file {part_path}"
+                                )
 
                     # Get final file size
                     try:
