@@ -118,12 +118,20 @@ case "$COMMAND" in
         IFS=',' read -r -a FILE_ARRAY <<< "$FILES"
         TOTAL_FILES=${#FILE_ARRAY[@]}
         
+        # Flag to track if any .py files were uploaded
+        PYTHON_FILES_UPLOADED=false
+        
         for ((i=0; i<${#FILE_ARRAY[@]}; i++)); do
             FILE_PATH=$(echo "${FILE_ARRAY[$i]}" | xargs)  # Trim whitespace
             
             if [ ! -f "$FILE_PATH" ]; then
                 echo "Error: File '$FILE_PATH' not found"
                 continue
+            fi
+
+            # Check if this is a Python file
+            if [[ "$FILE_PATH" == *.py ]]; then
+                PYTHON_FILES_UPLOADED=true
             fi
 
             # Print separator with current file number
@@ -139,6 +147,12 @@ case "$COMMAND" in
                 "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH"
             fi
         done
+        
+        # Reset the device if any Python files were uploaded
+        if [ "$PYTHON_FILES_UPLOADED" = true ]; then
+            echo "Python files were uploaded. Resetting device..."
+            "$0" reset
+        fi
         ;;
   sync)
     TIMESTAMP_FILE="$SCRIPT_DIR/.last_sync"
@@ -201,6 +215,9 @@ case "$COMMAND" in
         echo "Uploading files using comma-separated list feature:"
         echo "$FILE_LIST"
         "$0" upload "$FILE_LIST"
+        
+        # Note: We don't need to explicitly reset here because the upload command
+        # will already handle resetting if any .py files were uploaded
       else
         echo "Would upload these files (dry run):"
         echo "$FILE_LIST"
