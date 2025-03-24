@@ -154,6 +154,12 @@ def remove_file(request, target_path):
         return f"Error: {str(e)}", 500
 
 
+@app.route("/ping")
+def ping(request):
+    """Simple ping endpoint to check if the server is running"""
+    return json.dumps({"status": "ok"})
+
+
 @app.route("/log")
 def show_log(request):
     return "\n".join(log_buffer.get_all())

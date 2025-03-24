@@ -5,23 +5,43 @@
 # Get the script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# AP IP address
+AP_IP="192.168.4.1"
+
+# Check if --ap flag is used
+USE_AP_IP=false
+for arg in "$@"; do
+    if [ "$arg" == "--ap" ]; then
+        USE_AP_IP=true
+        break
+    fi
+done
+
 # Read IP from file
-if [ -f "$SCRIPT_DIR/device/ip" ]; then
+if [ "$USE_AP_IP" = true ]; then
+    ESP_IP="$AP_IP"
+    echo "Using AP IP address: $ESP_IP"
+elif [ -f "$SCRIPT_DIR/device/ip" ]; then
     ESP_IP=$(cat "$SCRIPT_DIR/device/ip")
 else
-    echo "Error: IP file not found at $SCRIPT_DIR/device/ip"
-    exit 1
+    echo "Warning: IP file not found at $SCRIPT_DIR/device/ip"
+    echo "Using AP IP address instead: $AP_IP"
+    ESP_IP="$AP_IP"
 fi
 
 # Display usage information
 show_usage() {
-    echo "Usage: ./run <command> [arguments]"
+    echo "Usage: ./run [--ap] <command> [arguments]"
+    echo ""
+    echo "Options:"
+    echo "  --ap                   - Use AP IP address (192.168.4.1) instead of configured IP"
     echo ""
     echo "Commands:"
     echo "  reset                  - Reset the ESP32 device"
     echo "  log                    - View device logs"
     echo "  la                     - List all files on the device"
     echo "  free                   - Show free memory on the device"
+    echo "  ping                   - Check if the device is responding"
     echo "  rm <path>              - Remove a file from the device"
     echo "  download <path>        - Download a file from the device"
     echo "  view <path>            - View the contents of a file on the device"
@@ -32,12 +52,58 @@ show_usage() {
     echo ""
     echo "Examples:"
     echo "  ./run reset            - Reset the device"
-    echo "  ./run log              - View device logs"
+    echo "  ./run --ap log         - View device logs using AP IP"
     echo "  ./run rm main.py       - Remove main.py from the device"
     echo "  ./run upload settings.html - Upload settings.html to the device"
     echo "  ./run upload main.py,config.txt - Upload multiple files"
     echo "  ./run upload main.py /app/ - Upload main.py to /app/ directory"
     echo "  ./run sync             - Upload all modified files"
+}
+
+# Helper function to make a curl request with timeout
+# If the primary IP fails, it will try the AP IP if not already using it
+make_request() {
+    local url="$1"
+    local method="${2:-GET}"
+    local output_file="${3:-}"
+    local timeout=3
+    local curl_opts="-s -m $timeout"
+    
+    if [ -n "$output_file" ]; then
+        curl_opts="$curl_opts -o $output_file"
+    fi
+    
+    if [ "$method" != "GET" ]; then
+        curl_opts="$curl_opts -X $method"
+    fi
+    
+    # Try with the current IP
+    local response
+    if response=$(curl $curl_opts "$url" 2>&1); then
+        echo "$response"
+        return 0
+    else
+        # If using the primary IP and it failed, try with AP IP
+        if [ "$USE_AP_IP" = false ] && [[ "$url" == http://$ESP_IP/* ]]; then
+            echo "Connection to $ESP_IP timed out after ${timeout}s."
+            echo "Trying AP IP address ($AP_IP) instead..."
+            echo "Make sure you're connected to the ESP32's access point."
+            
+            # Replace the IP in the URL
+            local ap_url="${url/$ESP_IP/$AP_IP}"
+            
+            if response=$(curl $curl_opts "$ap_url" 2>&1); then
+                echo "$response"
+                return 0
+            else
+                echo "Connection to AP IP ($AP_IP) also failed."
+                return 1
+            fi
+        else
+            echo "Connection failed: $response"
+            return 1
+        fi
+    fi
 }
 
 # Check if a command was provided
@@ -46,73 +112,88 @@ if [ $# -lt 1 ]; then
     exit 1
 fi
 
-COMMAND="$1"
-shift
+# Process arguments to filter out --ap
+ARGS=()
+for arg in "$@"; do
+    if [ "$arg" != "--ap" ]; then
+        ARGS+=("$arg")
+    fi
+done
+
+COMMAND="${ARGS[0]}"
+if [ ${#ARGS[@]} -gt 0 ]; then
+    ARGS=("${ARGS[@]:1}")
+fi
 
 case "$COMMAND" in
   reset)
         echo "Resetting ESP32 at $ESP_IP..."
-        curl -s "http://$ESP_IP/reset" -X POST
+        make_request "http://$ESP_IP/reset" "POST"
         echo "Reset command sent."
         ;;
     
   log)
         echo "Fetching logs from ESP32 at $ESP_IP..."
-        curl -s "http://$ESP_IP/log"
+        make_request "http://$ESP_IP/log"
         ;;
     
   la)
         echo "Listing all files on ESP32 at $ESP_IP..."
-        curl -s "http://$ESP_IP/la"
+        make_request "http://$ESP_IP/la"
         ;;
     
   free)
         echo "Checking free memory on ESP32 at $ESP_IP..."
-        curl -s "http://$ESP_IP/free"
+        make_request "http://$ESP_IP/free"
+        ;;
+        
+  ping)
+        echo "Pinging ESP32 at $ESP_IP..."
+        make_request "http://$ESP_IP/ping"
         ;;
     
   rm)
-        if [ $# -lt 1 ]; then
+        if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path"
             echo "Usage: ./run rm <path>"
             exit 1
         fi
-        FILE_PATH="$1"
+        FILE_PATH="${ARGS[0]}"
         echo "Removing file $FILE_PATH from ESP32 at $ESP_IP..."
-        curl -s "http://$ESP_IP/rm/$FILE_PATH" -X DELETE
+        make_request "http://$ESP_IP/rm/$FILE_PATH" "DELETE"
         ;;
     
   download)
-        if [ $# -lt 1 ]; then
+        if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path"
             echo "Usage: ./run download <path>"
             exit 1
         fi
-        FILE_PATH="$1"
+        FILE_PATH="${ARGS[0]}"
         echo "Downloading $FILE_PATH from ESP32 at $ESP_IP..."
-        curl -s "http://$ESP_IP/fs/get/$FILE_PATH" -o "$(basename "$FILE_PATH")"
+        make_request "http://$ESP_IP/fs/get/$FILE_PATH" "GET" "$(basename "$FILE_PATH")"
         echo "Downloaded to $(basename "$FILE_PATH")"
         ;;
     
   view)
-        if [ $# -lt 1 ]; then
+        if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path"
             echo "Usage: ./run view <path>"
             exit 1
         fi
-        FILE_PATH="$1"
+        FILE_PATH="${ARGS[0]}"
         echo "Viewing file $FILE_PATH from ESP32 at $ESP_IP..."
-        curl -s "http://$ESP_IP/view/$FILE_PATH"
+        make_request "http://$ESP_IP/view/$FILE_PATH"
         ;;
     
   upload)
-        if [ $# -lt 1 ]; then
+        if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path(s)"
             echo "Usage: ./run upload <file(s)> [target]"
             exit 1
         fi
-        FILES="$1"
-        TARGET_PATH="${2:-}"
+        FILES="${ARGS[0]}"
+        TARGET_PATH="${ARGS[1]:-}"
 
         # Convert comma-separated files into array
         IFS=',' read -r -a FILE_ARRAY <<< "$FILES"
@@ -140,11 +221,13 @@ case "$COMMAND" in
             if [ -n "$TARGET_PATH" ]; then
                 # If target path is specified
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $TARGET_PATH$(basename "$FILE_PATH")..."
-                "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH" "$TARGET_PATH$(basename "$FILE_PATH")"
+                # Set environment variable for upload_chunked.sh to use the correct IP
+                ESP_IP="$ESP_IP" "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH" "$TARGET_PATH$(basename "$FILE_PATH")"
             else
                 # If no target path
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $(basename "$FILE_PATH")..."
-                "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH"
+                # Set environment variable for upload_chunked.sh to use the correct IP
+                ESP_IP="$ESP_IP" "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH"
             fi
         done
         
@@ -164,17 +247,17 @@ case "$COMMAND" in
     echo "Sync command called"
 
     DRY_RUN=false
-    if [ "$1" == "--dry-run" ]; then
+    if [ ${#ARGS[@]} -gt 0 ] && [ "${ARGS[0]}" == "--dry-run" ]; then
       echo "Dry run mode: showing files that would be uploaded."
       DRY_RUN=true
-      shift
+      ARGS=("${ARGS[@]:1}")
     fi
 
     FORCE_UPLOAD=false
-    if [ "$1" == "--force" ]; then
+    if [ ${#ARGS[@]} -gt 0 ] && [ "${ARGS[0]}" == "--force" ]; then
       echo "Force upload mode: uploading all files."
       FORCE_UPLOAD=true
-      shift
+      ARGS=("${ARGS[@]:1}")
     fi
 
     # Get list of files to upload
@@ -214,7 +297,13 @@ case "$COMMAND" in
       if [ "$DRY_RUN" == false ]; then
         echo "Uploading files using comma-separated list feature:"
         echo "$FILE_LIST"
-        "$0" upload "$FILE_LIST"
+        
+        # Pass the --ap flag if it was used
+        if [ "$USE_AP_IP" = true ]; then
+          "$0" --ap upload "$FILE_LIST"
+        else
+          "$0" upload "$FILE_LIST"
+        fi
         
         # Note: We don't need to explicitly reset here because the upload command
         # will already handle resetting if any .py files were uploaded
