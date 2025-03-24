@@ -57,7 +57,7 @@ prepare-commit-msg
 **/*.log
 
 
-typings/**/*
+# typings/**/*
 
 *.code-workspace
 .aider*
