@@ -1,9 +1,12 @@
 #!/bin/bash
 # Chunked upload script for ESP32
 # This script splits files into 4000-byte chunks and uploads them to the ESP32
-
-# Usage: ./upload_chunked.sh <file_path>
-# Example: ./upload_chunked.sh large_file.bin
+#
+# Required environment variables:
+#   ESP_IP: The IP address of the ESP32 device
+#
+# Usage: ESP_IP=<device_ip> ./upload_chunked.sh <file_path> [target_path]
+# Example: ESP_IP=192.168.4.1 ./upload_chunked.sh large_file.bin /data/large_file.bin
 
 # Function to display progress bar
 show_progress() {
@@ -50,14 +53,12 @@ fi
 # Calculate number of chunks
 CHUNK_COUNT=$(( ($FILE_SIZE + $CHUNK_SIZE - 1) / $CHUNK_SIZE ))
 
-# Read IP from file or use default
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-if [ -f "$SCRIPT_DIR/ip" ]; then
-    ESP_IP=$(cat "$SCRIPT_DIR/ip")
-    echo "Using ESP32 IP address from file: $ESP_IP"
-else
-    ESP_IP="192.168.4.1"  # Default fallback
-    echo "IP file not found, using default: $ESP_IP"
+# Check if ESP_IP environment variable is set
+if [ -z "$ESP_IP" ]; then
+    echo "Error: ESP_IP environment variable is required"
+    echo "Please set ESP_IP environment variable before running this script"
+    echo "Example: ESP_IP=192.168.4.1 $0 <file_path>"
+    exit 1
 fi
 
 UPLOAD_URL="http://$ESP_IP/upload/$TARGET_PATH"

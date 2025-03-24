@@ -4,8 +4,46 @@
 
 # Get the script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+IP_JSON_FILE="$SCRIPT_DIR/ip.json"
+UPLOAD_CHUNKED_SCRIPT_PATH="$SCRIPT_DIR/device/upload_chunked.sh"
 
-# AP IP address
+# Function to check if jq is available
+check_jq() {
+    if ! command -v jq &> /dev/null; then
+        echo "Error: jq is not installed but required by this script."
+        echo "Please install jq using one of the following methods:"
+        echo "  - macOS: brew install jq"
+        echo "  - Ubuntu/Debian: sudo apt-get install jq"
+        echo "  - Windows with Chocolatey: choco install jq"
+        exit 1
+    fi
+}
+
+# Function to read IP from JSON file
+read_ip_from_json() {
+    if [ -f "$IP_JSON_FILE" ]; then
+        check_jq
+        jq -r '.ip' "$IP_JSON_FILE"
+        return 0
+    fi
+    return 1
+}
+
+# Function to write IP to JSON file
+write_ip_to_json() {
+    local new_ip="$1"
+    local json_content
+    
+    if [ -f "$IP_JSON_FILE" ]; then
+        check_jq
+        # Read existing JSON and update only the IP field while preserving other values
+        json_content=$(jq --arg ip "$new_ip" '. + {ip: $ip}' "$IP_JSON_FILE")
+    else
+        # Create new JSON
+        json_content="{\"ip\": \"$new_ip\"}"
+    fi
+    echo "$json_content" > "$IP_JSON_FILE"
+}
 AP_IP="192.168.4.1"
 
 # Check if --ap flag is used
@@ -17,14 +55,14 @@ for arg in "$@"; do
     fi
 done
 
-# Read IP from file
+# Read IP from JSON file
 if [ "$USE_AP_IP" = true ]; then
     ESP_IP="$AP_IP"
     echo "Using AP IP address: $ESP_IP"
-elif [ -f "$SCRIPT_DIR/device/ip" ]; then
-    ESP_IP=$(cat "$SCRIPT_DIR/device/ip")
+elif read_ip_from_json; then
+    ESP_IP=$(read_ip_from_json)
 else
-    echo "Warning: IP file not found at $SCRIPT_DIR/device/ip"
+    echo "Warning: IP file not found at $IP_JSON_FILE"
     echo "Using AP IP address instead: $AP_IP"
     ESP_IP="$AP_IP"
 fi
@@ -42,6 +80,7 @@ show_usage() {
     echo "  la                     - List all files on the device"
     echo "  free                   - Show free memory on the device"
     echo "  ping                   - Check if the device is responding"
+    echo "  status                 - Check device status and update IP file if needed"
     echo "  rm <path>              - Remove a file from the device"
     echo "  download <path>        - Download a file from the device"
     echo "  view <path>            - View the contents of a file on the device"
@@ -53,6 +92,7 @@ show_usage() {
     echo "Examples:"
     echo "  ./run reset            - Reset the device"
     echo "  ./run --ap log         - View device logs using AP IP"
+    echo "  ./run status           - Check device status and update IP file"
     echo "  ./run rm main.py       - Remove main.py from the device"
     echo "  ./run upload settings.html - Upload settings.html to the device"
     echo "  ./run upload main.py,config.txt - Upload multiple files"
@@ -151,6 +191,46 @@ case "$COMMAND" in
         echo "Pinging ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/ping"
         ;;
+        
+  status)
+        echo "Checking status of ESP32 at $ESP_IP..."
+        response=$(make_request "http://$ESP_IP/status")
+        echo "$response"
+        
+        # Check if response contains wifi_ip and extract it using jq
+        if echo "$response" | jq -e '.wifi_ip' >/dev/null 2>&1; then
+            # Extract the IP address from the JSON response
+            wifi_ip=$(echo "$response" | jq -r '.wifi_ip')
+            
+            # Track if we need to update the IP file
+            need_update=false
+            
+            # Check if the IP file exists
+            if [ -f "$IP_JSON_FILE" ]; then
+                # Extract current IP from JSON file
+                check_jq
+                current_ip=$(jq -r '.ip' "$IP_JSON_FILE")
+                
+                if [ "$wifi_ip" != "$current_ip" ]; then
+                    echo "IP has changed from $current_ip to $wifi_ip. Updating IP file..."
+                    need_update=true
+                else
+                    echo "IP unchanged: $wifi_ip"
+                fi
+            else
+                echo "IP file not found at $IP_JSON_FILE. Creating with IP: $wifi_ip"
+                need_update=true
+            fi
+            
+            # Only update the file if needed
+            if [ "$need_update" = true ]; then
+                write_ip_to_json "$wifi_ip"
+                echo "IP file updated."
+            fi
+        else
+            echo "WiFi not connected or status information incomplete."
+        fi
+        ;;
     
   rm)
         if [ ${#ARGS[@]} -lt 1 ]; then
@@ -222,12 +302,12 @@ case "$COMMAND" in
                 # If target path is specified
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $TARGET_PATH$(basename "$FILE_PATH")..."
                 # Set environment variable for upload_chunked.sh to use the correct IP
-                ESP_IP="$ESP_IP" "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH" "$TARGET_PATH$(basename "$FILE_PATH")"
+                ESP_IP="$ESP_IP" "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH" "$TARGET_PATH$(basename "$FILE_PATH")"
             else
                 # If no target path
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $(basename "$FILE_PATH")..."
                 # Set environment variable for upload_chunked.sh to use the correct IP
-                ESP_IP="$ESP_IP" "$SCRIPT_DIR/device/upload_chunked.sh" "$FILE_PATH"
+                ESP_IP="$ESP_IP" "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH"
             fi
         done
         
@@ -239,10 +319,23 @@ case "$COMMAND" in
         ;;
   sync)
     TIMESTAMP_FILE="$SCRIPT_DIR/.last_sync"
+    TIMESTAMP_DIR=$(dirname "$TIMESTAMP_FILE")
+
+    # Check if the directory exists, create it if not
+    if [ ! -d "$TIMESTAMP_DIR" ]; then
+      echo "Creating directory: $TIMESTAMP_DIR"
+      mkdir -p "$TIMESTAMP_DIR" || {
+        echo "Error: Failed to create directory $TIMESTAMP_DIR"
+        exit 1
+      }
+    fi
 
     if [ ! -f "$TIMESTAMP_FILE" ]; then
       echo "Creating timestamp file: $TIMESTAMP_FILE"
-      date +%s > "$TIMESTAMP_FILE"
+      date +%s > "$TIMESTAMP_FILE" || {
+        echo "Error: Failed to create timestamp file $TIMESTAMP_FILE"
+        exit 1
+      }
     fi
     echo "Sync command called"
 
@@ -315,7 +408,10 @@ case "$COMMAND" in
 
     # Update timestamp file
     if [ "$DRY_RUN" == false ]; then
-      date +%s > "$TIMESTAMP_FILE"
+      date +%s > "$TIMESTAMP_FILE" || {
+        echo "Error: Failed to update timestamp file $TIMESTAMP_FILE"
+        exit 1
+      }
       echo "Timestamp updated."
     fi
     ;;

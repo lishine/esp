@@ -160,6 +160,15 @@ def ping(request):
     return json.dumps({"status": "ok"})
 
 
+@app.route("/status")
+def status(request):
+    """Return device status including WiFi IP if connected"""
+    response = {"status": "ok"}
+    if is_connected():
+        response["wifi_ip"] = get_ip()
+    return json.dumps(response)
+
+
 @app.route("/log")
 def show_log(request):
     return "\n".join(log_buffer.get_all())
