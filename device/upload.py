@@ -4,7 +4,7 @@ import os
 from log import log
 
 
-async def handle_upload(request, target_path=None):
+def handle_upload(request, target_path: str | None = None) -> tuple[str, int]:
     """Handle file uploads, including chunked uploads"""
     try:
         # Check if this is a chunked upload
@@ -35,9 +35,13 @@ async def handle_upload(request, target_path=None):
                     pass
 
             # Write the file directly
-            f = open(target_path, "wb")
-            f.write(request.body)
-            f.close()
+            if target_path is None:
+                return (
+                    json.dumps({"success": False, "error": "Missing target path"}),
+                    400,
+                )
+            with open(target_path, "wb") as f:
+                f.write(request.body)
 
             file_size = len(request.body)
             log(f"Saved file: {target_path} ({file_size} bytes)")
@@ -75,9 +79,13 @@ async def handle_upload(request, target_path=None):
                     pass
 
             # Write the file directly
-            f = open(target_path, "wb")
-            f.write(request.body)
-            f.close()
+            if target_path is None:
+                return (
+                    json.dumps({"success": False, "error": "Missing target path"}),
+                    400,
+                )
+            with open(target_path, "wb") as f:
+                f.write(request.body)
 
             file_size = len(request.body)
             log(f"Saved file: {target_path} ({file_size} bytes)")
@@ -113,10 +121,14 @@ async def handle_upload(request, target_path=None):
                     pass
 
             # Save this chunk to a temporary file
+            if target_path is None:
+                return (
+                    json.dumps({"success": False, "error": "Missing target path"}),
+                    400,
+                )
             temp_path = f"{target_path}.part{chunk_index}"
-            f = open(temp_path, "wb")
-            f.write(request.body)
-            f.close()
+            with open(temp_path, "wb") as f:
+                f.write(request.body)
 
             log(
                 f"Saved chunk {chunk_index+1}/{total_chunks} ({len(request.body)} bytes) to {temp_path}"
@@ -126,10 +138,17 @@ async def handle_upload(request, target_path=None):
             if chunk_index == total_chunks - 1 or is_complete:
                 try:
                     # Combine all chunks
-                    final_file = open(target_path, "wb")
+                    if target_path is None:
+                        return (
+                            json.dumps(
+                                {"success": False, "error": "Missing target path"}
+                            ),
+                            400,
+                        )
                     total_size = 0
-                    for i in range(total_chunks):
-                        part_path = f"{target_path}.part{i}"
+                    with open(target_path, "wb") as final_file:
+                        for i in range(total_chunks):
+                            part_path = f"{target_path}.part{i}"
                         # Skip if part file doesn't exist
                         try:
                             # Check if file exists by trying to open it
@@ -148,34 +167,30 @@ async def handle_upload(request, target_path=None):
                         total_size += part_size
 
                         # Read in small chunks to avoid memory issues
-                        part_file = open(part_path, "rb")
                         bytes_processed = 0
-                        while True:
-                            data = part_file.read(512)  # Read in 512-byte blocks
-                            if not data:
-                                break
-                            final_file.write(data)
-                            bytes_processed += len(data)
+                        with open(part_path, "rb") as part_file:
+                            while True:
+                                data = part_file.read(512)  # Read in 512-byte blocks
+                                if not data:
+                                    break
+                                final_file.write(data)
+                                bytes_processed += len(data)
 
-                            # Log progress percentage for this chunk
-                            if (
-                                bytes_processed % 1024 == 0
-                                or bytes_processed == part_size
-                            ):
-                                percent = (bytes_processed / part_size) * 100
-                                log(
-                                    f"Combining chunk {i+1}/{total_chunks}: {percent:.1f}% ({bytes_processed}/{part_size} bytes)"
-                                )
-
-                        part_file.close()
+                                # Log progress percentage for this chunk
+                                if (
+                                    bytes_processed % 1024 == 0
+                                    or bytes_processed == part_size
+                                ):
+                                    percent = (bytes_processed / part_size) * 100
+                                    log(
+                                        f"Combining chunk {i+1}/{total_chunks}: {percent:.1f}% ({bytes_processed}/{part_size} bytes)"
+                                    )
 
                         # Delete this part file
                         try:
                             os.remove(part_path)
                         except:
                             log(f"Warning: Could not delete temporary file {part_path}")
-
-                    final_file.close()
 
                     # Get final file size
                     try:
@@ -312,9 +327,13 @@ async def handle_upload(request, target_path=None):
                     log(f"Clean content: {clean_content}")
 
                 # Write the file
-                f = open(target_path, "wb")
-                f.write(clean_content)
-                f.close()
+                if target_path is None:
+                    return (
+                        json.dumps({"success": False, "error": "Missing target path"}),
+                        400,
+                    )
+                with open(target_path, "wb") as f:
+                    f.write(clean_content)
 
                 log(f"Saved file: {target_path} ({len(clean_content)} bytes)")
                 return (
