@@ -44,6 +44,27 @@ write_ip_to_json() {
     fi
     echo "$json_content" > "$IP_JSON_FILE"
 }
+
+# Function to check if sync is needed
+check_sync_needed() {
+    local timestamp_file="$SCRIPT_DIR/.last_sync"
+    
+    # If timestamp file doesn't exist, sync is needed
+    if [ ! -f "$timestamp_file" ]; then
+        echo "*** Sync required ***"
+        return 0
+    fi
+    
+    # Check if any files in device/ directory are newer than timestamp file
+    if find "$SCRIPT_DIR/device" -type f -newer "$timestamp_file" -print -quit | grep -q .; then
+        echo "*** Sync required ***"
+        return 0
+    fi
+    
+    return 1
+}
+
+AP_IP="192.168.4.1"
 AP_IP="192.168.4.1"
 
 # Check if --ap flag is used
@@ -167,32 +188,38 @@ fi
 
 case "$COMMAND" in
   reset)
+        check_sync_needed
         echo "Resetting ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/reset" "POST"
         echo "Reset command sent."
         ;;
     
   log)
+        check_sync_needed
         echo "Fetching logs from ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/log"
         ;;
     
   la)
+        check_sync_needed
         echo "Listing all files on ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/la"
         ;;
     
   free)
+        check_sync_needed
         echo "Checking free memory on ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/free"
         ;;
         
   ping)
+        check_sync_needed
         echo "Pinging ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/ping"
         ;;
         
   status)
+        check_sync_needed
         echo "Checking status of ESP32 at $ESP_IP..."
         response=$(make_request "http://$ESP_IP/status")
         echo "$response"
@@ -233,6 +260,7 @@ case "$COMMAND" in
         ;;
     
   rm)
+        check_sync_needed
         if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path"
             echo "Usage: ./run rm <path>"
@@ -244,6 +272,7 @@ case "$COMMAND" in
         ;;
     
   download)
+        check_sync_needed
         if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path"
             echo "Usage: ./run download <path>"
@@ -256,6 +285,7 @@ case "$COMMAND" in
         ;;
     
   view)
+        check_sync_needed
         if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path"
             echo "Usage: ./run view <path>"
@@ -267,6 +297,7 @@ case "$COMMAND" in
         ;;
     
   upload)
+        check_sync_needed
         if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path(s)"
             echo "Usage: ./run upload <file(s)> [target]"
@@ -318,6 +349,7 @@ case "$COMMAND" in
         fi
         ;;
   sync)
+    check_sync_needed
     TIMESTAMP_FILE="$SCRIPT_DIR/.last_sync"
     TIMESTAMP_DIR=$(dirname "$TIMESTAMP_FILE")
 
@@ -337,7 +369,6 @@ case "$COMMAND" in
         exit 1
       }
     fi
-    echo "Sync command called"
 
     DRY_RUN=false
     if [ ${#ARGS[@]} -gt 0 ] && [ "${ARGS[0]}" == "--dry-run" ]; then
@@ -362,7 +393,6 @@ case "$COMMAND" in
         FILES+=("$file")
       done < <(find "$SCRIPT_DIR/device" -type f -print0)
     else
-      # Get only modified files
       echo "Finding modified files since last sync..."
       FILES=()
       while IFS= read -r -d '' file; do
@@ -374,6 +404,7 @@ case "$COMMAND" in
     if [ ${#FILES[@]} -eq 0 ]; then
       echo "No files to upload."
     else
+      echo "Sync command called"
       echo "Found ${#FILES[@]} files to upload."
       
       # Prepare comma-separated list of files
