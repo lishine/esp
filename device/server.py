@@ -128,7 +128,7 @@ def get_settings_data(request):
             {
                 "is_connected": is_connected(),
                 "ip_address": get_ip(),
-                "ssid": wifi_config.get("ssid", ""),
+                "ssid": (wifi_config.get("networks", [{}])[0]).get("ssid", ""),
             }
         ),
         headers={"Content-Type": "application/json"},

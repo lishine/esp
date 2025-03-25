@@ -14,7 +14,9 @@ def load_wifi_config():
         with open("wifi.json", "r") as f:
             return json.loads(f.read())
     except:
-        config = {"ssid": "", "password": ""}
+        config = {
+            "networks": [{"ssid": "", "password": ""}, {"ssid": "", "password": ""}]
+        }
         save_wifi_config(config)
         return config
 
@@ -29,17 +31,22 @@ sta = network.WLAN(network.STA_IF)
 sta.active(True)
 
 wifi_config = load_wifi_config()
+current_network_index = -1  # -1 means not connected
 
 
-def wifi_connect_thread():
-    """Function to handle WiFi connection in a separate thread"""
-    if not wifi_config.get("ssid") or not wifi_config.get("password"):
-        log("No Wi-Fi credentials configured. Use settings page to configure.")
-        return
+def connect_to_network(network_index):
+    """Connect to a specific network by index"""
+    global current_network_index
 
-    log(f"Connecting to {wifi_config['ssid']}")
+    if not wifi_config.get("networks") or len(wifi_config["networks"]) <= network_index:
+        return False
 
-    sta.connect(wifi_config["ssid"], wifi_config["password"])
+    network = wifi_config["networks"][network_index]
+    if not network.get("ssid") or not network.get("password"):
+        return False
+
+    log(f"Connecting to {network['ssid']}")
+    sta.connect(network["ssid"], network["password"])
 
     start_time = time.time()
     while not sta.isconnected() and time.time() - start_time < 10:
@@ -48,29 +55,45 @@ def wifi_connect_thread():
         log("Waiting for WiFi connection...")
 
     if sta.isconnected():
+        current_network_index = network_index
         ip_address, subnet, gateway, dns = sta.ifconfig()
         log(
             f"""
-WiFi connected successfully:
+WiFi connected successfully to {network['ssid']}:
 - IP Address: {ip_address}
 - Subnet: {subnet}
 - Gateway: {gateway}
 - DNS: {dns}
-        """
+            """
         )
         blink(3)
-        # Start continuous blinking with 3 second interval when WiFi is connected
         start_continuous_blink(3.0)
+        return True
     else:
-        log("WiFi connection failed")
-        blink(1, 1, 0.1)
-        # Ensure continuous blinking is stopped if connection fails
-        stop_continuous_blink()
+        log(f"WiFi connection to {network['ssid']} failed")
+        return False
+
+
+def wifi_connect_thread():
+    """Function to handle WiFi connection in a separate thread with fallback"""
+    # Try primary network
+    if connect_to_network(0):
+        return
+
+    # If primary fails, try secondary
+    log("Primary network connection failed, trying secondary network")
+    if connect_to_network(1):
+        return
+
+    # Both networks failed
+    log("All WiFi connection attempts failed")
+    blink(1, 1, 0.1)
+    stop_continuous_blink()
 
 
 def start_wifi():
     """Start WiFi connection in a separate thread"""
-    if wifi_config.get("ssid") and wifi_config.get("password"):
+    if wifi_config.get("networks") and len(wifi_config["networks"]) > 0:
         _thread.start_new_thread(wifi_connect_thread, ())
         # Start WiFi monitoring thread
         _thread.start_new_thread(monitor_wifi_connection, ())
@@ -93,6 +116,8 @@ def monitor_wifi_connection():
             else:
                 log("WiFi connection lost")
                 stop_continuous_blink()
+                # Try to reconnect
+                _thread.start_new_thread(wifi_connect_thread, ())
 
         prev_connected = current_connected
         time.sleep(5)  # Check every 5 seconds
@@ -108,3 +133,14 @@ def get_ip():
 def is_connected():
     """Check if WiFi is connected"""
     return sta.isconnected()
+
+
+def get_current_network():
+    """Get the currently connected network information"""
+    if current_network_index >= 0 and sta.isconnected():
+        return {
+            "index": current_network_index,
+            "ssid": wifi_config["networks"][current_network_index]["ssid"],
+            "is_primary": current_network_index == 0,
+        }
+    return None

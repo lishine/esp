@@ -97,13 +97,13 @@
     </div>
     <form id="settingsForm">
         <div class="form-group">
-            <label for="ssid">Wi-Fi Name (SSID):</label>
-            <input type="text" id="ssid" name="ssid" value="{{ssid}}">
+            <label for="primary_ssid">Primary Wi-Fi Name (SSID):</label>
+            <input type="text" id="primary_ssid" name="primary_ssid" value="{{primary_ssid}}">
         </div>
         <div class="form-group">
-            <label for="password">Password:</label>
+            <label for="primary_password">Primary Password:</label>
             <div style="position: relative;">
-                <input type="password" id="password" name="password" style="padding-right: 30px;">
+                <input type="password" id="primary_password" name="primary_password" style="padding-right: 30px;">
                 <span id="togglePassword" onclick="togglePasswordVisibility()" aria-label="Toggle password visibility"
                     style="position: absolute; right: 10px; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; width: 30px;">
                     <svg id="eyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -113,6 +113,14 @@
                     </svg>
                 </span>
             </div>
+        </div>
+        <div class="form-group">
+            <label for="secondary_ssid">Secondary Wi-Fi Name (SSID):</label>
+            <input type="text" id="secondary_ssid" name="secondary_ssid" value="{{secondary_ssid}}">
+        </div>
+        <div class="form-group">
+            <label for="secondary_password">Secondary Password:</label>
+            <input type="password" id="secondary_password" name="secondary_password">
         </div>
         <button type="submit">Save & Connect</button>
         <button type="button" id="resetButton" style="background-color: #f44336; margin-left: 10px;">Reset
@@ -216,14 +224,21 @@
 
         document.getElementById('settingsForm').addEventListener('submit', function (event) {
             event.preventDefault();
-            const ssid = document.getElementById('ssid').value;
-            const password = document.getElementById('password').value;
+            const primary_ssid = document.getElementById('primary_ssid').value;
+            const primary_password = document.getElementById('primary_password').value;
+            const secondary_ssid = document.getElementById('secondary_ssid').value;
+            const secondary_password = document.getElementById('secondary_password').value;
             fetch('/settings/save', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ ssid: ssid, password: password })
+                body: JSON.stringify({
+                    networks: [
+                        { ssid: primary_ssid, password: primary_password },
+                        { ssid: secondary_ssid, password: secondary_password }
+                    ]
+                })
             })
                 .then(response => response.json())
                 .then(data => {
