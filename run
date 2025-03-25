@@ -339,8 +339,8 @@ case "$COMMAND" in
             FILE_PATH=$(echo "${FILE_ARRAY[$i]}" | xargs)  # Trim whitespace
             
             if [ ! -f "$FILE_PATH" ]; then
-                echo "Error: File '$FILE_PATH' not found"
-                continue
+                echo "Error: File '$FILE_PATH' not found" >&2
+                exit 1
             fi
 
             # Check if this is a Python file
@@ -356,11 +356,21 @@ case "$COMMAND" in
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $TARGET_PATH$(basename "$FILE_PATH")..."
                 # Set environment variable for upload_chunked.sh to use the correct IP
                 ESP_IP="$ESP_IP" "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH" "$TARGET_PATH$(basename "$FILE_PATH")"
+                upload_result=$?
+                if [ "$upload_result" -ne 0 ]; then
+                  echo "Error: Upload of $FILE_PATH failed."
+                  exit 1
+                fi
             else
                 # If no target path
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $(basename "$FILE_PATH")..."
                 # Set environment variable for upload_chunked.sh to use the correct IP
                 ESP_IP="$ESP_IP" "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH"
+                upload_result=$?
+                if [ "$upload_result" -ne 0 ]; then
+                  echo "Error: Upload of $FILE_PATH failed."
+                  exit 1
+                fi
             fi
         done
         
@@ -444,11 +454,17 @@ case "$COMMAND" in
         echo "Uploading files using comma-separated list feature:"
         echo "$FILE_LIST"
         
-        # Pass the --ap flag if it was used
+        # Pass the --ap flag if it was used, capturing output for error detection
         if [ "$USE_AP_IP" = true ]; then
-          "$0" --ap upload "$FILE_LIST"
+          upload_output=$("$0" --ap upload "$FILE_LIST")
         else
-          "$0" upload "$FILE_LIST"
+          upload_output=$("$0" upload "$FILE_LIST")
+        fi
+        upload_status=$?
+        echo "$upload_output"
+        if [ "$upload_status" -ne 0 ] || echo "$upload_output" | grep -q "Error uploading"; then
+          echo "Error: File upload failed. Timestamp not updated."
+          exit 1
         fi
         
         # Note: We don't need to explicitly reset here because the upload command

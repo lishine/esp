@@ -81,7 +81,10 @@ if [ $FILE_SIZE -le $CHUNK_SIZE ]; then
     echo "$UPLOAD_URL"
     echo "Server response: $RESPONSE"
     
-    if echo "$RESPONSE" | grep -q "success.*true"; then
+    if [ -z "$RESPONSE" ]; then
+        echo "Error uploading file - No response from server"
+        exit 1
+    elif echo "$RESPONSE" | grep -q "success.*true"; then
         echo "Upload completed successfully"
         exit 0
     else
@@ -137,8 +140,12 @@ while [ $CHUNK_INDEX -lt $CHUNK_COUNT ]; do
     
     echo -e "\nServer response: $RESPONSE"
     
-    # Check if the response contains success:true
-    if echo "$RESPONSE" | grep -q "success.*true"; then
+    # Check if the response contains success:true or is empty (error)
+    if [ -z "$RESPONSE" ]; then
+        echo "Error uploading chunk $(($CHUNK_INDEX+1)) - No response from server"
+        rm -rf "$TEMP_DIR"
+        exit 1
+    elif echo "$RESPONSE" | grep -q "success.*true"; then
         echo "Chunk $(($CHUNK_INDEX+1))/$CHUNK_COUNT uploaded successfully"
     else
         echo "Error uploading chunk $(($CHUNK_INDEX+1))"
@@ -167,7 +174,11 @@ if ! echo "$RESPONSE" | grep -q "chunks"; then
         
         echo "Server response: $RESPONSE"
         
-        if echo "$RESPONSE" | grep -q "success.*true"; then
+        if [ -z "$RESPONSE" ]; then
+            echo "Error finalizing upload - No response from server"
+            rm -rf "$TEMP_DIR"
+            exit 1
+        elif echo "$RESPONSE" | grep -q "success.*true"; then
             echo "Upload completed successfully"
         else
             echo "Error finalizing upload"
