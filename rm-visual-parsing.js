@@ -56,64 +56,34 @@ function extractJson(rawData) {
  * @param {number} depth - Current recursion depth
  * @returns {Array} Array of formatted file entries for dialog display
  */
-function processFiles(jsonData, prefix = "", depth = 0) {
-  const result = [];
-
-  // Safety check to prevent infinite recursion
-  if (depth > 10) {
-    console.log(
-      "Warning: Maximum directory depth reached (10). Stopping recursion."
-    );
-    return result;
+function processFiles(jsonData) {
+  function generateTree(entries, prefix) {
+    let res = [];
+    for (let i = 0; i < entries.length; i++) {
+      let entry = entries[i];
+      let isLast = i === entries.length - 1;
+      let branch = isLast ? "└── " : "├── ";
+      if (entry.is_dir === true) {
+        let line = `${prefix}${branch}${entry.name}/ <DIR>`;
+        res.push({ path: entry.path, display: line, selected: false });
+        if (entry.children && Array.isArray(entry.children)) {
+          let newPrefix = prefix + (isLast ? "    " : "│   ");
+          res.push(...generateTree(entry.children, newPrefix));
+        }
+      } else {
+        let line = `${prefix}${branch}${entry.name} (${
+          entry.size_formatted || "0B"
+        })`;
+        res.push({ path: entry.path, display: line, selected: false });
+      }
+    }
+    return res;
   }
-
   if (!Array.isArray(jsonData)) {
     console.log("Error: Expected JSON array but got:", typeof jsonData);
-    return result;
+    return [];
   }
-
-  console.log(`Found ${jsonData.length} items in the JSON array`);
-
-  // Iterate over each item in the JSON array
-  for (let i = 0; i < jsonData.length; i++) {
-    const item = jsonData[i];
-
-    // Extract fields from the current item
-    const name = item.name || "";
-    const filePath = item.path || "";
-    const isDir = item.is_dir === true;
-    const size = item.size_formatted || "0B";
-
-    // Skip if name or path is empty
-    if (!name || !filePath) {
-      console.log(`Warning: Item ${i} has empty name or path, skipping`);
-      continue;
-    }
-
-    // Process directories
-    if (isDir) {
-      // Add the directory name with a trailing slash
-      const newPrefix = `${prefix}${name}/`;
-      console.log(`Processing directory: ${newPrefix}`);
-
-      // Check if the directory has children
-      if (item.children && Array.isArray(item.children)) {
-        // Recursively process the children
-        const childResults = processFiles(item.children, newPrefix, depth + 1);
-        result.push(...childResults);
-      }
-    } else {
-      // Process files
-      const display = `${prefix}${name}`;
-      result.push({
-        path: filePath,
-        display: `${display} (${size})`,
-        selected: false,
-      });
-    }
-  }
-
-  return result;
+  return generateTree(jsonData, "");
 }
 
 /**
