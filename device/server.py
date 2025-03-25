@@ -11,6 +11,7 @@ from wifi import (
     save_wifi_config,
     wifi_config,
     wifi_connect_thread,
+    get_current_network,
 )
 from fs import (
     get_hierarchical_list_with_sizes,
@@ -123,12 +124,17 @@ def get_settings(request):
 
 @app.route("/api/settings/data")
 def get_settings_data(request):
+    current_network = get_current_network()
     return Response(
         body=json.dumps(
             {
                 "is_connected": is_connected(),
                 "ip_address": get_ip(),
-                "ssid": (wifi_config.get("networks", [{}])[0]).get("ssid", ""),
+                "current_ssid": current_network["ssid"] if current_network else "",
+                "networks": wifi_config.get(
+                    "networks",
+                    [{"ssid": "", "password": ""}, {"ssid": "", "password": ""}],
+                ),
             }
         ),
         headers={"Content-Type": "application/json"},

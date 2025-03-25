@@ -187,8 +187,19 @@
                 .then(data => {
                     document.getElementById('connectionStatus').textContent = data.is_connected ? 'Connected' : 'Not Connected';
                     document.getElementById('ipAddress').textContent = data.ip_address;
-                    document.getElementById('currentSSID').textContent = data.ssid;
-                    document.getElementById('ssid').value = data.ssid;
+                    document.getElementById('currentSSID').textContent = data.current_ssid || 'Not connected';
+
+                    // Set primary network values
+                    if (data.networks && data.networks[0]) {
+                        document.getElementById('primary_ssid').value = data.networks[0].ssid || '';
+                        document.getElementById('primary_password').value = data.networks[0].password || '';
+                    }
+
+                    // Set secondary network values
+                    if (data.networks && data.networks[1]) {
+                        document.getElementById('secondary_ssid').value = data.networks[1].ssid || '';
+                        document.getElementById('secondary_password').value = data.networks[1].password || '';
+                    }
                 })
                 .catch(error => {
                     console.error('Error loading settings:', error);

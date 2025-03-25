@@ -137,10 +137,30 @@ def is_connected():
 
 def get_current_network():
     """Get the currently connected network information"""
-    if current_network_index >= 0 and sta.isconnected():
+    if not sta.isconnected():
+        return None
+
+    # If we have a known current network index, use that
+    if current_network_index >= 0:
         return {
             "index": current_network_index,
             "ssid": wifi_config["networks"][current_network_index]["ssid"],
             "is_primary": current_network_index == 0,
         }
-    return None
+
+    # If we don't know the index but are connected, try to match the SSID
+    current_ssid = sta.config("essid")
+    for i, net in enumerate(wifi_config["networks"]):
+        if net["ssid"] == current_ssid:
+            return {
+                "index": i,
+                "ssid": current_ssid,
+                "is_primary": i == 0,
+            }
+
+    # Connected but not to a configured network
+    return {
+        "index": -1,
+        "ssid": current_ssid,
+        "is_primary": False,
+    }

@@ -389,7 +389,7 @@ case "$COMMAND" in
                 # If no target path
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $(basename "$FILE_PATH")..."
                 # Export variables and functions for upload_chunked.sh
-                export ESP_IP
+                export ESP_IP AP_IP USE_AP_IP
                 # Call the upload script
                 "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH"
                 upload_result=$?
@@ -475,29 +475,107 @@ case "$COMMAND" in
         fi
       done
       
-      # Upload all files at once using the upload command
+      # Upload files individually with proper AP fallback handling
       if [ "$DRY_RUN" == false ]; then
-        echo "Uploading files using comma-separated list feature:"
-        echo "$FILE_LIST"
+        echo "Uploading files individually:"
         
-        # Pass the --ap flag if it was used, capturing output for error detection
+        # Track if we should use AP IP for remaining uploads
+        FORCE_AP_MODE=false
         if [ "$USE_AP_IP" = true ]; then
-          upload_output=$("$0" --ap upload "$FILE_LIST")
-        else
-          upload_output=$("$0" upload "$FILE_LIST")
-        fi
-        upload_status=$?
-        echo "$upload_output"
-        if [ "$upload_status" -ne 0 ] || echo "$upload_output" | grep -q "Error uploading"; then
-          echo "Error: File upload failed. Timestamp not updated."
-          exit 1
+          FORCE_AP_MODE=true
         fi
         
-        # Note: We don't need to explicitly reset here because the upload command
-        # will already handle resetting if any .py files were uploaded
+        # Count for progress reporting
+        TOTAL_FILES=${#FILES[@]}
+        CURRENT_FILE=0
+        SUCCESSFUL_UPLOADS=0
+        
+        for file in "${FILES[@]}"; do
+          CURRENT_FILE=$((CURRENT_FILE + 1))
+          echo "------- Uploading file $CURRENT_FILE of $TOTAL_FILES: $file -------"
+          
+          # Build the upload command with or without AP flag
+          UPLOAD_CMD="$0"
+          if [ "$FORCE_AP_MODE" = true ]; then
+            UPLOAD_CMD="$UPLOAD_CMD --ap"
+          fi
+          
+          # Execute the upload command
+          echo "Running: $UPLOAD_CMD upload \"$file\""
+          upload_output=$($UPLOAD_CMD upload "$file" 2>&1)
+          upload_status=$?
+          echo "$upload_output"
+          
+          # Check if the upload succeeded, if not check for AP IP fallback in output
+          if [ "$upload_status" -ne 0 ] || echo "$upload_output" | grep -q "Error"; then
+            # If the output contains a message about falling back to AP IP, try again with AP flag
+            if [ "$FORCE_AP_MODE" = false ] && echo "$upload_output" | grep -q "Trying AP IP address"; then
+              echo "Falling back to AP IP address for this and future uploads"
+              FORCE_AP_MODE=true
+              
+              # Retry the upload with AP flag
+              UPLOAD_CMD="$0 --ap"
+              echo "Retrying with: $UPLOAD_CMD upload \"$file\""
+              upload_output=$($UPLOAD_CMD upload "$file" 2>&1)
+              upload_status=$?
+              echo "$upload_output"
+              
+              # Check if retry succeeded
+              if [ "$upload_status" -ne 0 ] || echo "$upload_output" | grep -q "Error"; then
+                echo "Error: Upload of $file failed even with AP IP. Sync aborted."
+                exit 1
+              else
+                SUCCESSFUL_UPLOADS=$((SUCCESSFUL_UPLOADS + 1))
+              fi
+            else
+              echo "Error: Upload of $file failed. Sync aborted."
+              exit 1
+            fi
+          else
+            SUCCESSFUL_UPLOADS=$((SUCCESSFUL_UPLOADS + 1))
+          fi
+          
+          # Add a short delay between uploads to prevent overwhelming the ESP32
+          if [ $CURRENT_FILE -lt $TOTAL_FILES ]; then
+            echo "Waiting briefly before next file upload..."
+            sleep 1
+          fi
+        done
+        
+        echo "Successfully uploaded $SUCCESSFUL_UPLOADS out of $TOTAL_FILES files."
+        
+        # Check if any Python files were uploaded, if so reset the device
+        if [ "$FORCE_AP_MODE" = true ]; then
+          PYTHON_FILES=0
+          for file in "${FILES[@]}"; do
+            if [[ "$file" == *.py ]]; then
+              PYTHON_FILES=$((PYTHON_FILES + 1))
+            fi
+          done
+          
+          if [ $PYTHON_FILES -gt 0 ]; then
+            echo "$PYTHON_FILES Python files were uploaded. Resetting device..."
+            "$0" --ap reset
+          fi
+        else
+          # Check for Python files again since we're not using AP mode
+          PYTHON_FILES=0
+          for file in "${FILES[@]}"; do
+            if [[ "$file" == *.py ]]; then
+              PYTHON_FILES=$((PYTHON_FILES + 1))
+            fi
+          done
+          
+          if [ $PYTHON_FILES -gt 0 ]; then
+            echo "$PYTHON_FILES Python files were uploaded. Resetting device..."
+            "$0" reset
+          fi
+        fi
       else
         echo "Would upload these files (dry run):"
-        echo "$FILE_LIST"
+        for file in "${FILES[@]}"; do
+          echo "  $file"
+        done
       fi
     fi
 
