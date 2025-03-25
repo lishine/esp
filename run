@@ -5,7 +5,7 @@
 # Get the script directory
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 IP_JSON_FILE="$SCRIPT_DIR/ip.json"
-UPLOAD_CHUNKED_SCRIPT_PATH="$SCRIPT_DIR/device/upload_chunked.sh"
+UPLOAD_CHUNKED_SCRIPT_PATH="$SCRIPT_DIR/upload_chunked.sh"
 
 # Function to check if jq is available
 check_jq() {
