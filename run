@@ -65,7 +65,6 @@ check_sync_needed() {
 }
 
 AP_IP="192.168.4.1"
-AP_IP="192.168.4.1"
 
 # Check if --ap flag is used
 USE_AP_IP=false
@@ -100,10 +99,12 @@ show_usage() {
     echo "  reset                  - Reset the ESP32 device"
     echo "  log                    - View device logs"
     echo "  la                     - List all files on the device"
+    echo "  fs-list                - Get JSON file listing for visual tools"
     echo "  free                   - Show free memory on the device"
     echo "  ping                   - Check if the device is responding"
     echo "  status                 - Check device status and update IP file if needed"
     echo "  rm <path>              - Remove a file from the device"
+    echo "  rm --visual            - Interactive visual file removal"
     echo "  download <path>        - Download a file from the device"
     echo "  view <path>            - View the contents of a file on the device"
     echo "  upload <file(s)> [target] - Upload one or more files (comma-separated) using upload_chunked.sh"
@@ -116,6 +117,8 @@ show_usage() {
     echo "  ./run --ap log         - View device logs using AP IP"
     echo "  ./run status           - Check device status and update IP file"
     echo "  ./run rm main.py       - Remove main.py from the device"
+    echo "  ./run rm --visual      - Remove files using interactive selection"
+    echo "  ./run rm --visual      - Remove files using interactive selection"
     echo "  ./run upload settings.html - Upload settings.html to the device"
     echo "  ./run upload main.py,config.txt - Upload multiple files"
     echo "  ./run upload main.py /app/ - Upload main.py to /app/ directory"
@@ -206,6 +209,12 @@ case "$COMMAND" in
         echo "Listing all files on ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/la"
         ;;
+        
+  fs-list)
+        check_sync_needed
+        echo "Getting JSON file listing from ESP32 at $ESP_IP..."
+        make_request "http://$ESP_IP/fs-list"
+        ;;
     
   free)
         check_sync_needed
@@ -262,9 +271,16 @@ case "$COMMAND" in
     
   rm)
         check_sync_needed
+        # Check if --visual flag is used
+        if [ ${#ARGS[@]} -gt 0 ] && [ "${ARGS[0]}" == "--visual" ]; then
+            # Run the visual rm script
+            "$SCRIPT_DIR/rm-visual-simple"
+            exit 0
+        fi
+        
         if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path"
-            echo "Usage: ./run rm <path>"
+            echo "Usage: ./run rm <path> or ./run rm --visual"
             exit 1
         fi
         FILE_PATH="${ARGS[0]}"

@@ -1,0 +1,209 @@
+#!/bin/bash
+# Interactive visual file removal tool for ESP32 (DEMO VERSION)
+# This is a demonstration version that doesn't require actual ESP32 connectivity
+
+# Check if dialog is installed
+if ! command -v dialog &> /dev/null; then
+    echo "Error: dialog is not installed but required by this script."
+    echo "Please install dialog using one of the following methods:"
+    echo "  - macOS: brew install dialog"
+    echo "  - Ubuntu/Debian: sudo apt-get install dialog"
+    echo "  - Fedora/RHEL: sudo dnf install dialog"
+    exit 1
+fi
+
+# Check if jq is installed
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq is not installed but required by this script."
+    echo "Please install jq using one of the following methods:"
+    echo "  - macOS: brew install jq"
+    echo "  - Ubuntu/Debian: sudo apt-get install jq"
+    echo "  - Fedora/RHEL: sudo dnf install jq"
+    exit 1
+fi
+
+# Create temporary files
+TEMP_FILE=$(mktemp)
+SELECTED_FILES=$(mktemp)
+JSON_FILE=$(mktemp)
+
+# Check if node.js is installed
+if ! command -v node &> /dev/null; then
+    echo "Error: node.js is not installed but required by this script."
+    echo "Please install node.js using one of the following methods:"
+    echo "  - macOS: brew install node"
+    echo "  - Ubuntu/Debian: sudo apt-get install nodejs"
+    echo "  - Fedora/RHEL: sudo dnf install nodejs"
+    exit 1
+fi
+
+# Get the script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Create a mock JSON file list (simulating ESP32 file listing)
+cat > "$JSON_FILE" << EOF
+[
+  {
+    "name": "boot.py",
+    "path": "boot.py",
+    "is_dir": false,
+    "size": 487,
+    "size_formatted": "487B"
+  },
+  {
+    "name": "main.py",
+    "path": "main.py",
+    "is_dir": false,
+    "size": 99,
+    "size_formatted": "99B"
+  },
+  {
+    "name": "fs.py",
+    "path": "fs.py",
+    "is_dir": false,
+    "size": 7782,
+    "size_formatted": "7.6K"
+  },
+  {
+    "name": "server.py",
+    "path": "server.py",
+    "is_dir": false,
+    "size": 7578,
+    "size_formatted": "7.4K"
+  },
+  {
+    "name": "settings.html",
+    "path": "settings.html",
+    "is_dir": false,
+    "size": 10752,
+    "size_formatted": "10.5K"
+  },
+  {
+    "name": "microdot",
+    "path": "microdot",
+    "is_dir": true,
+    "size": 0,
+    "size_formatted": "<DIR>",
+    "children": [
+      {
+        "name": "__init__.py",
+        "path": "microdot/__init__.py",
+        "is_dir": false,
+        "size": 38,
+        "size_formatted": "38B"
+      },
+      {
+        "name": "microdot.py",
+        "path": "microdot/microdot.py",
+        "is_dir": false,
+        "size": 55603,
+        "size_formatted": "54.3K"
+      }
+    ]
+  },
+  {
+    "name": "captive.py",
+    "path": "captive.py",
+    "is_dir": false,
+    "size": 4608,
+    "size_formatted": "4.5K"
+  },
+  {
+    "name": "led.py",
+    "path": "led.py",
+    "is_dir": false,
+    "size": 2252,
+    "size_formatted": "2.2K"
+  },
+  {
+    "name": "log.py",
+    "path": "log.py",
+    "is_dir": false,
+    "size": 831,
+    "size_formatted": "831B"
+  },
+  {
+    "name": "network.py",
+    "path": "network.py",
+    "is_dir": false,
+    "size": 1229,
+    "size_formatted": "1.2K"
+  },
+  {
+    "name": "netutils.py",
+    "path": "netutils.py",
+    "is_dir": false,
+    "size": 1229,
+    "size_formatted": "1.2K"
+  },
+  {
+    "name": "upload.py",
+    "path": "upload.py",
+    "is_dir": false,
+    "size": 4915,
+    "size_formatted": "4.8K"
+  }
+]
+EOF
+
+echo "This is a DEMO version of the rm-visual script."
+echo "In the real version, this would fetch the actual file list from the ESP32."
+echo ""
+
+# Use the JavaScript parser to process the file list
+echo "Parsing JSON data using JavaScript parser..."
+if node "$SCRIPT_DIR/rm-visual-parsing.js" "$JSON_FILE" "$TEMP_FILE"; then
+    echo "Successfully parsed and processed the file list."
+else
+    echo "Error: Failed to parse the file list."
+    rm "$TEMP_FILE" "$SELECTED_FILES" "$JSON_FILE" 2>/dev/null
+    exit 1
+fi
+
+# Display dialog checklist with hierarchical view
+dialog --title "Select Files to Delete (DEMO)" \
+       --backtitle "ESP32 File Manager" \
+       --checklist "Use SPACE to select files, ENTER to confirm:" 25 80 20 \
+       --file "$TEMP_FILE" 2> "$SELECTED_FILES"
+
+# Check if user canceled
+if [ $? -ne 0 ]; then
+    echo "Operation canceled."
+    rm "$TEMP_FILE" "$SELECTED_FILES" "$JSON_FILE" /tmp/esp32-children-demo.json 2>/dev/null
+    exit 0
+fi
+
+# Process selected files
+if [ -s "$SELECTED_FILES" ]; then
+    # Remove quotes from the selected files
+    SELECTED=$(cat "$SELECTED_FILES" | tr -d '"')
+    
+    # Count selected files
+    FILE_COUNT=$(echo "$SELECTED" | wc -w)
+    
+    if [ "$FILE_COUNT" -gt 0 ]; then
+        echo "You selected $FILE_COUNT file(s) to delete:"
+        echo "$SELECTED"
+        echo ""
+        
+        # Ask for confirmation
+        read -p "In the real version, these files would be deleted from the ESP32. Continue? (y/n): " confirm
+        if [[ "$confirm" =~ ^[Yy]$ ]]; then
+            echo "DEMO: This is where the files would be deleted."
+            for file in $SELECTED; do
+                echo "DEMO: Would delete $file..."
+                # In the real version: ./run rm "$file"
+            done
+            echo "DEMO: Deletion complete."
+        else
+            echo "Operation canceled."
+        fi
+    else
+        echo "No files selected."
+    fi
+else
+    echo "No files selected."
+fi
+
+# Clean up temporary files
+rm "$TEMP_FILE" "$SELECTED_FILES" "$JSON_FILE" /tmp/esp32-children-demo.json 2>/dev/null

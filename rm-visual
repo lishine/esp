@@ -1,0 +1,138 @@
+#!/bin/bash
+# Interactive visual file removal tool for ESP32
+# Uses dialog for interactive selection with hierarchical view
+
+# Check if dialog is installed
+if ! command -v dialog &> /dev/null; then
+    echo "Error: dialog is not installed but required by this script."
+    echo "Please install dialog using one of the following methods:"
+    echo "  - macOS: brew install dialog"
+    echo "  - Ubuntu/Debian: sudo apt-get install dialog"
+    echo "  - Fedora/RHEL: sudo dnf install dialog"
+    exit 1
+fi
+
+# Check if jq is installed (needed by the run script)
+if ! command -v jq &> /dev/null; then
+    echo "Error: jq is not installed but required by the run script."
+    echo "Please install jq using one of the following methods:"
+    echo "  - macOS: brew install jq"
+    echo "  - Ubuntu/Debian: sudo apt-get install jq"
+    echo "  - Fedora/RHEL: sudo dnf install jq"
+    exit 1
+fi
+
+# Get the script directory
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+
+# Create temporary files
+TEMP_FILE=$(mktemp)
+SELECTED_FILES=$(mktemp)
+JSON_FILE=$(mktemp)
+
+# Get file listing from ESP32 in JSON format
+echo "Fetching file list from ESP32..."
+FILE_LIST=$(./run fs-list 2>&1)
+RESULT=$?
+
+# Check if the command was successful
+if [ $RESULT -ne 0 ]; then
+    echo "Error: Failed to get file list from ESP32"
+    echo "The 'run fs-list' command returned the following error:"
+    echo "$FILE_LIST"
+    echo ""
+    echo "Please check your ESP32 connection and try again."
+    rm "$TEMP_FILE" "$SELECTED_FILES" "$JSON_FILE" 2>/dev/null
+    exit 1
+fi
+
+# Check if the output is empty
+if [ -z "$FILE_LIST" ]; then
+    echo "Error: The file list is empty."
+    echo "Please check your ESP32 connection and try again."
+    rm "$TEMP_FILE" "$SELECTED_FILES" "$JSON_FILE" 2>/dev/null
+    exit 1
+fi
+
+# Check if node.js is installed
+if ! command -v node &> /dev/null; then
+    echo "Error: node.js is not installed but required by this script."
+    echo "Please install node.js using one of the following methods:"
+    echo "  - macOS: brew install node"
+    echo "  - Ubuntu/Debian: sudo apt-get install nodejs"
+    echo "  - Fedora/RHEL: sudo dnf install nodejs"
+    exit 1
+fi
+
+# Save the raw file list to a temporary file
+echo "$FILE_LIST" > "$JSON_FILE.raw"
+
+# Use the JavaScript parser to process the file list
+echo "Parsing JSON data using JavaScript parser..."
+if node "$SCRIPT_DIR/rm-visual-parsing.js" "$JSON_FILE.raw" "$TEMP_FILE"; then
+    echo "Successfully parsed and processed the file list."
+else
+    echo "Error: Failed to parse the file list."
+    echo "Raw output:"
+    cat "$JSON_FILE.raw"
+    rm "$TEMP_FILE" "$SELECTED_FILES" "$JSON_FILE"* 2>/dev/null
+    exit 1
+fi
+
+# Check if we have any files to show
+if [ ! -s "$TEMP_FILE" ]; then
+    echo "No files found or could not parse the file list."
+    echo "Please check your ESP32 connection and try again."
+    
+    # Clean up
+    rm "$TEMP_FILE" "$SELECTED_FILES" "$JSON_FILE"* /tmp/esp32-children-*.json 2>/dev/null
+    exit 1
+fi
+
+# Display dialog checklist with hierarchical view
+dialog --title "Select Files to Delete" \
+       --backtitle "ESP32 File Manager" \
+       --checklist "Use SPACE to select files, ENTER to confirm:" 25 80 20 \
+       --file "$TEMP_FILE" 2> "$SELECTED_FILES"
+
+# Check if user canceled
+if [ $? -ne 0 ]; then
+    echo "Operation canceled."
+    rm "$TEMP_FILE" "$SELECTED_FILES" "$JSON_FILE"* /tmp/esp32-children-*.json 2>/dev/null
+    exit 0
+fi
+
+# Process selected files
+if [ -s "$SELECTED_FILES" ]; then
+    # Remove quotes from the selected files
+    SELECTED=$(cat "$SELECTED_FILES" | tr -d '"')
+    
+    # Count selected files
+    FILE_COUNT=$(echo "$SELECTED" | wc -w)
+    
+    if [ "$FILE_COUNT" -gt 0 ]; then
+        echo "You selected $FILE_COUNT file(s) to delete:"
+        echo "$SELECTED"
+        echo ""
+        
+        # Ask for confirmation
+        read -p "Are you sure you want to delete these files? (y/n): " confirm
+        if [[ "$confirm" =~ ^[Yy]$ ]]; then
+            # Delete each selected file
+            for file in $SELECTED; do
+                echo "Deleting $file..."
+                ./run rm "$file"
+            done
+            echo "Deletion complete."
+        else
+            echo "Operation canceled."
+        fi
+    else
+        echo "No files selected."
+    fi
+else
+    echo "No files selected."
+fi
+
+# Clean up temporary files
+rm "$TEMP_FILE" "$SELECTED_FILES" "$JSON_FILE"* /tmp/esp32-children-*.json 2>/dev/null
