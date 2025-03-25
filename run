@@ -389,7 +389,7 @@ case "$COMMAND" in
                 # If no target path
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $(basename "$FILE_PATH")..."
                 # Export variables and functions for upload_chunked.sh
-                export ESP_IP AP_IP USE_AP_IP
+                export ESP_IP
                 # Call the upload script
                 "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH"
                 upload_result=$?
