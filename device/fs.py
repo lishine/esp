@@ -140,21 +140,29 @@ def get_file_list(path=".", prefix="", is_last=True):
 
             try:
                 # Check if it's a directory (try to list it)
-                os.listdir(full_path)
-                # It's a directory
-                result.append(line_prefix + file + "/")
-                # Recursively get files from subdirectory
-                subdir_prefix = prefix + ("    " if is_current_last else "│   ")
-                subdir_files = get_file_list(full_path, subdir_prefix, is_current_last)
-                if subdir_files:
-                    result.extend(subdir_files)
-            except:
-                # Not a directory or can't access, treat as file
-                result.append(line_prefix + file)
+                is_dir = False
+                try:
+                    os.listdir(full_path)
+                    is_dir = True
+                except:
+                    pass
 
-        # Add root directory indicator if at top level
-        if prefix == "":
-            result.insert(0, ".")
+                if is_dir:
+                    # It's a directory
+                    result.append(f"{line_prefix}{file}/")
+                    # Recursively get files from subdirectory
+                    subdir_prefix = prefix + ("    " if is_current_last else "│   ")
+                    subdir_files = get_file_list(
+                        full_path, subdir_prefix, is_current_last
+                    )
+                    if subdir_files:
+                        result.extend(subdir_files)
+                else:
+                    # It's a file
+                    result.append(f"{line_prefix}{file}")
+            except Exception as e:
+                # Error accessing file/directory
+                result.append(f"{line_prefix}{file} (ERROR: {str(e)})")
 
         return result
     except Exception as e:
@@ -176,24 +184,6 @@ def is_dir(path):
     try:
         return (os.stat(path)[0] & 0x4000) != 0
     except:
-        return False
-
-
-def create_dirs(path):
-    """Create directories recursively"""
-    try:
-        parts = path.split("/")
-        current_path = ""
-
-        for part in parts:
-            if not part:
-                continue
-            current_path = current_path + "/" + part if current_path else part
-            if not exists(current_path):
-                os.mkdir(current_path)
-        return True
-    except Exception as e:
-        log(f"Error creating directories: {e}")
         return False
 
 
@@ -247,3 +237,54 @@ def remove_empty_parents(path):
     except Exception as e:
         log(f"Error removing parent directories for {path}: {e}")
         return False
+
+
+def get_hierarchical_json(path=".", include_dirs=True):
+    """
+    Get a recursive list of files in JSON format
+    Returns a list of dictionaries with file information
+    """
+    log("get_hierarchical_json")
+    try:
+        result = []
+        files = os.listdir(path)
+        files.sort()
+
+        for file in files:
+            full_path = path + "/" + file if path != "." else file
+            try:
+                # Get file stats
+                stat = os.stat(full_path)
+                # Size in bytes
+                size = stat[6]
+                # Check if it's a directory
+                is_dir = (stat[0] & 0x4000) != 0
+
+                # Create file entry
+                entry = {
+                    "name": file,
+                    "path": full_path,
+                    "is_dir": is_dir,
+                    "size": size,
+                    "size_formatted": format_size(size) if not is_dir else "<DIR>",
+                }
+
+                # Add children for directories
+                if is_dir:
+                    if include_dirs:
+                        entry["children"] = get_hierarchical_json(
+                            full_path, include_dirs
+                        )
+                        result.append(entry)
+                else:
+                    # It's a file
+                    result.append(entry)
+
+            except Exception as e:
+                # Error accessing file/directory
+                result.append({"name": file, "path": full_path, "error": str(e)})
+
+        return result
+    except Exception as e:
+        log(f"Error creating JSON file list: {e}")
+        return []

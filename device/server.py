@@ -14,6 +14,7 @@ from wifi import (
 )
 from fs import (
     get_hierarchical_list_with_sizes,
+    get_hierarchical_json,
     exists,
     remove_if_empty_or_file,
     remove_empty_parents,
@@ -76,6 +77,15 @@ def list_files_hierarchical(request):
     """List files in a hierarchical format with sizes"""
     files = get_hierarchical_list_with_sizes()
     return "\n".join(files)
+
+
+@app.route("/fs-list")
+def list_files_json(request):
+    """List files in a hierarchical JSON format"""
+    files = get_hierarchical_json()
+    return Response(
+        body=json.dumps(files), headers={"Content-Type": "application/json"}
+    )
 
 
 @app.route("/view/<path:filename>")
