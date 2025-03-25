@@ -301,7 +301,7 @@ case "$COMMAND" in
         # Check if --visual flag is used
         if [ ${#ARGS[@]} -gt 0 ] && [ "${ARGS[0]}" == "--visual" ]; then
             # Run the visual rm script
-            "$SCRIPT_DIR/rm-visual-simple"
+            "$SCRIPT_DIR/rm-visual"
             exit 0
         fi
         
