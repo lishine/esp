@@ -80,8 +80,9 @@ done
 if [ "$USE_AP_IP" = true ]; then
     ESP_IP="$AP_IP"
     echo "Using AP IP address: $ESP_IP"
-elif read_ip_from_json; then
-    ESP_IP=$(read_ip_from_json)
+elif read_ip_from_json >/dev/null; then
+    # Capture the IP value separately without showing output
+    ESP_IP=$(read_ip_from_json 2>/dev/null)
 else
     echo "Warning: IP file not found at $IP_JSON_FILE"
     echo "Using AP IP address instead: $AP_IP"
