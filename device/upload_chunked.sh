@@ -71,12 +71,7 @@ if [ $FILE_SIZE -le $CHUNK_SIZE ]; then
     
     # Use the original file directly - no need for temp files
     echo "Using simplified upload for small file"
-    RESPONSE=$(curl -s -X POST \
-        -H "X-Chunk-Index: 0" \
-        -H "X-Total-Chunks: 1" \
-        -H "Content-Type: application/octet-stream" \
-        --data-binary "@${FILE_PATH}" \
-        "$UPLOAD_URL")
+    RESPONSE=$(make_request "$UPLOAD_URL" "POST" "" "X-Chunk-Index: 0" "X-Total-Chunks: 1" "Content-Type: application/octet-stream" "--data-binary" "@${FILE_PATH}")
     echo "$FILE_PATH"
     echo "$UPLOAD_URL"
     echo "Server response: $RESPONSE"
@@ -131,12 +126,7 @@ while [ $CHUNK_INDEX -lt $CHUNK_COUNT ]; do
     echo -n "Uploading chunk $(($CHUNK_INDEX+1))/$CHUNK_COUNT (${CHUNK_SIZE_ACTUAL} bytes): "
     show_progress $PERCENT
     
-    RESPONSE=$(curl -s -X POST \
-        --data-binary @"$CHUNK_FILE" \
-        -H "Content-Type: application/octet-stream" \
-        -H "X-Chunk-Index: $CHUNK_INDEX" \
-        -H "X-Total-Chunks: $CHUNK_COUNT" \
-        "$UPLOAD_URL")
+    RESPONSE=$(make_request "$UPLOAD_URL" "POST" "" "X-Chunk-Index: $CHUNK_INDEX" "X-Total-Chunks: $CHUNK_COUNT" "Content-Type: application/octet-stream" "--data-binary" "@$CHUNK_FILE")
     
     echo -e "\nServer response: $RESPONSE"
     
@@ -165,12 +155,7 @@ if ! echo "$RESPONSE" | grep -q "chunks"; then
     # If not, and we have multiple chunks, send a completion request
     if [ $CHUNK_COUNT -gt 1 ]; then
         echo "All chunks uploaded. Finalizing..."
-        RESPONSE=$(curl -s -X POST \
-            -H "Content-Length: 0" \
-            -H "Content-Type: application/octet-stream" \
-            -H "X-Is-Complete: true" \
-            -H "X-Total-Chunks: $CHUNK_COUNT" \
-            "$UPLOAD_URL")
+        RESPONSE=$(make_request "$UPLOAD_URL" "POST" "" "Content-Length: 0" "Content-Type: application/octet-stream" "X-Is-Complete: true" "X-Total-Chunks: $CHUNK_COUNT")
         
         echo "Server response: $RESPONSE"
         

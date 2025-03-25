@@ -134,6 +134,25 @@ make_request() {
     local timeout=3
     local curl_opts="-s -m $timeout"
     
+    # Process additional headers and options
+    shift 3 || true
+    local headers=()
+    local data_options=()
+    
+    while [ $# -gt 0 ]; do
+        if [[ "$1" == "--data-binary" ]]; then
+            data_options+=("$1" "$2")
+            shift 2
+        elif [[ "$1" == *":"* ]]; then
+            headers+=("-H" "$1")
+            shift
+        else
+            # Handle other options
+            data_options+=("$1")
+            shift
+        fi
+    done
+    
     if [ -n "$output_file" ]; then
         curl_opts="$curl_opts -o $output_file"
     fi
@@ -144,7 +163,7 @@ make_request() {
     
     # Try with the current IP
     local response
-    response=$(curl $curl_opts "$url" 2>/dev/null)
+    response=$(curl $curl_opts "${headers[@]}" "${data_options[@]}" "$url" 2>/dev/null)
     local status=$?
 
     if [ $status -eq 0 ]; then
@@ -160,7 +179,7 @@ make_request() {
             # Replace the IP in the URL
             local ap_url="${url/$ESP_IP/$AP_IP}"
             
-            response=$(curl $curl_opts "$ap_url" 2>/dev/null)
+            response=$(curl $curl_opts "${headers[@]}" "${data_options[@]}" "$ap_url" 2>/dev/null)
             status=$?
             
             if [ $status -eq 0 ]; then
@@ -176,6 +195,9 @@ make_request() {
         fi
     fi
 }
+
+# Export the make_request function so it can be used by upload_chunked.sh
+export -f make_request
 
 # Check if a command was provided
 if [ $# -lt 1 ]; then
@@ -354,8 +376,10 @@ case "$COMMAND" in
             if [ -n "$TARGET_PATH" ]; then
                 # If target path is specified
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $TARGET_PATH$(basename "$FILE_PATH")..."
-                # Set environment variable for upload_chunked.sh to use the correct IP
-                ESP_IP="$ESP_IP" "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH" "$TARGET_PATH$(basename "$FILE_PATH")"
+                # Export variables and functions for upload_chunked.sh
+                export ESP_IP AP_IP USE_AP_IP
+                # Call the upload script
+                "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH" "$TARGET_PATH$(basename "$FILE_PATH")"
                 upload_result=$?
                 if [ "$upload_result" -ne 0 ]; then
                   echo "Error: Upload of $FILE_PATH failed."
@@ -364,8 +388,10 @@ case "$COMMAND" in
             else
                 # If no target path
                 echo "Uploading $FILE_PATH to ESP32 at $ESP_IP as $(basename "$FILE_PATH")..."
-                # Set environment variable for upload_chunked.sh to use the correct IP
-                ESP_IP="$ESP_IP" "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH"
+                # Export variables and functions for upload_chunked.sh
+                export ESP_IP AP_IP USE_AP_IP
+                # Call the upload script
+                "$UPLOAD_CHUNKED_SCRIPT_PATH" "$FILE_PATH"
                 upload_result=$?
                 if [ "$upload_result" -ne 0 ]; then
                   echo "Error: Upload of $FILE_PATH failed."
