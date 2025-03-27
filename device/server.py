@@ -187,8 +187,73 @@ def status(request):
 
 @app.route("/log")
 def show_log(request):
-    # Join lines with newline for proper display
-    return "\n".join(get_recent_logs(100))
+    # Iteratively consume the generator to build the response string
+    # This avoids creating a large list in memory.
+    log_generator = get_recent_logs(limit=100)
+    response_body = ""
+    try:
+        for line in log_generator:
+            response_body += line  # Generator yields lines with '\n'
+    except Exception as e:
+        log(f"Error consuming log generator in /log route: {e}")
+        return "Internal Server Error reading logs", 500
+    return Response(body=response_body, headers={"Content-Type": "text/plain"})
+
+
+@app.route("/log/infinite")
+def log_viewer(request):
+    """Serve the HTML page for the infinite log viewer."""
+    try:
+        # Use send_file for potentially better memory management if available,
+        # otherwise stream manually. Microdot might not have send_file.
+        def generate_html():
+            chunk_size = (
+                1024  # Smaller chunks might be better for memory constrained devices
+            )
+            try:
+                with open("log_viewer.html", "r") as f:
+                    while True:
+                        chunk = f.read(chunk_size)
+                        if not chunk:
+                            break
+                        yield chunk
+            except OSError:
+                yield "Log viewer HTML file not found."
+
+        return Response(body=generate_html(), headers={"Content-Type": "text/html"})  # type: ignore
+    except Exception as e:
+        log(f"Error serving log_viewer.html: {e}")
+        return "Error loading log viewer.", 500
+
+
+@app.route("/api/log/chunk")
+def api_log_chunk(request):
+    """API endpoint to fetch log chunks with offset, limit, and timestamp filtering."""
+    try:
+        # Get query parameters, providing defaults
+        limit = int(request.args.get("limit", 150))
+        offset = int(request.args.get("offset", 0))
+        newer_than_str = request.args.get("newer_than_timestamp_ms")
+
+        newer_than_timestamp_ms = None
+        if newer_than_str:
+            try:
+                newer_than_timestamp_ms = int(newer_than_str)
+            except ValueError:
+                return "Invalid value for newer_than_timestamp_ms", 400
+
+        # Fetch logs using the updated function
+        log_lines = get_recent_logs(
+            limit=limit, offset=offset, newer_than_timestamp_ms=newer_than_timestamp_ms
+        )
+
+        # Return the generator directly for streaming response
+        # Microdot's Response object can handle iterables/generators
+        return Response(body=log_lines, headers={"Content-Type": "text/plain"})
+
+    except Exception as e:
+        log(f"Error in /api/log/chunk: {e}")
+        return f"Error fetching log chunk: {e}", 500
 
 
 @app.route("/free")
