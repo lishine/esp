@@ -251,7 +251,7 @@
             console.log("Loading initial logs...");
             const initialLogText = await fetchLogs({ limit: INITIAL_LOAD_LINES });
             console.log('initialLogText', initialLogText)
-            return
+
             if (initialLogText !== null) {
                 const linesAdded = displayLogs(initialLogText, false); // Append initial logs
                 currentOffset = linesAdded; // Set initial offset
@@ -265,7 +265,7 @@
             }
 
             // Start live update timer
-            // setInterval(loadNewerLogs, LIVE_UPDATE_INTERVAL);
+            setInterval(loadNewerLogs, LIVE_UPDATE_INTERVAL);
         });
 
     </script>
