@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Log Viewer</title>
+    <style>
+        body {
+            font-family: sans-serif;
+            margin: 0;
+            background-color: #f4f4f4;
+        }
+
+        #log-container {
+            font-family: monospace;
+            white-space: pre;
+            /* Keep whitespace and line breaks */
+            background-color: #fff;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin: 10px;
+            min-height: calc(100vh - 40px);
+            /* Ensure it takes up most of the screen */
+            overflow-wrap: break-word;
+            /* Wrap long lines */
+            word-wrap: break-word;
+            /* Legacy wrap */
+            word-break: break-all;
+            /* Force break */
+        }
+
+        .loading-indicator {
+            text-align: center;
+            padding: 10px;
+            font-style: italic;
+            color: #555;
+            display: none;
+            /* Hidden by default */
+        }
+
+        .log-line {
+            display: block;
+            /* Ensure each log is on its own line visually */
+        }
+    </style>
+</head>
+<body>
+
+    <div id="log-container"></div>
+    <div id="loading-older" class="loading-indicator">Loading older logs...</div>
+    <div id="loading-newer" class="loading-indicator">Checking for newer logs...</div>
+
+    <script>
+        const logContainer = document.getElementById('log-container');
+        const loadingOlderIndicator = document.getElementById('loading-older');
+        const loadingNewerIndicator = document.getElementById('loading-newer');
+        const API_ENDPOINT = '/api/log/chunk';
+        const LINES_PER_FETCH = 50; // Matches server-side MAX_LOG_LINES
+        const SCROLL_THRESHOLD = 100; // Pixels from top to trigger loading older logs
+        const LIVE_UPDATE_INTERVAL = 5000; // Check for new logs every 5 seconds (5000ms)
+        const INITIAL_LOAD_SCREENS = 1.5; // Target height for initial load
+
+        let currentOffset = 0;
+        let newestTimestampMs = null;
+        let isLoadingOlder = false;
+        let isLoadingNewer = false;
+        let noMoreOlderLogs = false; // Flag to stop trying to load older logs
+
+        // --- Helper Functions ---
+
+        function parseTimestampFromLogLine(line) {
+            // Extracts 'DD-Mon-YYYY HH:MM:SS.ms' and converts to ms since epoch
+            // Simplified version matching the Python parser logic
+            if (!line || line.length < 24) return null;
+            try {
+                const timestampStr = line.substring(0, 24);
+                const msPart = parseInt(timestampStr.substring(21), 10);
+                const datePart = timestampStr.substring(0, 11);
+                const timePart = timestampStr.substring(12, 20);
+
+                const day = parseInt(datePart.substring(0, 2), 10);
+                const monthStr = datePart.substring(3, 6);
+                const year = parseInt(datePart.substring(7, 11), 10);
+                const hour = parseInt(timePart.substring(0, 2), 10);
+                const minute = parseInt(timePart.substring(3, 5), 10);
+                const second = parseInt(timePart.substring(6, 8), 10);
+
+                const monthMap = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
+                const month = monthMap[monthStr];
+                if (month === undefined) return null;
+
+                // Note: JS Date uses 0-indexed month
+                const dateObj = new Date(Date.UTC(year, month, day, hour, minute, second));
+                if (isNaN(dateObj.getTime())) return null; // Invalid date components
+
+                return dateObj.getTime() + msPart;
+            } catch (e) {
+                console.error("Error parsing timestamp:", e, "Line:", line);
+                return null;
+            }
+        }
+
+        function updateNewestTimestamp(lines) {
+            if (!lines || lines.length === 0) return;
+            const firstLineTs = parseTimestampFromLogLine(lines[0]); // Newest line is first
+            if (firstLineTs !== null && (newestTimestampMs === null || firstLineTs > newestTimestampMs)) {
+                newestTimestampMs = firstLineTs;
+                // console.log("Updated newestTimestampMs:", newestTimestampMs);
+            }
+        }
+
+        function renderLines(lines, prepend = false) {
+            if (!lines || lines.length === 0) return;
+
+            const fragment = document.createDocumentFragment();
+            lines.forEach(line => {
+                const span = document.createElement('span');
+                span.className = 'log-line';
+                span.textContent = line;
+                fragment.appendChild(span);
+            });
+
+            if (prepend) {
+                const firstChild = logContainer.firstChild;
+                logContainer.insertBefore(fragment, firstChild);
+            } else {
+                logContainer.appendChild(fragment);
+            }
+        }
+
+        // --- Core Fetching Logic ---
+
+        async function fetchLogs(offset = null, newerThanTimestamp = null) {
+            let url = API_ENDPOINT;
+            const params = new URLSearchParams();
+
+            if (newerThanTimestamp !== null) {
+                params.append('newer_than_timestamp', newerThanTimestamp);
+            } else if (offset !== null) {
+                params.append('offset', offset);
+            }
+            // Limit is implicitly handled by the server (MAX_LOG_LINES)
+
+            const queryString = params.toString();
+            if (queryString) {
+                url += `?${queryString}`;
+            }
+
+            // console.log("Fetching:", url);
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    console.error(`Error fetching logs: ${response.status} ${response.statusText}`);
+                    return []; // Return empty on error
+                }
+                const text = await response.text();
+                // Split by newline, filter out potential empty strings from trailing newline
+                return text ? text.split('\n').filter(line => line.length > 0) : [];
+            } catch (error) {
+                console.error("Network error fetching logs:", error);
+                return []; // Return empty on network error
+            }
+        }
+
+        // --- Loading Functions ---
+
+        async function initialLoad() {
+            console.log("Starting initial load...");
+            isLoadingOlder = true; // Use the older flag for initial load
+            loadingOlderIndicator.style.display = 'block';
+            let initialOffset = 0;
+            let totalLinesFetched = 0;
+            const targetHeight = window.innerHeight * INITIAL_LOAD_SCREENS;
+
+            while (logContainer.scrollHeight < targetHeight) {
+                const lines = await fetchLogs(initialOffset);
+                if (lines.length === 0) {
+                    console.log("Initial load: No more logs found.");
+                    noMoreOlderLogs = true; // Assume end of logs reached
+                    break; // Stop if no lines are returned
+                }
+
+                renderLines(lines, true); // Prepend initial lines (newest first)
+                updateNewestTimestamp(lines); // Update timestamp from the very first batch
+                initialOffset += lines.length; // Increment offset by actual lines fetched
+                totalLinesFetched += lines.length;
+
+                // Small delay to allow rendering and prevent tight loop if fetch is instant
+                await new Promise(resolve => setTimeout(resolve, 50));
+
+                if (lines.length < LINES_PER_FETCH) {
+                    console.log("Initial load: Reached end of logs (partial fetch).");
+                    noMoreOlderLogs = true;
+                    break; // Stop if fewer lines than requested are returned
+                }
+            }
+            currentOffset = initialOffset; // Set the global offset after initial load
+            isLoadingOlder = false;
+            loadingOlderIndicator.style.display = 'none';
+            console.log(`Initial load complete. Fetched ${totalLinesFetched} lines. Offset: ${currentOffset}`);
+
+            // Start live updates after initial load
+            setInterval(loadNewerLogs, LIVE_UPDATE_INTERVAL);
+        }
+
+        async function loadOlderLogs() {
+            if (isLoadingOlder || noMoreOlderLogs) return; // Prevent concurrent loads or if we know there are no more
+
+            isLoadingOlder = true;
+            loadingOlderIndicator.style.display = 'block';
+            console.log(`Loading older logs from offset: ${currentOffset}`);
+
+            const scrollPositionBeforeLoad = logContainer.scrollHeight - logContainer.scrollTop;
+
+            const lines = await fetchLogs(currentOffset);
+
+            if (lines.length > 0) {
+                renderLines(lines, true); // Prepend older logs
+                currentOffset += lines.length;
+
+                // Try to maintain scroll position relative to the bottom of the *previous* content
+                logContainer.scrollTop = logContainer.scrollHeight - scrollPositionBeforeLoad;
+
+            } else {
+                console.log("No more older logs found.");
+                noMoreOlderLogs = true; // Stop trying to load older logs
+            }
+
+            isLoadingOlder = false;
+            loadingOlderIndicator.style.display = 'none';
+        }
+
+        async function loadNewerLogs() {
+            if (isLoadingNewer || newestTimestampMs === null) return; // Prevent concurrent loads or if no timestamp yet
+
+            isLoadingNewer = true;
+            // loadingNewerIndicator.style.display = 'block'; // Optional: show indicator for live updates
+            // console.log(`Checking for newer logs than: ${newestTimestampMs}`);
+
+            const lines = await fetchLogs(null, newestTimestampMs);
+
+            if (lines.length > 0) {
+                console.log(`Found ${lines.length} new log lines.`);
+                const shouldScroll = logContainer.scrollTop + logContainer.clientHeight >= logContainer.scrollHeight - 20; // Auto-scroll if near bottom
+
+                renderLines(lines, false); // Append newer logs
+                updateNewestTimestamp(lines); // Update the newest timestamp
+
+                if (shouldScroll) {
+                    logContainer.scrollTop = logContainer.scrollHeight; // Scroll to bottom
+                }
+            }
+
+            isLoadingNewer = false;
+            // loadingNewerIndicator.style.display = 'none';
+        }
+
+        // --- Event Listeners ---
+
+        window.addEventListener('scroll', () => {
+            // Check if scrolled near the top
+            if (window.scrollY <= SCROLL_THRESHOLD) {
+                loadOlderLogs();
+            }
+        });
+
+        document.addEventListener('DOMContentLoaded', initialLoad);
+
+    </script>
+
+</body>
+</html>

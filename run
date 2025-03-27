@@ -98,6 +98,7 @@ show_usage() {
     echo "Commands:"
     echo "  reset                  - Reset the ESP32 device"
     echo "  log                    - View device logs"
+    echo "  log-clear              - Clear the log file on the device"
     echo "  la                     - List all files on the device"
     echo "  fs-list                - Get JSON file listing for visual tools"
     echo "  free                   - Show free memory on the device"
@@ -230,6 +231,12 @@ case "$COMMAND" in
         check_sync_needed
         echo "Fetching logs from ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/log"
+        ;;
+        
+  log-clear)
+        check_sync_needed
+        echo "Clearing logs on ESP32 at $ESP_IP..."
+        make_request "http://$ESP_IP/log/clear" "POST"
         ;;
     
   la)

@@ -2,9 +2,10 @@ from microdot import Microdot, Response
 import json
 import _thread
 import machine
+import uos
 from upload import handle_upload
 
-from log import log, get_recent_logs
+from log import log, get_recent_logs, MAX_LOG_LINES, LOG_FILE
 from wifi import (
     is_connected,
     get_ip,
@@ -188,7 +189,8 @@ def status(request):
 @app.route("/log")
 def show_log(request):
     # Join lines with newline for proper display
-    return "\n".join(get_recent_logs(100))
+    # get_recent_logs() now defaults to MAX_LOG_LINES (50)
+    return "\n".join(get_recent_logs())
 
 
 @app.route("/free")
@@ -218,6 +220,81 @@ def get_free_space(request):
     except Exception as e:
         log(f"Error getting free space: {e}")
         return f"Error: {str(e)}", 500
+
+
+@app.route("/log/infinite")
+def log_viewer(request):
+    """Serves the HTML page for the infinite scrolling log viewer."""
+
+    # Serve the static HTML file. Assumes it exists at 'log_viewer.html'
+    # Microdot doesn't have a built-in static file server, so we read and return it.
+    # Use a generator for potentially large files, though this HTML should be small.
+    def generate_html():
+        try:
+            with open("log_viewer.html", "r") as f:
+                while True:
+                    chunk = f.read(1024)  # Read in 1KB chunks
+                    if not chunk:
+                        break
+                    yield chunk
+        except OSError:
+            yield "<html><body><h1>Error</h1><p>Log viewer HTML file not found.</p></body></html>"
+
+    return Response(body=generate_html(), headers={"Content-Type": "text/html"})  # type: ignore
+
+
+@app.route("/api/log/chunk")
+def api_log_chunk(request):
+    """API endpoint to fetch log chunks for the infinite viewer."""
+    try:
+        # Get query parameters, providing defaults
+        offset = int(request.args.get("offset", 0))
+        newer_than_timestamp_str = request.args.get("newer_than_timestamp", None)
+
+        newer_than_timestamp_ms = None
+        if newer_than_timestamp_str:
+            try:
+                # Attempt to convert the timestamp string to an integer (milliseconds)
+                newer_than_timestamp_ms = int(newer_than_timestamp_str)
+            except ValueError:
+                log(f"Invalid newer_than_timestamp format: {newer_than_timestamp_str}")
+                # Optionally return an error, or just ignore the parameter
+                # return "Invalid timestamp format", 400
+
+        # Fetch logs using the updated function from log.py
+        # It now defaults to MAX_LOG_LINES and handles offset/timestamp filtering
+        log_lines = get_recent_logs(
+            offset=offset, newer_than_timestamp_ms=newer_than_timestamp_ms
+        )
+
+        # Return lines joined by newline, as plain text
+        return "\n".join(log_lines), 200, {"Content-Type": "text/plain"}
+
+    except Exception as e:
+        log(f"Error in /api/log/chunk: {e}")
+        return f"Server error: {e}", 500
+
+
+@app.route("/log/clear", methods=["POST"])
+def clear_log(request):
+    """Clears the log file."""
+    try:
+        # Check if log file exists before trying to remove
+        uos.stat(LOG_FILE)  # Raises OSError if it doesn't exist
+        uos.remove(LOG_FILE)
+        log("Log file cleared successfully.")
+        return "Log file cleared successfully.", 200
+    except OSError as e:
+        # Handle case where file doesn't exist (errno 2: ENOENT)
+        if e.args[0] == 2:  # ENOENT
+            log("Log file already clear (not found).")
+            return "Log file already clear (not found).", 200
+        else:
+            log(f"Error clearing log file: {e}")
+            return f"Error clearing log file: {e}", 500
+    except Exception as e:
+        log(f"Unexpected error clearing log file: {e}")
+        return f"Unexpected error clearing log file: {e}", 500
 
 
 @app.route("/")
