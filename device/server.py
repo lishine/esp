@@ -3,6 +3,7 @@ import json
 import _thread
 import machine
 import uos
+import gc
 from upload import handle_upload
 
 from log import log, get_recent_logs, MAX_LOG_LINES, LOG_FILE
@@ -268,6 +269,9 @@ def api_log_chunk(request):
         log_lines = get_recent_logs(
             offset=offset, newer_than_timestamp_ms=newer_than_timestamp_ms
         )
+
+        # Trigger garbage collection before returning
+        gc.collect()
 
         # Return lines joined by newline, as plain text
         return "\n".join(log_lines), 200, {"Content-Type": "text/plain"}
