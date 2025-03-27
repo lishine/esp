@@ -187,17 +187,15 @@ def status(request):
 
 @app.route("/log")
 def show_log(request):
-    # Iteratively consume the generator to build the response string
-    # This avoids creating a large list in memory.
-    log_generator = get_recent_logs(limit=100)
-    response_body = ""
+    # Use a smaller limit (e.g., 50) for better memory management on simple view
+    # Return the generator directly for streaming response
     try:
-        for line in log_generator:
-            response_body += line  # Generator yields lines with '\n'
+        log_generator = get_recent_logs(limit=50)
+        # Ensure generator is handled correctly by Response
+        return Response(body=log_generator, headers={"Content-Type": "text/plain"})
     except Exception as e:
-        log(f"Error consuming log generator in /log route: {e}")
+        log(f"Error creating log generator in /log route: {e}")
         return "Internal Server Error reading logs", 500
-    return Response(body=response_body, headers={"Content-Type": "text/plain"})
 
 
 @app.route("/log/infinite")
@@ -230,10 +228,20 @@ def log_viewer(request):
 def api_log_chunk(request):
     """API endpoint to fetch log chunks with offset, limit, and timestamp filtering."""
     try:
-        # Get query parameters, providing defaults
-        limit = int(request.args.get("limit", 150))
-        offset = int(request.args.get("offset", 0))
+        # Get query parameters, providing defaults and basic validation
+        limit_str = request.args.get("limit", "50")  # Default to 50 lines
+        offset_str = request.args.get("offset", "0")
         newer_than_str = request.args.get("newer_than_timestamp_ms")
+
+        try:
+            limit = int(limit_str)
+            offset = int(offset_str)
+        except ValueError:
+            return "Invalid integer for limit or offset", 400
+
+        # Cap limit to prevent excessive memory usage (e.g., max 100 lines per chunk)
+        limit = max(0, min(limit, 100))
+        offset = max(0, offset)  # Ensure offset is non-negative
 
         newer_than_timestamp_ms = None
         if newer_than_str:
@@ -242,18 +250,21 @@ def api_log_chunk(request):
             except ValueError:
                 return "Invalid value for newer_than_timestamp_ms", 400
 
-        # Fetch logs using the updated function
-        log_lines = get_recent_logs(
+        # Get the generator
+        log_lines_generator = get_recent_logs(
             limit=limit, offset=offset, newer_than_timestamp_ms=newer_than_timestamp_ms
         )
 
         # Return the generator directly for streaming response
-        # Microdot's Response object can handle iterables/generators
-        return Response(body=log_lines, headers={"Content-Type": "text/plain"})
+        return Response(
+            body=log_lines_generator, headers={"Content-Type": "text/plain"}
+        )
 
     except Exception as e:
-        log(f"Error in /api/log/chunk: {e}")
-        return f"Error fetching log chunk: {e}", 500
+        # Log the error for debugging on the device
+        log(f"Error in /api/log/chunk: {type(e).__name__} {e}")
+        # Return a generic server error to the client
+        return "Internal Server Error fetching log chunk", 500
 
 
 @app.route("/free")

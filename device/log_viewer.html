@@ -1,274 +1,263 @@
-<!DOCTYPE html>
-<html lang="en">
+<![CDATA[<!DOCTYPE html>
+<html>
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Device Logs</title>
+    <title>ESP32 Log Viewer</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <style>
         body {
             font-family: monospace;
-            background-color: #f4f4f4;
             margin: 0;
             padding: 10px;
-            color: #333;
+            background: #f0f0f0;
         }
-
         #log-container {
-            background-color: #fff;
-            border: 1px solid #ccc;
-            padding: 15px;
-            white-space: pre-wrap;
-            /* Allows wrapping long lines */
-            word-wrap: break-word;
-            /* Breaks long words/lines */
-            min-height: 90vh;
-            /* Ensure it takes up significant height */
-            overflow-y: auto;
-            /* Should not be needed if body scrolls */
-            font-size: 0.9em;
-            line-height: 1.4;
-        }
-
-        .loading-indicator {
-            text-align: center;
+            background: #000;
+            color: #0f0; /* Classic green on black */
             padding: 10px;
+            height: calc(100vh - 100px); /* Adjust height as needed */
+            overflow-y: scroll;
+            border-radius: 4px;
+            white-space: pre-wrap; /* Wrap long lines */
+            word-wrap: break-word;
+            font-size: 0.9em; /* Slightly smaller font */
+        }
+        .controls {
+            margin-bottom: 10px;
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+        button {
+            padding: 8px 12px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .status {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .loading-indicator {
+            display: none; /* Hidden by default */
+            margin-left: 10px;
             font-style: italic;
-            color: #777;
         }
-
-        /* Style for newly added logs */
-        .new-log {
-            animation: highlight 2s ease-out;
-        }
-
-        @keyframes highlight {
-            from {
-                background-color: yellow;
-            }
-
-            to {
-                background-color: transparent;
-            }
+        .loading-indicator.active {
+            display: inline; /* Show when loading */
         }
     </style>
 </head>
 <body>
+    <div class="controls">
+        <button id="refresh-btn">Refresh</button>
+        <button id="clear-btn">Clear View</button>
+        <label>
+            <input type="checkbox" id="autoscroll-chk" checked> Autoscroll
+        </label>
+        <span id="status" class="status">Idle</span>
+        <span id="loading" class="loading-indicator">Loading...</span>
+    </div>
 
-    <h1>Device Logs (Live)</h1>
-    <div id="loading-older" class="loading-indicator" style="display: none;">Loading older logs...</div>
     <pre id="log-container"></pre>
-    <div id="loading-newer" class="loading-indicator" style="display: none;">Loading new logs...</div>
 
     <script>
         const logContainer = document.getElementById('log-container');
-        const loadingOlderIndicator = document.getElementById('loading-older');
-        const loadingNewerIndicator = document.getElementById('loading-newer');
+        const refreshBtn = document.getElementById('refresh-btn');
+        const clearBtn = document.getElementById('clear-btn');
+        const status = document.getElementById('status');
+        const loadingIndicator = document.getElementById('loading');
+        const autoscrollChk = document.getElementById('autoscroll-chk');
 
-        const INITIAL_LOAD_LINES = 150; // Approx 1.5 screens initially
-        const SCROLL_LOAD_LINES = 100;  // Lines to load on scroll
-        const LIVE_UPDATE_INTERVAL = 10000; // Check for new logs every 10 seconds (ms) - Increased interval
-
-        let currentOffset = 0;
+        // State variables
         let isLoadingOlder = false;
         let isLoadingNewer = false;
-        let lastNewestTimestampMs = 0;
-        let noMoreOlderLogs = false; // Flag to stop trying to load older logs
+        let currentOffset = 0;
+        let lastNewestTimestamp = null;
+        let autoRefreshInterval = null;
+        const REFRESH_INTERVAL_MS = 3000; // Check for new logs every 3 seconds
+        const LINES_PER_CHUNK = 30; // Number of lines to fetch per request
 
-        const monthMap = {
-            "Jan": 0, "Feb": 1, "Mar": 2, "Apr": 3, "May": 4, "Jun": 5,
-            "Jul": 6, "Aug": 7, "Sep": 8, "Oct": 9, "Nov": 10, "Dec": 11
-        };
+        // --- Utility Functions ---
 
-        function parseTimestampFromLogLine(line) {
-            // Format: DD-Mon-YYYY HH:MM:SS.ms
+        function setLoading(older, newer) {
+            isLoadingOlder = older;
+            isLoadingNewer = newer;
+            loadingIndicator.classList.toggle('active', older || newer);
+            status.textContent = (older || newer) ? 'Loading...' : 'Idle';
+        }
+
+        // Simple timestamp parser (adjust if format changes)
+        function parseTimestamp(line) {
+            if (!line || line.length < 24) return null;
             try {
-                const tsStr = line.substring(0, 24);
-                if (tsStr.length !== 24 || tsStr[2] !== '-' || tsStr[6] !== '-' || tsStr[11] !== ' ' || tsStr[14] !== ':' || tsStr[17] !== ':' || tsStr[20] !== '.') {
-                    return null; // Basic format check
-                }
+                // Format: DD-Mon-YYYY HH:MM:SS.ms
+                const months = { 'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5, 'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11 };
+                const monthStr = line.substring(3, 6);
+                if (months[monthStr] === undefined) return null;
 
-                const day = parseInt(tsStr.substring(0, 2), 10);
-                const monthAbbr = tsStr.substring(3, 6);
-                const year = parseInt(tsStr.substring(7, 11), 10);
-                const hour = parseInt(tsStr.substring(12, 14), 10);
-                const minute = parseInt(tsStr.substring(15, 17), 10);
-                const second = parseInt(tsStr.substring(18, 20), 10);
-                const ms = parseInt(tsStr.substring(21, 24), 10);
+                const year = parseInt(line.substring(7, 11));
+                const day = parseInt(line.substring(0, 2));
+                const hour = parseInt(line.substring(12, 14));
+                const minute = parseInt(line.substring(15, 17));
+                const second = parseInt(line.substring(18, 20));
+                const ms = parseInt(line.substring(21, 24));
 
-                const month = monthMap[monthAbbr];
-                if (month === undefined) return null;
-
-                // Note: JS Date month is 0-indexed
-                const date = new Date(Date.UTC(year, month, day, hour, minute, second, ms));
-                return date.getTime(); // Milliseconds since epoch (UTC)
+                // Use UTC to avoid timezone issues in parsing
+                const date = new Date(Date.UTC(year, months[monthStr], day, hour, minute, second, ms));
+                return date.getTime(); // Milliseconds since epoch
             } catch (e) {
-                console.error("Error parsing timestamp from line:", line, e);
+                console.error("Timestamp parse error:", e, "on line:", line);
                 return null;
             }
         }
 
-        function displayLogs(logText, prepend = false) {
-            if (!logText) return 0; // No logs to display
-
-            const lines = logText.split('\n').filter(line => line.trim() !== ''); // Filter out empty lines
-            if (lines.length === 0) return 0;
-
-            const fragment = document.createDocumentFragment();
-            let newestTsInBatch = 0; // Track newest timestamp only when appending
-
-            // Optimization: Only parse timestamp for the last line when appending
-            if (!prepend && lines.length > 0) {
-                const lastLine = lines[lines.length - 1];
-                newestTsInBatch = parseTimestampFromLogLine(lastLine) || 0; // Use 0 if parsing fails
-            }
-
-            lines.forEach(line => {
-                const lineElement = document.createTextNode(line + '\n');
-
-                // Add highlight class if appending new logs
-                if (!prepend) {
-                    const span = document.createElement('span');
-                    span.className = 'new-log';
-                    span.appendChild(lineElement);
-                    fragment.appendChild(span);
-                } else {
-                    fragment.appendChild(lineElement); // Prepending older logs
-                }
-            });
-
-            if (prepend) {
-                logContainer.insertBefore(fragment, logContainer.firstChild);
-            } else {
-                logContainer.appendChild(fragment);
-                // Update the global newest timestamp only when appending
-                if (newestTsInBatch > lastNewestTimestampMs) {
-                    lastNewestTimestampMs = newestTsInBatch;
-                }
-            }
-            return lines.length; // Return number of lines added
+        // Find the timestamp of the newest log line currently displayed
+        function getNewestDisplayedTimestamp() {
+            const firstLine = logContainer.textContent.split('\n', 1)[0];
+            return parseTimestamp(firstLine);
         }
 
-        async function fetchLogs({ limit, offset, newer_than_ms } = {}) {
-            let url = '/api/log/chunk?';
-            const params = [];
-            if (limit !== undefined) params.push(`limit=${limit}`);
-            if (offset !== undefined) params.push(`offset=${offset}`);
-            if (newer_than_ms !== undefined) params.push(`newer_than_timestamp_ms=${newer_than_ms}`);
+        // --- Core Logic ---
 
-            url += params.join('&');
-
+        async function fetchLogs(params) {
+            const url = `/api/log/chunk?${params}`;
             try {
                 const response = await fetch(url);
                 if (!response.ok) {
-                    console.error(`Error fetching logs: ${response.status} ${response.statusText}`);
-                    const errorText = await response.text();
-                    console.error("Server response:", errorText);
-                    return null; // Indicate error
+                    throw new Error(`HTTP error ${response.status}: ${await response.text()}`);
                 }
-                return await response.text();
+                const text = await response.text();
+                return text.split('\n').filter(line => line.trim()); // Return array of non-empty lines
             } catch (error) {
-                console.error('Network error fetching logs:', error);
-                return null; // Indicate error
+                console.error(`Error fetching logs (${url}):`, error);
+                status.textContent = `Error: ${error.message}`;
+                throw error; // Re-throw to handle in calling function
+            }
+        }
+
+        async function loadInitialLogs() {
+            if (isLoadingOlder || isLoadingNewer) return;
+            setLoading(true, false);
+            logContainer.textContent = ''; // Clear existing content
+            currentOffset = 0;
+            lastNewestTimestamp = null;
+
+            try {
+                const lines = await fetchLogs(`limit=${LINES_PER_CHUNK}`);
+                if (lines.length > 0) {
+                    logContainer.textContent = lines.join('\n') + '\n';
+                    currentOffset = lines.length;
+                    lastNewestTimestamp = parseTimestamp(lines[0]); // Newest is first
+                    logContainer.scrollTop = logContainer.scrollHeight; // Scroll to bottom initially
+                } else {
+                    status.textContent = 'Log file is empty or unreadable.';
+                }
+            } catch (error) {
+                // Error already logged by fetchLogs
+            } finally {
+                setLoading(false, false);
+                startAutoRefresh(); // Start checking for new logs
             }
         }
 
         async function loadOlderLogs() {
-            if (isLoadingOlder || noMoreOlderLogs) return;
+            if (isLoadingOlder || isLoadingNewer) return;
+            setLoading(true, false);
 
-            isLoadingOlder = true;
-            loadingOlderIndicator.style.display = 'block';
+            // Remember scroll position relative to the bottom before adding content
+            const scrollHeightBefore = logContainer.scrollHeight;
+            const scrollTopBefore = logContainer.scrollTop;
 
-            const currentScroll = window.scrollY; // Store scroll position
+            try {
+                const lines = await fetchLogs(`offset=${currentOffset}&limit=${LINES_PER_CHUNK}`);
+                if (lines.length > 0) {
+                    logContainer.textContent = lines.join('\n') + '\n' + logContainer.textContent;
+                    currentOffset += lines.length;
 
-            const logText = await fetchLogs({ limit: SCROLL_LOAD_LINES, offset: currentOffset });
-
-            if (logText !== null) {
-                const linesAdded = displayLogs(logText, true); // Prepend logs
-                if (linesAdded > 0) {
-                    currentOffset += linesAdded;
-                    // Try to restore scroll position relative to the content added
-                    const newHeight = logContainer.scrollHeight;
-                    const oldHeight = newHeight - (logContainer.firstChild.offsetHeight || 0); // Approximate height added
-                    window.scrollTo(0, currentScroll + (newHeight - oldHeight)); // Adjust scroll
+                    // Restore scroll position relative to the previous top
+                    const scrollHeightAfter = logContainer.scrollHeight;
+                    logContainer.scrollTop = scrollTopBefore + (scrollHeightAfter - scrollHeightBefore);
+                    status.textContent = `Loaded ${lines.length} older lines.`;
                 } else {
-                    // No more older logs were returned
-                    noMoreOlderLogs = true;
-                    loadingOlderIndicator.textContent = 'No more older logs.';
-                    // Hide indicator after a delay
-                    setTimeout(() => { loadingOlderIndicator.style.display = 'none'; }, 2000);
+                    status.textContent = 'No more older logs found.';
+                    // Optionally disable further scroll checks if no more logs
                 }
-            } else {
-                // Handle fetch error - maybe show a message
-                loadingOlderIndicator.textContent = 'Error loading older logs.';
-                setTimeout(() => { loadingOlderIndicator.style.display = 'none'; }, 3000);
-            }
-
-
-            isLoadingOlder = false;
-            if (!noMoreOlderLogs) { // Hide only if we might load more later
-                loadingOlderIndicator.style.display = 'none';
+            } catch (error) {
+                // Error already logged
+            } finally {
+                setLoading(false, false);
             }
         }
 
-        async function loadNewerLogs() {
-            if (isLoadingNewer) return;
-            isLoadingNewer = true;
-            // Optionally show a subtle loading indicator for newer logs if desired
-            // loadingNewerIndicator.style.display = 'block';
+        async function checkForNewLogs() {
+            if (isLoadingOlder || isLoadingNewer || !lastNewestTimestamp) return;
+            setLoading(false, true); // Indicate loading newer logs
 
-            const logText = await fetchLogs({ newer_than_ms: lastNewestTimestampMs });
+            try {
+                const lines = await fetchLogs(`newer_than_timestamp_ms=${lastNewestTimestamp}`);
+                if (lines.length > 0) {
+                    const shouldScroll = autoscrollChk.checked && (logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 5); // Check if near bottom
 
-            if (logText !== null) {
-                const wasScrolledToBottom = (window.innerHeight + window.scrollY) >= document.body.offsetHeight - 20; // Check if user is near the bottom
+                    logContainer.textContent = lines.join('\n') + '\n' + logContainer.textContent;
+                    lastNewestTimestamp = parseTimestamp(lines[0]); // Update newest timestamp
 
-                const linesAdded = displayLogs(logText, false); // Append logs
-
-                if (linesAdded > 0 && wasScrolledToBottom) {
-                    // Auto-scroll to bottom if user was already there
-                    window.scrollTo(0, document.body.scrollHeight);
+                    if (shouldScroll) {
+                        logContainer.scrollTop = 0; // Scroll to top (where new logs are added)
+                    }
+                    status.textContent = `Added ${lines.length} new lines.`;
+                } else {
+                    // status.textContent = 'No new logs.'; // Can be noisy, keep Idle
+                    status.textContent = 'Idle';
                 }
-            } else {
-                // Handle fetch error
-                // loadingNewerIndicator.textContent = 'Error loading new logs.';
-                // setTimeout(() => { loadingNewerIndicator.style.display = 'none'; }, 3000);
+            } catch (error) {
+                // Error logged, stop auto-refresh on error
+                stopAutoRefresh();
+            } finally {
+                setLoading(false, false);
             }
-
-            isLoadingNewer = false;
-            // loadingNewerIndicator.style.display = 'none';
         }
 
-        // --- Event Listeners and Initial Load ---
+        // --- Event Handlers & Setup ---
 
-        window.addEventListener('scroll', () => {
-            // Load older logs when scrolling near the top
-            if (window.scrollY < 100) { // Adjust threshold as needed
+        function handleScroll() {
+            // Load older logs when scrolled near the top
+            if (logContainer.scrollTop < 50 && !isLoadingOlder) {
                 loadOlderLogs();
             }
-        });
+        }
 
-        // Initial load
-        document.addEventListener('DOMContentLoaded', async () => {
-            console.log("Loading initial logs...");
-            const initialLogText = await fetchLogs({ limit: INITIAL_LOAD_LINES });
-            console.log('initialLogText', initialLogText)
-
-            if (initialLogText !== null) {
-                const linesAdded = displayLogs(initialLogText, false); // Append initial logs
-                currentOffset = linesAdded; // Set initial offset
-                console.log(`Initial load complete. Offset: ${currentOffset}, Newest Timestamp: ${lastNewestTimestampMs}`);
-                if (linesAdded < INITIAL_LOAD_LINES) {
-                    noMoreOlderLogs = true; // Assume no more older logs if initial load is less than requested
-                    console.log("Initial load was less than requested limit, assuming no more older logs.");
-                }
-            } else {
-                logContainer.textContent = "Error loading initial logs.";
+        function startAutoRefresh() {
+            stopAutoRefresh(); // Clear existing interval if any
+            if (REFRESH_INTERVAL_MS > 0) {
+                autoRefreshInterval = setInterval(checkForNewLogs, REFRESH_INTERVAL_MS);
             }
+        }
 
-            // Start live update timer
-            setInterval(loadNewerLogs, LIVE_UPDATE_INTERVAL);
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        refreshBtn.addEventListener('click', loadInitialLogs);
+        clearBtn.addEventListener('click', () => {
+            logContainer.textContent = '';
+            currentOffset = 0;
+            lastNewestTimestamp = null;
+            status.textContent = 'View cleared.';
+            stopAutoRefresh(); // Stop refresh when clearing manually
         });
+        logContainer.addEventListener('scroll', handleScroll);
+
+        // Initial load on page ready
+        document.addEventListener('DOMContentLoaded', loadInitialLogs);
 
     </script>
-
 </body>
-</html>
+</html>]]>

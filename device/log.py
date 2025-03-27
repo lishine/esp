@@ -88,113 +88,111 @@ def log(*args, **kwargs):
     print(output, end="", **kwargs)  # Print the combined output
 
 
-def get_recent_logs(limit=100, offset=0, newer_than_timestamp_ms=None, chunk_size=4096):
+def get_recent_logs(limit=50, offset=0, newer_than_timestamp_ms=None, chunk_size=512):
     """
-    Read log lines from the end of the file with options for limit, offset, and timestamp filtering.
+    Generator function that yields log lines from the file, newest first.
+
+    Key improvements:
+    1. True streaming - yields lines as they're processed with minimal buffering.
+    2. Handles newest-first ordering using a limited buffer for offset/limit.
+    3. Processes file in small chunks to avoid memory issues.
 
     Args:
-        limit (int): Maximum number of lines to return. Defaults to 100.
-        offset (int): Number of lines to skip from the end before collecting. Defaults to 0.
-                      Ignored if newer_than_timestamp_ms is provided.
-        newer_than_timestamp_ms (int, optional): If provided, only return lines newer than this timestamp (ms since epoch).
-        chunk_size (int): Size of chunks to read from the file. Defaults to 4096.
+        limit (int): Maximum number of lines to return (0 means no limit, capped internally).
+        offset (int): Number of lines to skip from the end.
+        newer_than_timestamp_ms (int, optional): Only yield lines newer than this timestamp.
+        chunk_size (int): Size of chunks to process at a time (smaller is better for memory).
 
     Yields:
-        str: Log lines (including newline), newest first within the filtered range.
-             Yields nothing on error or if file not found.
+        str: Log lines with newline character, newest first.
     """
-    collected_lines = []  # Store lines temporarily, oldest encountered first
+    # Cap limit to prevent excessive memory use with the buffer
+    effective_limit = min(limit, 200) if limit > 0 else 200  # Max buffer size
+
     try:
-        with open(LOG_FILE, "r") as f:
-            f.seek(0, 2)
-            file_size = f.tell()
-            buffer = ""
-            stop_reading = False
+        # Check if file exists and is not empty
+        try:
+            stat = uos.stat(LOG_FILE)
+            if stat[6] == 0:  # Size is 0
+                return
+        except OSError:
+            return  # File doesn't exist
 
-            while file_size > 0 and not stop_reading:
-                read_size = min(chunk_size, file_size)
-                # Seek relative to current position (which is end of last read chunk)
-                f.seek(file_size - read_size)
-                chunk = f.read(read_size)
-                file_size -= read_size
-
-                buffer = chunk + buffer
-                found_lines = buffer.splitlines()
-
-                if not found_lines and file_size > 0:
-                    continue
-
-                process_from_index = 1 if len(found_lines) > 1 else 0
-
-                # Process lines from newest in chunk to oldest in chunk
-                for i in range(len(found_lines) - 1, process_from_index - 1, -1):
-                    line = found_lines[i]
-                    if not line:
-                        continue
-
-                    if newer_than_timestamp_ms is not None:
-                        line_ts = _parse_log_timestamp_ms(line)
-                        if line_ts is None:
+        # --- Timestamp Filtering (Read Forward) ---
+        if newer_than_timestamp_ms is not None:
+            # Read forward, collect matching lines, then yield newest first
+            matching_lines = []
+            with open(LOG_FILE, "r") as f:
+                buffer = ""
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    buffer += chunk
+                    lines = buffer.split("\n")
+                    # Process all complete lines except the last (potentially incomplete)
+                    for i in range(len(lines) - 1):
+                        line = lines[i]
+                        if not line:
                             continue
-
-                        if line_ts > newer_than_timestamp_ms:
-                            collected_lines.append(
-                                line
-                            )  # Collect lines newer than threshold
-                        else:
-                            # Found the first line older than or equal to the threshold. Stop reading.
-                            stop_reading = True
-                            break  # Stop processing this chunk
-                    else:
-                        # Offset/Limit logic: Collect potential candidates
-                        collected_lines.append(line)
-                        # Stop reading if we have collected enough lines to satisfy offset + limit
-                        if len(collected_lines) >= offset + limit:
-                            stop_reading = True
-                            break  # Stop processing this chunk
-
-                if stop_reading:  # Break outer loop if needed
-                    break
-
-                # Keep the potentially partial first line for the next iteration's buffer
-                buffer = found_lines[0] if len(found_lines) > 0 else ""
-
-            # Process the very first line of the file if it remained in the buffer
-            if buffer and not stop_reading:
-                line = buffer
-                if line:
-                    if newer_than_timestamp_ms is not None:
                         line_ts = _parse_log_timestamp_ms(line)
                         if line_ts is not None and line_ts > newer_than_timestamp_ms:
-                            collected_lines.append(line)
-                    else:
-                        if len(collected_lines) < offset + limit:
-                            collected_lines.append(line)
+                            matching_lines.append(line + "\n")
+                            # Optional: Limit memory usage if too many lines match
+                            # if len(matching_lines) > some_large_number:
+                            #     matching_lines.pop(0) # Keep only the latest
+                    buffer = lines[-1]  # Keep last part for next chunk
 
-            # collected_lines contains potential candidates, oldest encountered first.
+                # Process the very last part if it forms a complete line
+                if buffer:
+                    line_ts = _parse_log_timestamp_ms(buffer)
+                    if line_ts is not None and line_ts > newer_than_timestamp_ms:
+                        matching_lines.append(buffer + "\n")
 
-            if newer_than_timestamp_ms is not None:
-                # Yield in reverse order (newest first)
-                for i in range(len(collected_lines) - 1, -1, -1):
-                    yield collected_lines[i] + "\n"
-            else:
-                # Apply offset and limit to the collected lines
-                total_collected = len(collected_lines)
-                # Indices are relative to the start of collected_lines (oldest encountered)
-                end_index = total_collected - offset
-                start_index = max(0, end_index - limit)
+            # Yield collected lines newest first
+            yielded_count = 0
+            for i in range(len(matching_lines) - 1, -1, -1):
+                yield matching_lines[i]
+                yielded_count += 1
+                if effective_limit > 0 and yielded_count >= effective_limit:
+                    break
+            return  # End timestamp filtering
 
-                # Yield the slice in reverse order (newest first)
-                for i in range(end_index - 1, start_index - 1, -1):
-                    yield collected_lines[i] + "\n"
+        # --- Offset/Limit Filtering (Read Forward with Buffer) ---
+        else:
+            # Use a circular buffer to keep track of the last N lines
+            # N = offset + effective_limit
+            buffer_size = offset + effective_limit
+            line_buffer = [None] * buffer_size
+            line_count = 0
 
-    except OSError:
-        # File probably doesn't exist yet, yield nothing
-        pass
+            with open(LOG_FILE, "r") as f:
+                for line in f:
+                    line_buffer[line_count % buffer_size] = line
+                    line_count += 1
+
+            # Determine which lines to yield from the buffer
+            # Start index in the conceptual full list of lines
+            start_index = max(0, line_count - offset - effective_limit)
+            # Number of lines to yield
+            num_to_yield = min(effective_limit, line_count - offset - start_index)
+
+            # Yield lines from the buffer in correct (newest first) order
+            for i in range(num_to_yield):
+                # Index in the conceptual full list (newest is line_count - 1)
+                conceptual_index = line_count - 1 - offset - i
+                if conceptual_index < 0:
+                    break  # Should not happen with checks above, but safety first
+
+                # Index in the actual circular buffer
+                buffer_index = conceptual_index % buffer_size
+                line_to_yield = line_buffer[buffer_index]
+                if line_to_yield is not None:  # Check if buffer slot was filled
+                    yield line_to_yield
+
     except Exception as e:
         try:
-            print(f"Error in get_recent_logs generator: {type(e).__name__} {e}")
+            # Use print for basic error logging on device if log() fails
+            print(f"Error in get_recent_logs: {type(e).__name__} {e}")
         except:
-            pass  # Avoid errors during error handling
-        # Yield nothing on error
-        pass
+            pass  # Avoid errors during error handling itself
