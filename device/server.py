@@ -189,8 +189,10 @@ def status(request):
 @app.route("/log")
 def show_log(request):
     # Join lines with newline for proper display
-    # get_recent_logs() now defaults to MAX_LOG_LINES (50)
-    return "\n".join(get_recent_logs())
+    # get_recent_logs() returns newest first, reverse it for oldest first display
+    log_lines = get_recent_logs()
+    log_lines.reverse()  # Reverse to show oldest first
+    return "\n".join(log_lines)
 
 
 @app.route("/free")
