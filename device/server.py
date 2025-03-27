@@ -4,7 +4,7 @@ import _thread
 import machine
 from upload import handle_upload
 
-from log import log, log_buffer
+from log import log, get_recent_logs
 from wifi import (
     is_connected,
     get_ip,
@@ -187,7 +187,8 @@ def status(request):
 
 @app.route("/log")
 def show_log(request):
-    return "\n".join(log_buffer.get_all())
+    # Join lines with newline for proper display
+    return "\n".join(get_recent_logs(100))
 
 
 @app.route("/free")
