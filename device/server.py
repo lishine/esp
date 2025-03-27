@@ -303,6 +303,24 @@ def clear_log(request):
         return f"Unexpected error clearing log file: {e}", 500
 
 
+@app.route("/log/add-test-entries", methods=["POST"])
+def add_test_log_entries(request):
+    """Adds 1000 test log entries."""
+    try:
+        count = 1000
+        log(f"Adding {count} test log entries...")
+        for i in range(count):
+            log(f"Test log entry {i+1}/{count}")
+            # Optional small delay to prevent overwhelming the system if needed
+            # import time
+            # time.sleep_ms(1)
+        log(f"Finished adding {count} test log entries.")
+        return f"Successfully added {count} test log entries.", 200
+    except Exception as e:
+        log(f"Error adding test log entries: {e}")
+        return f"Error adding test log entries: {e}", 500
+
+
 @app.route("/")
 def index(request):
     # Get the Host header from the request
