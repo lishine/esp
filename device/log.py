@@ -120,12 +120,20 @@ def get_recent_logs(limit=50, offset=0, newer_than_timestamp_ms=None, chunk_size
 
         # --- Timestamp Filtering (Read Forward) ---
         if newer_than_timestamp_ms is not None:
-            # Read forward, collect matching lines, then yield newest first
-            matching_lines = []
+            # DEBUG: Print the requested timestamp
+            print(f"Filtering logs newer than: {newer_than_timestamp_ms}")
+
+            # Use a circular buffer to store the most recent matching lines found
+            # This prevents unbounded memory usage if many new lines exist.
+            # MAX_NEW_LINES_BUFFER determines how many recent lines we keep track of.
+            MAX_NEW_LINES_BUFFER = 200  # Keep track of the latest 200 matching lines
+            line_buffer = [None] * MAX_NEW_LINES_BUFFER
+            lines_found_count = 0  # Total matching lines found conceptually
+
             with open(LOG_FILE, "r") as f:
                 buffer = ""
                 while True:
-                    chunk = f.read(chunk_size)
+                    chunk = f.read(chunk_size)  # chunk_size=512
                     if not chunk:
                         break
                     buffer += chunk
@@ -136,26 +144,62 @@ def get_recent_logs(limit=50, offset=0, newer_than_timestamp_ms=None, chunk_size
                         if not line:
                             continue
                         line_ts = _parse_log_timestamp_ms(line)
-                        if line_ts is not None and line_ts > newer_than_timestamp_ms:
-                            matching_lines.append(line + "\n")
-                            # Optional: Limit memory usage if too many lines match
-                            # if len(matching_lines) > some_large_number:
-                            #     matching_lines.pop(0) # Keep only the latest
+                        # DEBUG: Print timestamp comparison
+                        print(
+                            f"Checking line ts: {line_ts} >= {newer_than_timestamp_ms}?"
+                        )
+                        if (
+                            line_ts is not None and line_ts >= newer_than_timestamp_ms
+                        ):  # Use >= comparison
+                            # DEBUG: Print matched line
+                            print(f"  -> Match found: {line[:30]}...")
+                            # Add to circular buffer
+                            line_buffer[lines_found_count % MAX_NEW_LINES_BUFFER] = (
+                                line + "\n"
+                            )
+                            lines_found_count += 1
                     buffer = lines[-1]  # Keep last part for next chunk
 
                 # Process the very last part if it forms a complete line
                 if buffer:
                     line_ts = _parse_log_timestamp_ms(buffer)
-                    if line_ts is not None and line_ts > newer_than_timestamp_ms:
-                        matching_lines.append(buffer + "\n")
+                    # DEBUG: Print timestamp comparison for last line
+                    print(
+                        f"Checking last line ts: {line_ts} >= {newer_than_timestamp_ms}?"
+                    )
+                    if (
+                        line_ts is not None and line_ts >= newer_than_timestamp_ms
+                    ):  # Use >= comparison
+                        # DEBUG: Print matched line
+                        print(f"  -> Match found (last line): {buffer[:30]}...")
+                        line_buffer[lines_found_count % MAX_NEW_LINES_BUFFER] = (
+                            buffer + "\n"
+                        )
+                        lines_found_count += 1
 
-            # Yield collected lines newest first
+            # DEBUG: Print how many lines were found matching the criteria
+            print(
+                f"Found {lines_found_count} lines newer than {newer_than_timestamp_ms}"
+            )
+
+            # Yield lines from the buffer, newest first, up to the original limit requested
             yielded_count = 0
-            for i in range(len(matching_lines) - 1, -1, -1):
-                yield matching_lines[i]
-                yielded_count += 1
-                if effective_limit > 0 and yielded_count >= effective_limit:
-                    break
+            num_to_yield_from_buffer = min(lines_found_count, MAX_NEW_LINES_BUFFER)
+            start_yield_conceptual_index = lines_found_count - 1
+
+            for i in range(num_to_yield_from_buffer):
+                conceptual_index = start_yield_conceptual_index - i
+                buffer_index = conceptual_index % MAX_NEW_LINES_BUFFER
+                line_to_yield = line_buffer[buffer_index]
+
+                if (
+                    line_to_yield is not None
+                ):  # Should always be true here, but safety check
+                    yield line_to_yield
+                    yielded_count += 1
+                    # Respect the original limit passed to the function (e.g., from API)
+                    if limit > 0 and yielded_count >= limit:  # Use original limit here
+                        break
             return  # End timestamp filtering
 
         # --- Offset/Limit Filtering (Read Forward with Buffer) ---

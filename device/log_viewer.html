@@ -85,10 +85,15 @@
         // --- Utility Functions ---
 
         function setLoading(older, newer) {
+            console.log(`JS: setLoading called with older=${older}, newer=${newer}. Current state: isLoadingOlder=${isLoadingOlder}, isLoadingNewer=${isLoadingNewer}`); // DEBUG
             isLoadingOlder = older;
             isLoadingNewer = newer;
+            console.log(`JS: setLoading updated state: isLoadingOlder=${isLoadingOlder}, isLoadingNewer=${isLoadingNewer}`); // DEBUG
             loadingIndicator.classList.toggle('active', older || newer);
-            status.textContent = (older || newer) ? 'Loading...' : 'Idle';
+            // Set status text only if actually loading, otherwise keep previous status
+            if (older || newer) {
+                status.textContent = 'Loading...';
+            }
         }
 
         // Simple timestamp parser (adjust if format changes)
@@ -119,28 +124,61 @@
         // Find the timestamp of the newest log line currently displayed
         function getNewestDisplayedTimestamp() {
             const firstLine = logContainer.textContent.split('\n', 1)[0];
-            return parseTimestamp(firstLine);
+            const ts = parseTimestamp(firstLine);
+            // console.log("JS: getNewestDisplayedTimestamp found:", ts); // DEBUG
+            return ts;
         }
 
         // --- Core Logic ---
 
-        async function fetchLogs(params) {
+        async function fetchLogs(params, timeoutMs = 10000) { // Add timeout parameter (default 10s)
             const url = `/api/log/chunk?${params}`;
+            console.log(`JS: Fetching logs: ${url}`); // DEBUG
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+            let response; // Define response outside try block
+
             try {
-                const response = await fetch(url);
+                response = await fetch(url, { signal: controller.signal }); // Pass signal
+                clearTimeout(timeoutId); // Clear timeout if fetch completes
+
+                console.log(`JS: Fetch response status: ${response.status} for ${url}`); // DEBUG
+
                 if (!response.ok) {
-                    throw new Error(`HTTP error ${response.status}: ${await response.text()}`);
+                    // Try to get error text, but handle potential issues reading it
+                    let errorText = `HTTP error ${response.status}`;
+                    try {
+                        console.log("JS: Fetch error - trying to read body..."); // DEBUG
+                        errorText = await response.text(); // Await reading error body
+                        console.error(`JS: Fetch error body: ${errorText}`); // DEBUG
+                    } catch (e) { console.error("JS: Error reading error response body", e); }
+                    throw new Error(errorText);
                 }
-                const text = await response.text();
-                return text.split('\n').filter(line => line.trim()); // Return array of non-empty lines
+
+                console.log("JS: Fetch success - trying to read body with .text()..."); // DEBUG
+                const text = await response.text(); // Explicitly await .text()
+                console.log("JS: Fetch success - .text() completed."); // DEBUG
+
+                const lines = text.split('\n').filter(line => line.trim());
+                console.log(`JS: Received ${lines.length} lines from ${url}`); // DEBUG
+                return lines;
             } catch (error) {
-                console.error(`Error fetching logs (${url}):`, error);
-                status.textContent = `Error: ${error.message}`;
+                clearTimeout(timeoutId); // Ensure timeout is cleared on error too
+                if (error.name === 'AbortError') {
+                    console.error(`JS: Fetch timed out (${url})`); // DEBUG
+                    status.textContent = 'Error: Request timed out.'; // Update status on timeout
+                } else {
+                    // Log error context if possible
+                    console.error(`JS: Error fetching/processing logs (${url}):`, error, response ? `Status: ${response.status}` : 'No response object'); // DEBUG
+                    status.textContent = `Error: ${error.message}`; // Update status on other errors
+                }
                 throw error; // Re-throw to handle in calling function
             }
         }
 
+
         async function loadInitialLogs() {
+            console.log("JS: loadInitialLogs started"); // DEBUG
             if (isLoadingOlder || isLoadingNewer) return;
             setLoading(true, false);
             logContainer.textContent = ''; // Clear existing content
@@ -153,19 +191,24 @@
                     logContainer.textContent = lines.join('\n') + '\n';
                     currentOffset = lines.length;
                     lastNewestTimestamp = parseTimestamp(lines[0]); // Newest is first
+                    console.log(`JS: Initial load complete. Offset: ${currentOffset}, Newest TS: ${lastNewestTimestamp}`); // DEBUG
                     logContainer.scrollTop = logContainer.scrollHeight; // Scroll to bottom initially
+                    status.textContent = 'Idle'; // Set status after loading
                 } else {
+                    console.log("JS: Initial load returned no lines."); // DEBUG
                     status.textContent = 'Log file is empty or unreadable.';
                 }
             } catch (error) {
-                // Error already logged by fetchLogs
+                console.error("JS: Error during initial load:", error); // DEBUG
+                // Error already logged and status set by fetchLogs
             } finally {
-                setLoading(false, false);
+                setLoading(false, false); // Clear loading indicator
                 startAutoRefresh(); // Start checking for new logs
             }
         }
 
         async function loadOlderLogs() {
+            console.log("JS: loadOlderLogs started"); // DEBUG
             if (isLoadingOlder || isLoadingNewer) return;
             setLoading(true, false);
 
@@ -178,49 +221,88 @@
                 if (lines.length > 0) {
                     logContainer.textContent = lines.join('\n') + '\n' + logContainer.textContent;
                     currentOffset += lines.length;
+                    console.log(`JS: Loaded ${lines.length} older lines. New offset: ${currentOffset}`); // DEBUG
 
                     // Restore scroll position relative to the previous top
                     const scrollHeightAfter = logContainer.scrollHeight;
                     logContainer.scrollTop = scrollTopBefore + (scrollHeightAfter - scrollHeightBefore);
                     status.textContent = `Loaded ${lines.length} older lines.`;
                 } else {
+                    console.log("JS: No more older logs found."); // DEBUG
                     status.textContent = 'No more older logs found.';
                     // Optionally disable further scroll checks if no more logs
                 }
             } catch (error) {
-                // Error already logged
+                console.error("JS: Error loading older logs:", error); // DEBUG
+                // Error already logged and status set by fetchLogs
             } finally {
-                setLoading(false, false);
+                setLoading(false, false); // Clear loading indicator
             }
         }
 
         async function checkForNewLogs() {
-            if (isLoadingOlder || isLoadingNewer || !lastNewestTimestamp) return;
+            console.log("JS: checkForNewLogs started"); // DEBUG
+            // Prevent concurrent checks
+            if (isLoadingOlder || isLoadingNewer) {
+                console.log("JS: Skipping check for new logs: Already loading."); // DEBUG
+                return;
+            }
+            // Don't check if we don't have a starting point
+            if (!lastNewestTimestamp) {
+                console.log("JS: Skipping check for new logs: lastNewestTimestamp is null."); // DEBUG
+                // Ensure status is idle if we skip
+                if (!isLoadingOlder) status.textContent = 'Idle';
+                return;
+            }
+
+            console.log(`JS: Checking for logs newer than ${lastNewestTimestamp}`); // DEBUG
             setLoading(false, true); // Indicate loading newer logs
 
             try {
-                const lines = await fetchLogs(`newer_than_timestamp_ms=${lastNewestTimestamp}`);
+                console.log("JS: checkForNewLogs - Entering try block"); // DEBUG
+                // Pass timeout to fetchLogs
+                const lines = await fetchLogs(`newer_than_timestamp_ms=${lastNewestTimestamp}`, 8000); // 8 second timeout
+                console.log("JS: checkForNewLogs - fetchLogs promise resolved, processing results..."); // DEBUG
+
                 if (lines.length > 0) {
-                    const shouldScroll = autoscrollChk.checked && (logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 5); // Check if near bottom
+                    console.log("JS: checkForNewLogs - Found new lines, processing..."); // DEBUG
+                    const shouldScroll = autoscrollChk.checked && (logContainer.scrollHeight - logContainer.scrollTop - logContainer.clientHeight < 10); // Check if near bottom
 
                     logContainer.textContent = lines.join('\n') + '\n' + logContainer.textContent;
-                    lastNewestTimestamp = parseTimestamp(lines[0]); // Update newest timestamp
+                    const newTimestamp = parseTimestamp(lines[0]); // Get timestamp before updating status
+                    if (newTimestamp) { // Only update if valid
+                        console.log(`JS: Updating lastNewestTimestamp from ${lastNewestTimestamp} to ${newTimestamp}`); // DEBUG
+                        lastNewestTimestamp = newTimestamp;
+                    } else {
+                        console.warn("JS: Could not parse timestamp from newest received line:", lines[0]); // DEBUG
+                    }
 
                     if (shouldScroll) {
                         logContainer.scrollTop = 0; // Scroll to top (where new logs are added)
                     }
+                    // Set status *after* potential UI updates
                     status.textContent = `Added ${lines.length} new lines.`;
+                    console.log(`JS: Added ${lines.length} new lines.`); // DEBUG
+
                 } else {
-                    // status.textContent = 'No new logs.'; // Can be noisy, keep Idle
-                    status.textContent = 'Idle';
+                    // Explicitly set status when no new lines are found
+                    console.log("JS: No new lines found."); // DEBUG
+                    status.textContent = 'Idle (no new logs)';
                 }
+                console.log("JS: checkForNewLogs - try block finished"); // DEBUG
             } catch (error) {
-                // Error logged, stop auto-refresh on error
+                // Error already logged by fetchLogs, stop auto-refresh
+                console.error("JS: Stopping auto-refresh due to error in checkForNewLogs:", error); // DEBUG
                 stopAutoRefresh();
+                // Status is already set by fetchLogs on error
             } finally {
+                // Ensure loading state is always cleared
+                console.log("JS: checkForNewLogs - Entering finally block"); // DEBUG
                 setLoading(false, false);
+                console.log("JS: checkForNewLogs - Exiting finally block"); // DEBUG
             }
         }
+
 
         // --- Event Handlers & Setup ---
 
@@ -234,12 +316,14 @@
         function startAutoRefresh() {
             stopAutoRefresh(); // Clear existing interval if any
             if (REFRESH_INTERVAL_MS > 0) {
+                console.log(`JS: Starting auto-refresh every ${REFRESH_INTERVAL_MS}ms`); // DEBUG
                 autoRefreshInterval = setInterval(checkForNewLogs, REFRESH_INTERVAL_MS);
             }
         }
 
         function stopAutoRefresh() {
             if (autoRefreshInterval) {
+                console.log("JS: Stopping auto-refresh."); // DEBUG
                 clearInterval(autoRefreshInterval);
                 autoRefreshInterval = null;
             }

@@ -256,12 +256,19 @@ def api_log_chunk(request):
         )
 
         # Return the generator directly for streaming response
+        # Microdot handles iterating over the generator efficiently.
+        # If the generator yields nothing, an empty 200 OK response is sent.
         return Response(
             body=log_lines_generator, headers={"Content-Type": "text/plain"}
         )
 
+    except ValueError as e:
+        # Handle specific errors like invalid int conversion
+        log(f"Error in /api/log/chunk (Bad Request): {e}")
+        return f"Bad Request: {e}", 400
     except Exception as e:
-        # Log the error for debugging on the device
+        # Log other unexpected errors for debugging on the device
+        # Consider adding traceback logging if needed: import uio; import sys; s = uio.StringIO(); sys.print_exception(e, s); log(s.getvalue())
         log(f"Error in /api/log/chunk: {type(e).__name__} {e}")
         # Return a generic server error to the client
         return "Internal Server Error fetching log chunk", 500
