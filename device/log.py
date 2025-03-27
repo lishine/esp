@@ -92,6 +92,11 @@ def log(*args, **kwargs):
     print(output, end="", **kwargs)
 
 
+# Unix epoch starts 1970-01-01, MicroPython epoch starts 2000-01-01
+# Difference is 946684800 seconds = 946684800000 milliseconds
+UNIX_TO_MP_EPOCH_OFFSET_MS = 946684800000
+
+
 # --- Log Reading Function ---
 def get_recent_logs(offset=0, newer_than_timestamp_ms=None, chunk_size=4096):
     """
@@ -108,6 +113,13 @@ def get_recent_logs(offset=0, newer_than_timestamp_ms=None, chunk_size=4096):
     """
     collected_lines = []
     try:
+        # Convert incoming Unix epoch timestamp to MicroPython epoch timestamp if provided
+        newer_than_timestamp_mp_ms = None
+        if newer_than_timestamp_ms is not None:
+            newer_than_timestamp_mp_ms = (
+                newer_than_timestamp_ms - UNIX_TO_MP_EPOCH_OFFSET_MS
+            )
+
         with open(LOG_FILE, "r") as f:
             f.seek(0, 2)
             file_size = f.tell()
@@ -149,18 +161,22 @@ def get_recent_logs(offset=0, newer_than_timestamp_ms=None, chunk_size=4096):
 
                     # If in timestamp mode, check if the oldest line found *in this chunk*
                     # is already older than our target. If so, we can likely stop.
-                    if newer_than_timestamp_ms is not None and new_lines_this_chunk:
+                    if (
+                        newer_than_timestamp_mp_ms is not None and new_lines_this_chunk
+                    ):  # Use mp_ms
                         oldest_ts_in_chunk = _parse_log_timestamp_ms(
                             new_lines_this_chunk[-1]
                         )
                         if (
                             oldest_ts_in_chunk is not None
-                            and oldest_ts_in_chunk <= newer_than_timestamp_ms
+                            and oldest_ts_in_chunk
+                            <= newer_than_timestamp_mp_ms  # Use mp_ms
                         ):
                             # If we already found *some* lines newer than the target, we can stop.
                             # Check if any line collected so far is newer than the target.
                             if any(
-                                _parse_log_timestamp_ms(l) > newer_than_timestamp_ms
+                                _parse_log_timestamp_ms(l)
+                                > newer_than_timestamp_mp_ms  # Use mp_ms
                                 for l in collected_lines
                                 if _parse_log_timestamp_ms(l) is not None
                             ):
@@ -171,13 +187,13 @@ def get_recent_logs(offset=0, newer_than_timestamp_ms=None, chunk_size=4096):
                 collected_lines.insert(0, buffer)  # Prepend the very first line
 
             # --- Post-processing and Filtering ---
-            if newer_than_timestamp_ms is not None:
+            if newer_than_timestamp_mp_ms is not None:  # Use mp_ms
                 # Filter collected lines by timestamp
                 filtered_lines = []
                 for line in collected_lines:  # Iterating newest first
                     ts = _parse_log_timestamp_ms(line)
-                    # Check if timestamp is valid and newer than requested
-                    if ts is not None and ts > newer_than_timestamp_ms:
+                    # Check if timestamp is valid and newer than requested (using MP epoch)
+                    if ts is not None and ts > newer_than_timestamp_mp_ms:  # Use mp_ms
                         filtered_lines.append(line)
                         # Stop once we have MAX_LOG_LINES
                         if len(filtered_lines) >= MAX_LOG_LINES:
