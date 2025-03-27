@@ -354,9 +354,6 @@ case "$COMMAND" in
         IFS=',' read -r -a FILE_ARRAY <<< "$FILES"
         TOTAL_FILES=${#FILE_ARRAY[@]}
         
-        # Flag to track if any .py files were uploaded
-        PYTHON_FILES_UPLOADED=false
-        
         for ((i=0; i<${#FILE_ARRAY[@]}; i++)); do
             FILE_PATH=$(echo "${FILE_ARRAY[$i]}" | xargs)  # Trim whitespace
             
@@ -365,10 +362,6 @@ case "$COMMAND" in
                 exit 1
             fi
 
-            # Check if this is a Python file
-            if [[ "$FILE_PATH" == *.py ]]; then
-                PYTHON_FILES_UPLOADED=true
-            fi
 
             # Print separator with current file number
             echo "------$((i+1)) of $TOTAL_FILES---------"
@@ -399,12 +392,6 @@ case "$COMMAND" in
                 fi
             fi
         done
-        
-        # Reset the device if any Python files were uploaded
-        if [ "$PYTHON_FILES_UPLOADED" = true ]; then
-            echo "Python files were uploaded. Resetting device..."
-            "$0" reset
-        fi
         ;;
   sync)
     check_sync_needed
