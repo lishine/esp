@@ -133,7 +133,7 @@ make_request() {
     local url="$1"
     local method="${2:-GET}"
     local output_file="${3:-}"
-    local timeout=3
+    local timeout=10
     local curl_opts="-s -m $timeout"
     
     # Process additional headers and options
@@ -172,29 +172,10 @@ make_request() {
         echo "$response"
         return 0
     else
-        # If using the primary IP and it failed, try with AP IP
-        if [ "$USE_AP_IP" = false ] && [[ "$url" == http://$ESP_IP/* ]]; then
-            echo "Connection to $ESP_IP timed out after ${timeout}s." >&2
-            echo "Trying AP IP address ($AP_IP) instead..." >&2
-            echo "Make sure you're connected to the ESP32's access point." >&2
-            
-            # Replace the IP in the URL
-            local ap_url="${url/$ESP_IP/$AP_IP}"
-            
-            response=$(curl $curl_opts "${headers[@]}" "${data_options[@]}" "$ap_url" 2>/dev/null)
-            status=$?
-            
-            if [ $status -eq 0 ]; then
-                echo "$response"
-                return 0
-            else
-                echo "Connection to AP IP ($AP_IP) also failed." >&2
-                return 1
-            fi
-        else
-            echo "Connection failed: $response" >&2
-            return 1
-        fi
+        # If the initial connection failed, report the error and exit
+        echo "Connection to $ESP_IP failed (Status: $status)." >&2
+        # No fallback attempt is made
+        return 1
     fi
 }
 
