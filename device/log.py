@@ -98,7 +98,9 @@ UNIX_TO_MP_EPOCH_OFFSET_MS = 946684800000
 
 
 # --- Log Reading Function ---
-def get_recent_logs(offset=0, newer_than_timestamp_ms=None, chunk_size=4096):
+def get_recent_logs(
+    offset=0, newer_than_timestamp_ms=None, chunk_size=2000
+):  # Reduced default chunk size
     """
     Read log lines from LOG_FILE (newest first) with filtering.
 
@@ -123,7 +125,7 @@ def get_recent_logs(offset=0, newer_than_timestamp_ms=None, chunk_size=4096):
         with open(LOG_FILE, "r") as f:
             f.seek(0, 2)
             file_size = f.tell()
-            buffer = ""
+            carry_over = ""  # Stores partial line from the start of the previous chunk (read backwards)
             processed_bytes = 0
 
             # Read file backwards in chunks
@@ -131,60 +133,84 @@ def get_recent_logs(offset=0, newer_than_timestamp_ms=None, chunk_size=4096):
                 read_size = min(chunk_size, file_size - processed_bytes)
                 # Seek backwards relative to the end of the file
                 f.seek(file_size - processed_bytes - read_size)
+                print("----------1")
                 chunk = f.read(read_size)
+                print("----------2")
                 processed_bytes += read_size
 
-                # Prepend chunk to buffer
-                buffer = chunk + buffer
-                # Split buffer into lines based on newline
-                found_lines_in_chunk = buffer.splitlines()
+                # Combine chunk with any carry-over from the previous chunk
+                # This is the text block we process in this iteration
+                text_to_process = chunk + carry_over
 
-                # Process complete lines found in this chunk
-                if len(found_lines_in_chunk) > 1:
-                    # New complete lines are all but the first potentially partial line
-                    # Reverse them to process newest first within the chunk
-                    new_lines_this_chunk = found_lines_in_chunk[1:][::-1]
+                # Split into lines
+                lines_found = text_to_process.splitlines()
+                print("----------3")
 
-                    # Prepend these new lines to our overall collected list
-                    collected_lines = new_lines_this_chunk + collected_lines
+                if not lines_found:
+                    # Chunk + carry_over didn't contain a newline, so it's all carry_over
+                    carry_over = text_to_process
+                    continue  # Read next chunk
 
-                    # Keep the first (potentially partial) line for the next iteration
-                    buffer = found_lines_in_chunk[0]
+                # The first line found is the new carry_over (might be partial)
+                carry_over = lines_found[0]
 
-                    # --- Optimizations ---
-                    # If in offset mode, check if we have collected enough lines
+                # The rest are complete lines found in this iteration (newest first within this block)
+                new_complete_lines = lines_found[1:][::-1]
+
+                # Prepend these new complete lines to our overall collected list
+                collected_lines = new_complete_lines + collected_lines
+
+                # --- Optimizations (applied after processing each chunk's lines) ---
+                # If in offset mode, check if we have collected enough lines
+                if (
+                    newer_than_timestamp_ms is None
+                    and len(collected_lines) >= offset + MAX_LOG_LINES
+                ):
+                    break  # Stop reading more chunks
+
+                # If in timestamp mode, check if the oldest line found *in this chunk*
+                # is already older than our target. If so, we can likely stop.
+                if (
+                    newer_than_timestamp_mp_ms is not None and new_complete_lines
+                ):  # Use mp_ms
+                    oldest_ts_in_chunk = _parse_log_timestamp_ms(
+                        new_complete_lines[
+                            -1
+                        ]  # Check the oldest line added in this batch
+                    )
                     if (
-                        newer_than_timestamp_ms is None
-                        and len(collected_lines) >= offset + MAX_LOG_LINES
+                        oldest_ts_in_chunk is not None
+                        and oldest_ts_in_chunk
+                        <= newer_than_timestamp_mp_ms  # Use mp_ms
                     ):
-                        break  # Stop reading more chunks
-
-                    # If in timestamp mode, check if the oldest line found *in this chunk*
-                    # is already older than our target. If so, we can likely stop.
-                    if (
-                        newer_than_timestamp_mp_ms is not None and new_lines_this_chunk
-                    ):  # Use mp_ms
-                        oldest_ts_in_chunk = _parse_log_timestamp_ms(
-                            new_lines_this_chunk[-1]
-                        )
-                        if (
-                            oldest_ts_in_chunk is not None
-                            and oldest_ts_in_chunk
-                            <= newer_than_timestamp_mp_ms  # Use mp_ms
+                        # If we already found *some* lines newer than the target, we can stop.
+                        # Check if any line collected so far is newer than the target.
+                        if any(
+                            _parse_log_timestamp_ms(l)
+                            > newer_than_timestamp_mp_ms  # Use mp_ms
+                            for l in collected_lines
+                            if _parse_log_timestamp_ms(l) is not None
                         ):
-                            # If we already found *some* lines newer than the target, we can stop.
-                            # Check if any line collected so far is newer than the target.
-                            if any(
-                                _parse_log_timestamp_ms(l)
-                                > newer_than_timestamp_mp_ms  # Use mp_ms
-                                for l in collected_lines
-                                if _parse_log_timestamp_ms(l) is not None
-                            ):
-                                break  # Stop reading more chunks
+                            break  # Stop reading more chunks
 
-            # After the loop, process the remaining buffer (contains the first line of the file if reached)
-            if buffer and processed_bytes == file_size:
-                collected_lines.insert(0, buffer)  # Prepend the very first line
+            # After the loop, the final carry_over contains the very first line of the file (if file wasn't empty)
+            if carry_over and processed_bytes == file_size:
+                # Check if the carry_over itself meets timestamp criteria if applicable
+                should_add_carry_over = True
+                if newer_than_timestamp_mp_ms is not None:
+                    ts = _parse_log_timestamp_ms(carry_over)
+                    if ts is None or ts <= newer_than_timestamp_mp_ms:
+                        should_add_carry_over = False
+
+                if should_add_carry_over:
+                    # Check if adding it exceeds MAX_LOG_LINES in timestamp mode
+                    if (
+                        newer_than_timestamp_mp_ms is None
+                        or len(collected_lines) < MAX_LOG_LINES
+                    ):
+                        collected_lines.insert(
+                            0, carry_over
+                        )  # Prepend the very first line
 
             # --- Post-processing and Filtering ---
             if newer_than_timestamp_mp_ms is not None:  # Use mp_ms

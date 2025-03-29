@@ -1,5 +1,7 @@
 import uasyncio as asyncio
 import sys
+import esp32  # Import esp32 module for heap info
+import gc  # Import garbage collector module for mem_free
 from log import log  # Keep async logger
 import server  # Needed here for get_app()
 import led  # Import the led module
@@ -50,6 +52,29 @@ async def main():
             await asyncio.sleep(15)  # Use await asyncio.sleep to yield control
             loop_count += 1
             log(f"Async main loop alive - iteration {loop_count}")  # Add periodic log
+
+            # Log largest contiguous free block in data heaps
+            try:
+                # Get IDF Heap Info
+                heap_info = esp32.idf_heap_info(
+                    esp32.HEAP_DATA
+                )  # List of (total, free, largest_free, min_free)
+                max_free_block = 0
+                total_free = 0
+                num_regions = len(heap_info)
+                for heap in heap_info:
+                    total_free += heap[1]
+                    if heap[2] > max_free_block:
+                        max_free_block = heap[2]
+
+                # Get MicroPython Heap Info
+                upy_free = gc.mem_free()
+
+                log(
+                    f"Mem: IDF TotalFree={total_free}, MaxBlock={max_free_block}, Regions={num_regions}; UPy Free={upy_free}"
+                )
+            except Exception as heap_err:
+                log(f"Error getting memory info: {heap_err}")
 
     except Exception as e:
         log("Error during async main execution:", e)

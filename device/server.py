@@ -280,11 +280,16 @@ def api_log_chunk(request):
             offset=offset, newer_than_timestamp_ms=newer_than_timestamp_ms
         )
 
-        # Trigger garbage collection before returning
+        # Trigger garbage collection before potentially yielding response
         gc.collect()
 
-        # Return lines joined by newline, as plain text
-        return "\n".join(log_lines), 200, {"Content-Type": "text/plain"}
+        # Define a generator to stream lines
+        def generate_log_stream(lines):
+            for line in lines:
+                yield line + "\n"
+
+        # Return a streaming response
+        return Response(body=generate_log_stream(log_lines), headers={"Content-Type": "text/plain"})  # type: ignore
 
     except Exception as e:
         log(f"Error in /api/log/chunk: {e}")

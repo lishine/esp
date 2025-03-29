@@ -62,7 +62,7 @@ async def _try_connect(network_index):
         sta.connect(ssid, password)
 
         # Wait for connection with timeout
-        max_wait = 15  # seconds
+        max_wait = 5  # seconds
         wait_interval = 1  # second
         for _ in range(max_wait // wait_interval):
             if sta.isconnected():
