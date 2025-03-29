@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP Log Viewer</title>
+    <style>
+        body {
+            font-family: monospace;
+            background-color: #f4f4f4;
+            margin: 0;
+            padding: 20px;
+        }
+
+        #logContainer {
+            background-color: #fff;
+            border: 1px solid #ddd;
+            padding: 15px;
+            height: 80vh;
+            overflow-y: scroll;
+            white-space: pre;
+            /* Preserve whitespace and line breaks */
+            line-height: 1.4;
+            margin-bottom: 15px;
+        }
+
+        button {
+            padding: 10px 15px;
+            cursor: pointer;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+
+        .log-line {
+            display: block;
+            /* Ensure each log entry is on a new line */
+        }
+    </style>
+</head>
+<body>
+
+    <h1>ESP Log Viewer</h1>
+
+    <div id="logContainer">Loading logs...</div>
+    <button id="loadOlderBtn">Load Older Logs</button>
+
+    <script>
+        const logContainer = document.getElementById('logContainer');
+        const loadOlderBtn = document.getElementById('loadOlderBtn');
+        const logApiUrl = "http://10.100.102.8/api/log/chunk";
+        const updateInterval = 7000; // 7 seconds
+
+        let currentLogIndex = -1;
+        let oldestLogIndex = -1;
+        let displayedLogLines = new Set(); // Use a Set to easily track unique lines
+
+        // Function to fetch and process logs
+        async function fetchLogs(url) {
+            try {
+                const response = await fetch(url);
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const fileIndexHeader = response.headers.get('X-Log-File-Index');
+                const fileIndex = fileIndexHeader ? parseInt(fileIndexHeader, 10) : -1;
+                const logText = await response.text();
+                const lines = logText.trim().split('\n');
+                return { lines, fileIndex };
+            } catch (error) {
+                console.error("Error fetching logs:", error);
+                logContainer.innerHTML = `<span class="log-line" style="color: red;">Error fetching logs: ${error.message}</span>` + logContainer.innerHTML;
+                return { lines: [], fileIndex: -1 }; // Return empty on error
+            }
+        }
+
+        // Function to render logs (prepend new lines)
+        function renderNewLogs(lines) {
+            const reversedLines = lines.reverse(); // Reverse to show newest first
+            let newContent = '';
+            reversedLines.forEach(line => {
+                if (!displayedLogLines.has(line)) {
+                    newContent += `<span class="log-line">${line}</span>`;
+                    displayedLogLines.add(line);
+                }
+            });
+            if (logContainer.innerHTML === 'Loading logs...') {
+                logContainer.innerHTML = newContent;
+            } else {
+                logContainer.innerHTML = newContent + logContainer.innerHTML;
+            }
+        }
+
+        // Function to render older logs (append)
+        function renderOlderLogs(lines) {
+            const reversedLines = lines.reverse(); // Reverse chunk to maintain order within chunk
+            let olderContent = '';
+            reversedLines.forEach(line => {
+                if (!displayedLogLines.has(line)) {
+                    olderContent += `<span class="log-line">${line}</span>`;
+                    displayedLogLines.add(line);
+                }
+            });
+            logContainer.innerHTML += olderContent;
+        }
+
+
+        // Initial load
+        async function initialLoad() {
+            const { lines, fileIndex } = await fetchLogs(logApiUrl);
+            if (fileIndex !== -1) {
+                currentLogIndex = fileIndex;
+                oldestLogIndex = fileIndex; // Initially, the oldest is the current one
+                renderNewLogs(lines);
+                loadOlderBtn.disabled = oldestLogIndex <= 0; // Disable if no older logs exist
+            } else {
+                logContainer.textContent = 'Failed to load initial logs or get file index.';
+            }
+        }
+
+        // Periodic update
+        async function periodicUpdate() {
+            const { lines: newLines, fileIndex: newFileIndex } = await fetchLogs(logApiUrl);
+
+            if (newFileIndex === -1) {
+                console.warn("Periodic update failed to get file index.");
+                return; // Don't proceed if we couldn't get the index
+            }
+
+            let linesToRender = [];
+
+            if (newFileIndex > currentLogIndex) {
+                // File index incremented, fetch the previous chunk as well to ensure no gaps
+                console.log(`File index changed: ${currentLogIndex} -> ${newFileIndex}. Fetching previous chunk.`);
+                const prevIndex = newFileIndex - 1;
+                if (prevIndex >= 0) {
+                    const { lines: prevLines } = await fetchLogs(`${logApiUrl}?file_index=${prevIndex}`);
+                    // Combine lines, newLines first to maintain order before reversing for display
+                    linesToRender = [...newLines, ...prevLines];
+                } else {
+                    linesToRender = newLines;
+                }
+                currentLogIndex = newFileIndex; // Update the current index
+            } else if (newFileIndex === currentLogIndex) {
+                // Same file, just add new lines from this chunk
+                linesToRender = newLines;
+            } else {
+                console.warn(`New file index ${newFileIndex} is older than current ${currentLogIndex}. Ignoring.`);
+                // This case might happen if the server restarts or log indices reset.
+                // Could potentially trigger a full reload or show an error. For now, just log it.
+                return;
+            }
+
+
+            // Filter out already displayed lines and render
+            const uniqueNewLines = linesToRender.filter(line => !displayedLogLines.has(line));
+            if (uniqueNewLines.length > 0) {
+                renderNewLogs(uniqueNewLines);
+            }
+        }
+
+        // Load older logs button click handler
+        loadOlderBtn.addEventListener('click', async () => {
+            if (oldestLogIndex <= 0) {
+                console.log("No older logs to fetch.");
+                loadOlderBtn.disabled = true;
+                return;
+            }
+
+            const indexToFetch = oldestLogIndex - 1;
+            loadOlderBtn.textContent = `Loading chunk ${indexToFetch}...`;
+            loadOlderBtn.disabled = true;
+
+            const { lines, fileIndex } = await fetchLogs(`${logApiUrl}?file_index=${indexToFetch}`);
+
+            if (lines.length > 0) {
+                renderOlderLogs(lines);
+                oldestLogIndex = indexToFetch; // Update the oldest index we've successfully fetched
+            } else {
+                console.log(`Chunk ${indexToFetch} is empty or failed to load.`);
+                // Optionally show a message to the user
+            }
+
+            loadOlderBtn.textContent = 'Load Older Logs';
+            loadOlderBtn.disabled = oldestLogIndex <= 0; // Re-enable if there are still older logs
+        });
+
+        // Start the process
+        initialLoad().then(() => {
+            setInterval(periodicUpdate, updateInterval);
+        });
+
+    </script>
+
+</body>
+</html>
