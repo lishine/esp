@@ -2,6 +2,7 @@ import uasyncio as asyncio
 import sys
 from log import log  # Keep async logger
 import server  # Needed here for get_app()
+import led  # Import the led module
 
 # wifi, ap, led are started in boot.py
 # We only need the logger task here
@@ -16,7 +17,10 @@ async def main():
     try:
         # Start the background logger task first
 
-        # --- Background services (AP, WiFi, LED) are already started by boot.py ---
+        # --- Start background services (AP/WiFi started by boot.py) ---
+        log("Creating LED task...")
+        asyncio.create_task(led.led_task())
+        log("LED task created.")
 
         # Get the configured Microdot app from server.py
         app = server.get_app()

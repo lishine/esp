@@ -3,7 +3,7 @@ import _thread
 import network
 
 from log import log
-from led import blink  # Assuming led.py is reverted to sync blink
+from led import blink_sequence
 
 ap = network.WLAN(network.AP_IF)
 
@@ -14,7 +14,7 @@ def start_ap(essid="DDDEV", password=""):
     ap.config(essid=essid, password=password)
     try:
         # Use try/except as blink might fail if LED thread has issues
-        blink(2)
+        blink_sequence(count=2)
     except Exception as e:
         log(f"Error during AP start blink: {e}")
     log(f"AP mode activated: {essid}")

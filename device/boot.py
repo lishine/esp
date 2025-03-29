@@ -66,9 +66,6 @@ try:
     ap.start_ap(essid="DDDEV", password="")
     log(f"AP Started (thread): http://{ap.get_ap_ip()} (SSID: DDDEV)")
 
-    log("Starting LED thread from boot.py...")
-    log("LED thread started.")
-
     log("Starting WiFi thread from boot.py...")
     wifi.start_wifi()  # Start WiFi connection/monitor threads
     log("WiFi thread started.")

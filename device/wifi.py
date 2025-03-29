@@ -5,7 +5,7 @@ import network
 from machine import Pin
 
 from log import log
-from led import blink, start_continuous_blink, stop_continuous_blink
+from led import blink_sequence, start_continuous_blink, stop_continuous_blink
 
 
 def load_wifi_config():
@@ -66,7 +66,7 @@ WiFi connected successfully to {network['ssid']}:
 - DNS: {dns}
             """
         )
-        blink(3)
+        blink_sequence(count=3)
         start_continuous_blink(3.0)
         return True
     else:
@@ -96,7 +96,7 @@ def wifi_connect_thread():
 
     # Both networks failed
     log("All WiFi connection attempts failed")
-    blink(1, 1, 0.1)
+    blink_sequence(count=1, on_time=1, off_time=0.1)
     stop_continuous_blink()
 
 
