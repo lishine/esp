@@ -1,21 +1,7 @@
 import sys
 import time  # Keep for initial time adjustment
 import machine
-
-# import uasyncio as asyncio # Moved to main.py
 from log import log  # Keep for initial logging
-
-import ap  # Needed here for AP start
-
-# import server  # No longer needed here, started in main.py
-import led  # Needed here for LED thread start
-
-
-# def log(*args, **kwargs):
-# print("")
-
-
-# from log import logger_task # Moved to main.py
 
 # Keep the time adjustment logic as is, it runs before asyncio starts
 try:
@@ -59,21 +45,7 @@ log("\n" + "=" * 40)
 log("ESP32 Boot Sequence Starting...")
 log("=" * 40)
 
-try:
-    # Start background threads synchronously before main.py runs
-    log("Starting AP thread from boot.py...")
-    ap.start_ap(essid="DDDEV", password="")
-    log(f"AP Started (thread): http://{ap.get_ap_ip()} (SSID: DDDEV)")
-
-    # WiFi thread starting moved to main.py async task
-
-    # log("Starting Server thread from boot.py...") # Moved to main.py
-    # server.start_server() # Moved to main.py
-    # log("Server thread started.") # Moved to main.py
-
-except Exception as e:
-    log("Error during synchronous boot initialization:", e)
-    sys.print_exception(e)
+# Synchronous initializations (like AP, WiFi, Server) moved to main.py
 
 log("boot.py finished.")  # Indicate boot sequence completion
 

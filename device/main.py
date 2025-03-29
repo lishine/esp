@@ -4,6 +4,7 @@ from log import log  # Keep async logger
 import server  # Needed here for get_app()
 import led  # Import the led module
 import wifi  # Import the new wifi module
+import ap  # Import the ap module
 
 # wifi, ap, led are started in boot.py
 # We only need the logger task here
@@ -14,11 +15,15 @@ import wifi  # Import the new wifi module
 
 # --- Async Main Function ---
 async def main():
-    log("main.py: Starting asyncio tasks...")
+    log("main.py: Starting...")
     try:
-        # Start the background logger task first
+        # Start synchronous services first
+        log("Starting AP...")
+        ap.start_ap(essid="DDDEV", password="")  # Start AP synchronously
+        log(f"AP Started: http://{ap.get_ap_ip()} (SSID: DDDEV)")
 
-        # --- Start background services (AP/WiFi started by boot.py) ---
+        # --- Start background asyncio tasks ---
+        log("Starting asyncio tasks...")
         log("Creating LED task...")
         asyncio.create_task(led.led_task())
         log("LED task created.")
