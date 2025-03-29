@@ -5,10 +5,11 @@ import json
 import uasyncio as asyncio
 import machine
 import uos
-import gc
+import gc  # Keep gc import for now, might be useful elsewhere
 from upload import handle_upload
 
-from log import log, get_recent_logs, MAX_LOG_LINES, LOG_FILE
+# Updated import from log.py
+from log import log, read_log_file_content, get_latest_log_index, clear_logs
 from wifi import (
     is_connected,
     get_ip,
@@ -197,22 +198,16 @@ def status(request):
     return json.dumps(response)
 
 
-@app.route("/log")
-def show_log(request):
-    # Join lines with newline for proper display
-    # get_recent_logs() returns newest first, reverse it for oldest first display
-    log_lines = get_recent_logs()
-    log_lines.reverse()  # Reverse to show oldest first
-    return "\n".join(log_lines)
+# --- Removed old /log route ---
+# This route is obsolete with chunked logging. Use /api/log/chunk instead.
 
 
 @app.route("/free")
 def get_free_space(request):
     """Return free space information about the filesystem"""
     try:
-        import os
-
-        fs_stat = os.statvfs("/")
+        # import os # Already imported via uos
+        fs_stat = uos.statvfs("/")
         # Calculate free space in KB
         free_kb = (fs_stat[0] * fs_stat[3]) / 1024
         # Calculate total space in KB
@@ -256,73 +251,81 @@ def log_viewer(request):
     return Response(body=generate_html(), headers={"Content-Type": "text/html"})  # type: ignore
 
 
+# --- Updated /api/log/chunk route ---
 @app.route("/api/log/chunk")
-def api_log_chunk(request):
-    """API endpoint to fetch log chunks for the infinite viewer."""
+def api_log_chunk_file(request):
+    """
+    API endpoint to fetch a specific log file's content based on its index.
+    If no index is provided, fetches the latest log file.
+    """
+    target_index = -1
     try:
-        # Get query parameters, providing defaults
-        offset = int(request.args.get("offset", 0))
-        newer_than_timestamp_str = request.args.get("newer_than_timestamp", None)
+        # Get optional file_index from query parameters
+        file_index_str = request.args.get("file_index")
+        if file_index_str is not None:
+            target_index = int(file_index_str)
+            # print(f"Requested log file index: {target_index}") # Debug
+        else:
+            # No index provided, get the latest one
+            target_index = get_latest_log_index()
+            # print(f"No index requested, fetching latest: {target_index}") # Debug
+            # If get_latest_log_index returns 0 and no files exist, read will return None below.
 
-        newer_than_timestamp_ms = None
-        if newer_than_timestamp_str:
-            try:
-                # Attempt to convert the timestamp string to an integer (milliseconds)
-                newer_than_timestamp_ms = int(newer_than_timestamp_str)
-            except ValueError:
-                log(f"Invalid newer_than_timestamp format: {newer_than_timestamp_str}")
-                # Optionally return an error, or just ignore the parameter
-                # return "Invalid timestamp format", 400
+    except ValueError:
+        log(f"Invalid file_index parameter: {request.args.get('file_index')}")
+        return "Invalid file_index parameter", 400
+    except Exception as e:
+        log(f"Error determining target log index: {e}")
+        return "Server error determining log index", 500
 
-        # Fetch logs using the updated function from log.py
-        # It now defaults to MAX_LOG_LINES and handles offset/timestamp filtering
-        log_lines = get_recent_logs(
-            offset=offset, newer_than_timestamp_ms=newer_than_timestamp_ms
+    if target_index < 0:
+        # This case handles when get_latest_log_index finds no files (-1) or invalid input
+        log(f"No log files found or invalid index requested ({target_index}).")
+        # Return 404 with the index -1 so client knows there are no logs
+        # Use empty string "" for text/plain body
+        return Response(body="", status_code=404, headers={"X-Log-File-Index": "-1"})
+
+    # Fetch the content of the target log file
+    log_content = read_log_file_content(target_index)
+
+    if log_content is None:
+        # Handle file not found (e.g., requested index doesn't exist)
+        log(f"Log file index {target_index} not found.")
+        # Return 404 but include the requested index for client context
+        # Use empty string "" for text/plain body
+        return Response(
+            body="", status_code=404, headers={"X-Log-File-Index": str(target_index)}
         )
 
-        # Trigger garbage collection before potentially yielding response
-        gc.collect()
-
-        # Define a generator to stream lines
-        def generate_log_stream(lines):
-            for line in lines:
-                yield line + "\n"
-
-        # Return a streaming response
-        return Response(body=generate_log_stream(log_lines), headers={"Content-Type": "text/plain"})  # type: ignore
-
-    except Exception as e:
-        log(f"Error in /api/log/chunk: {e}")
-        return f"Server error: {e}", 500
+    # Send log content back
+    headers = {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Log-File-Index": str(target_index),  # Let client know which file this is
+    }
+    gc.collect()  # Good idea before sending potentially large response body
+    return Response(body=log_content, headers=headers)
 
 
 @app.route("/log/clear", methods=["POST"])
-def clear_log(request):
-    """Clears the log file."""
+def clear_log_files(request):
+    """Clears all log files in the log directory."""
     try:
-        # Check if log file exists before trying to remove
-        uos.stat(LOG_FILE)  # Raises OSError if it doesn't exist
-        uos.remove(LOG_FILE)
-        log("Log file cleared successfully.")
-        return "Log file cleared successfully.", 200
-    except OSError as e:
-        # Handle case where file doesn't exist (errno 2: ENOENT)
-        if e.args[0] == 2:  # ENOENT
-            log("Log file already clear (not found).")
-            return "Log file already clear (not found).", 200
+        if clear_logs():  # Call the new function from log.py
+            log("Log files cleared successfully via endpoint.")
+            return "All log files cleared successfully.", 200
         else:
-            log(f"Error clearing log file: {e}")
-            return f"Error clearing log file: {e}", 500
+            log("Log clearing function reported an error.")
+            return "Error occurred during log clearing.", 500
     except Exception as e:
-        log(f"Unexpected error clearing log file: {e}")
-        return f"Unexpected error clearing log file: {e}", 500
+        log(f"Unexpected error in /log/clear endpoint: {e}")
+        return f"Unexpected error clearing log files: {e}", 500
 
 
 @app.route("/log/add-test-entries", methods=["POST"])
 def add_test_log_entries(request):
-    """Adds 1000 test log entries."""
+    """Adds 200 test log entries."""
     try:
-        count = 1000
+        count = 200  # Changed from 1000
         log(f"Adding {count} test log entries...")
         for i in range(count):
             log(f"Test log entry {i+1}/{count}")

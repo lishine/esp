@@ -212,7 +212,7 @@ case "$COMMAND" in
   log)
         check_sync_needed
         echo "Fetching logs from ESP32 at $ESP_IP..."
-        make_request "http://$ESP_IP/log"
+        make_request "http://$ESP_IP/api/log/chunk"
         ;;
         
   log-clear)
@@ -534,9 +534,10 @@ case "$COMMAND" in
               PYTHON_FILES=$((PYTHON_FILES + 1))
             fi
           done
-          
-          if [ $PYTHON_FILES -gt 0 ]; then
-            echo "$PYTHON_FILES Python files were uploaded. Resetting device..."
+
+          # Reset if ANY files were successfully uploaded in AP mode
+          if [ $SUCCESSFUL_UPLOADS -gt 0 ]; then
+            echo "$SUCCESSFUL_UPLOADS files were uploaded. Resetting device..."
             "$0" --ap reset
           fi
         else
@@ -547,9 +548,10 @@ case "$COMMAND" in
               PYTHON_FILES=$((PYTHON_FILES + 1))
             fi
           done
-          
-          if [ $PYTHON_FILES -gt 0 ]; then
-            echo "$PYTHON_FILES Python files were uploaded. Resetting device..."
+
+          # Reset if ANY files were successfully uploaded in normal mode
+          if [ $SUCCESSFUL_UPLOADS -gt 0 ]; then
+            echo "$SUCCESSFUL_UPLOADS files were uploaded. Resetting device..."
             "$0" reset
           fi
         fi

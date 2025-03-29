@@ -1,10 +1,20 @@
 # --- Start of device/log.py ---
 import utime
 import uos
+import gc
+
+# --- Configuration ---
+LOG_DIR = "logs"
+LOG_FILE_PREFIX = "log_"
+LOG_FILE_SUFFIX = ".txt"
+MAX_LOG_FILE_SIZE = 3000  # Bytes
+# MAX_LOG_FILES = None # No limit implemented in this version
+
+# --- Module State ---
+_current_log_index = -1  # Uninitialized
+_log_dir_checked = False  # Flag to check dir only once
 
 # --- Constants ---
-LOG_FILE = "log"
-MAX_LOG_LINES = 50  # Max lines per request
 _MONTH_ABBR = (
     "Jan",
     "Feb",
@@ -19,229 +29,220 @@ _MONTH_ABBR = (
     "Nov",
     "Dec",
 )
-_MONTH_ABBR_MAP = {abbr: i + 1 for i, abbr in enumerate(_MONTH_ABBR)}
+
+# --- Helper Functions ---
 
 
-# --- Timestamp Parsing Helper ---
-def _parse_log_timestamp_ms(line):
-    """Parses 'DD-Mon-YYYY HH:MM:SS.ms' timestamp from log line start. Returns ms since epoch or None."""
-    if len(line) < 24:
-        return None
+def _ensure_log_dir():
+    """Ensures the log directory exists."""
+    global _log_dir_checked
+    if _log_dir_checked:
+        return
     try:
-        timestamp_str = line[:24]
-        ms_part = int(timestamp_str[21:])
-        date_part = timestamp_str[:11]
-        time_part = timestamp_str[12:20]
+        uos.stat(LOG_DIR)
+        # print(f"Log directory '{LOG_DIR}' already exists.") # Debug
+    except OSError as e:
+        # If directory doesn't exist (errno 2: ENOENT)
+        if e.args[0] == 2:
+            try:
+                uos.mkdir(LOG_DIR)
+                print(f"Created log directory: {LOG_DIR}")
+            except OSError as mkdir_e:
+                print(f"Error creating log directory '{LOG_DIR}': {mkdir_e}")
+                # If we can't create the dir, logging to file will fail
+        else:
+            # Other stat error
+            print(f"Error checking log directory '{LOG_DIR}': {e}")
+    _log_dir_checked = True
 
-        day = int(date_part[:2])
-        month_str = date_part[3:6]
-        year = int(date_part[7:11])
-        month = _MONTH_ABBR_MAP.get(month_str)
-        if month is None:
-            return None  # Invalid month
 
-        hour = int(time_part[:2])
-        minute = int(time_part[3:5])
-        second = int(time_part[6:8])
+def get_latest_log_index():
+    """Finds the highest index of existing log files."""
+    _ensure_log_dir()
+    latest_index = -1
+    try:
+        files = uos.ilistdir(LOG_DIR)
+        for entry in files:
+            filename = entry[0]
+            file_type = entry[1]
+            # Check if it's a file and matches the pattern
+            if (
+                file_type == 0x8000
+                and filename.startswith(LOG_FILE_PREFIX)
+                and filename.endswith(LOG_FILE_SUFFIX)
+            ):
+                try:
+                    # Extract index part: log_ (4 chars) until .txt (-4 chars)
+                    index_str = filename[len(LOG_FILE_PREFIX) : -len(LOG_FILE_SUFFIX)]
+                    index = int(index_str)
+                    if index > latest_index:
+                        latest_index = index
+                except ValueError:
+                    # Ignore files with non-integer index part
+                    print(f"Warning: Found log file with non-integer index: {filename}")
+                    pass
+    except OSError as e:
+        print(f"Error listing log directory '{LOG_DIR}': {e}")
+        # If we can't list, assume no files exist
+        return -1
 
-        # utime.mktime handles tuple (year, month, day, hour, minute, second, weekday, yearday)
-        # We provide 0 for weekday and yearday as they are not needed for epoch calculation
-        time_tuple = (year, month, day, hour, minute, second, 0, 0)
-        seconds_epoch = utime.mktime(time_tuple)
-        # Make sure mktime didn't return an error (-1)
-        if seconds_epoch == -1:
-            return None
-        return seconds_epoch * 1000 + ms_part
-    except (
-        ValueError,
-        IndexError,
-        TypeError,
-    ):  # Catch potential errors during parsing/conversion
-        return None  # Return None if parsing fails
+    # If no files were found, return 0 to start with log_000.txt
+    # Otherwise, return the highest index found.
+    return latest_index if latest_index != -1 else 0
+
+
+def _get_log_filepath(index):
+    """Constructs the full path for a given log file index."""
+    # Format index with 3 digits, zero-padded
+    return f"{LOG_DIR}/{LOG_FILE_PREFIX}{index:03d}{LOG_FILE_SUFFIX}"
 
 
 # --- Logging Function ---
-def log(*args, **kwargs):
-    """Log function that writes messages to a file and prints to console with timestamp"""
-    # Use ticks_ms for a more reliable millisecond source
-    ticks_now_ms = utime.ticks_ms()
-    # Calculate seconds since epoch (assuming epoch is 2000-01-01 for MicroPython)
-    # 946684800 is seconds between Unix epoch (1970) and MP epoch (2000)
-    # seconds_since_mp_epoch = utime.ticks_diff(ticks_now_ms // 1000, 0) # Ticks are relative, 0 might be boot time
-    # A more robust way might involve getting RTC time if available and syncing ticks,
-    # but for internal consistency utime.localtime() might be sufficient if RTC is set.
-    # Let's stick to utime.localtime() for simplicity unless RTC is guaranteed.
-    now = utime.localtime()  # Get current time tuple from RTC if set
-    ms = ticks_now_ms % 1000  # Get ms part from ticks
 
-    # Format timestamp using the time tuple from localtime()
+
+def log(*args, **kwargs):
+    """Log function that writes messages to rotating files and prints to console."""
+    global _current_log_index
+
+    # 1. Ensure log directory exists
+    _ensure_log_dir()
+
+    # 2. Initialize current log index if needed
+    if _current_log_index == -1:
+        _current_log_index = get_latest_log_index()
+        # print(f"Initialized log index to: {_current_log_index}") # Debug
+
+    # 3. Format the message with timestamp
+    ticks_now_ms = utime.ticks_ms()
+    now = utime.localtime()
+    ms = ticks_now_ms % 1000
     timestamp = "{:02d}-{}-{:04d} {:02d}:{:02d}:{:02d}.{:03d}".format(
         now[2], _MONTH_ABBR[now[1] - 1], now[0], now[3], now[4], now[5], ms
     )
-
     message = " ".join(str(arg) for arg in args)
     output = f"{timestamp} {message}\n"
+    output_bytes = output.encode("utf-8")  # Encode once for size check and write
+
+    # 4. Determine current log file path
+    current_filepath = _get_log_filepath(_current_log_index)
+
+    # 5. Check current file size and rotate if necessary
     try:
-        # Use 'a' mode to append. Create file if it doesn't exist.
-        with open(LOG_FILE, "a") as f:
-            f.write(output)
+        stat = uos.stat(current_filepath)
+        current_size = stat[6]
+        # print(f"Current log file: {current_filepath}, Size: {current_size}") # Debug
+    except OSError as e:
+        # File probably doesn't exist yet (ENOENT)
+        if e.args[0] == 2:
+            current_size = 0
+            # print(f"Log file {current_filepath} not found, starting new.") # Debug
+        else:
+            print(f"Error stating log file '{current_filepath}': {e}")
+            current_size = 0  # Assume 0 size on error to avoid infinite loop
+
+    if current_size > 0 and (current_size + len(output_bytes)) > MAX_LOG_FILE_SIZE:
+        _current_log_index += 1
+        current_filepath = _get_log_filepath(_current_log_index)
+        current_size = 0  # Reset size for the new file
+        print(f"Rotating log to new file: {current_filepath}")
+        gc.collect()  # Collect garbage before potentially writing a lot
+
+    # 6. Write to the current log file
+    try:
+        with open(current_filepath, "ab") as f:  # Use 'ab' (append binary)
+            f.write(output_bytes)
     except Exception as e:
-        # Print error to console if log writing fails
-        print(f"Error writing to log file '{LOG_FILE}': {e}")
-    # Always print to console regardless of file write success
+        print(f"Error writing to log file '{current_filepath}': {e}")
+        # Fallback: Try printing error to console if file write fails
+        print("--- LOG WRITE FAILED ---")
+        print(output, end="")
+        print("--- END LOG WRITE FAILED ---")
+
+    # 7. Always print to console
     print(output, end="", **kwargs)
 
 
-# Unix epoch starts 1970-01-01, MicroPython epoch starts 2000-01-01
-# Difference is 946684800 seconds = 946684800000 milliseconds
-UNIX_TO_MP_EPOCH_OFFSET_MS = 946684800000
-
-
 # --- Log Reading Function ---
-def get_recent_logs(
-    offset=0, newer_than_timestamp_ms=None, chunk_size=2000
-):  # Reduced default chunk size
+
+
+def read_log_file_content(file_index):
     """
-    Read log lines from LOG_FILE (newest first) with filtering.
+    Reads the entire content of a specific log file.
 
     Args:
-        offset (int): Number of newest lines to skip. Used only if newer_than_timestamp_ms is None.
-        newer_than_timestamp_ms (int): If provided, return only lines newer than this timestamp (ms since epoch).
-                                       Offset is ignored if this is provided. Max MAX_LOG_LINES returned.
-        chunk_size (int): Size of chunks to read from the file.
+        file_index (int): The index of the log file to read (e.g., 0 for log_000.txt).
 
     Returns:
-        list: A list of log line strings (newest first), max MAX_LOG_LINES items. Returns empty list on error.
+        bytes: The raw byte content of the file, or None if the file is not found
+               or a read error occurs.
     """
-    collected_lines = []
+    if not isinstance(file_index, int) or file_index < 0:
+        print(f"Error: Invalid file index requested: {file_index}")
+        return None
+
+    filepath = _get_log_filepath(file_index)
+    # print(f"Attempting to read log file: {filepath}") # Debug
     try:
-        # Convert incoming Unix epoch timestamp to MicroPython epoch timestamp if provided
-        newer_than_timestamp_mp_ms = None
-        if newer_than_timestamp_ms is not None:
-            newer_than_timestamp_mp_ms = (
-                newer_than_timestamp_ms - UNIX_TO_MP_EPOCH_OFFSET_MS
-            )
-
-        with open(LOG_FILE, "r") as f:
-            f.seek(0, 2)
-            file_size = f.tell()
-            carry_over = ""  # Stores partial line from the start of the previous chunk (read backwards)
-            processed_bytes = 0
-
-            # Read file backwards in chunks
-            while processed_bytes < file_size:
-                read_size = min(chunk_size, file_size - processed_bytes)
-                # Seek backwards relative to the end of the file
-                f.seek(file_size - processed_bytes - read_size)
-                print("----------1")
-                chunk = f.read(read_size)
-                print("----------2")
-                processed_bytes += read_size
-
-                # Combine chunk with any carry-over from the previous chunk
-                # This is the text block we process in this iteration
-                text_to_process = chunk + carry_over
-
-                # Split into lines
-                lines_found = text_to_process.splitlines()
-                print("----------3")
-
-                if not lines_found:
-                    # Chunk + carry_over didn't contain a newline, so it's all carry_over
-                    carry_over = text_to_process
-                    continue  # Read next chunk
-
-                # The first line found is the new carry_over (might be partial)
-                carry_over = lines_found[0]
-
-                # The rest are complete lines found in this iteration (newest first within this block)
-                new_complete_lines = lines_found[1:][::-1]
-
-                # Prepend these new complete lines to our overall collected list
-                collected_lines = new_complete_lines + collected_lines
-
-                # --- Optimizations (applied after processing each chunk's lines) ---
-                # If in offset mode, check if we have collected enough lines
-                if (
-                    newer_than_timestamp_ms is None
-                    and len(collected_lines) >= offset + MAX_LOG_LINES
-                ):
-                    break  # Stop reading more chunks
-
-                # If in timestamp mode, check if the oldest line found *in this chunk*
-                # is already older than our target. If so, we can likely stop.
-                if (
-                    newer_than_timestamp_mp_ms is not None and new_complete_lines
-                ):  # Use mp_ms
-                    oldest_ts_in_chunk = _parse_log_timestamp_ms(
-                        new_complete_lines[
-                            -1
-                        ]  # Check the oldest line added in this batch
-                    )
-                    if (
-                        oldest_ts_in_chunk is not None
-                        and oldest_ts_in_chunk
-                        <= newer_than_timestamp_mp_ms  # Use mp_ms
-                    ):
-                        # If we already found *some* lines newer than the target, we can stop.
-                        # Check if any line collected so far is newer than the target.
-                        if any(
-                            _parse_log_timestamp_ms(l)
-                            > newer_than_timestamp_mp_ms  # Use mp_ms
-                            for l in collected_lines
-                            if _parse_log_timestamp_ms(l) is not None
-                        ):
-                            break  # Stop reading more chunks
-
-            # After the loop, the final carry_over contains the very first line of the file (if file wasn't empty)
-            if carry_over and processed_bytes == file_size:
-                # Check if the carry_over itself meets timestamp criteria if applicable
-                should_add_carry_over = True
-                if newer_than_timestamp_mp_ms is not None:
-                    ts = _parse_log_timestamp_ms(carry_over)
-                    if ts is None or ts <= newer_than_timestamp_mp_ms:
-                        should_add_carry_over = False
-
-                if should_add_carry_over:
-                    # Check if adding it exceeds MAX_LOG_LINES in timestamp mode
-                    if (
-                        newer_than_timestamp_mp_ms is None
-                        or len(collected_lines) < MAX_LOG_LINES
-                    ):
-                        collected_lines.insert(
-                            0, carry_over
-                        )  # Prepend the very first line
-
-            # --- Post-processing and Filtering ---
-            if newer_than_timestamp_mp_ms is not None:  # Use mp_ms
-                # Filter collected lines by timestamp
-                filtered_lines = []
-                for line in collected_lines:  # Iterating newest first
-                    ts = _parse_log_timestamp_ms(line)
-                    # Check if timestamp is valid and newer than requested (using MP epoch)
-                    if ts is not None and ts > newer_than_timestamp_mp_ms:  # Use mp_ms
-                        filtered_lines.append(line)
-                        # Stop once we have MAX_LOG_LINES
-                        if len(filtered_lines) >= MAX_LOG_LINES:
-                            break
-                return filtered_lines  # Return filtered list (newest first)
-            else:
-                # Apply offset and limit
-                start_index = offset
-                end_index = offset + MAX_LOG_LINES
-                # Ensure indices are within the bounds of the collected lines
-                start_index = min(start_index, len(collected_lines))
-                end_index = min(end_index, len(collected_lines))
-                # Return the requested slice (newest first)
-                return collected_lines[start_index:end_index]
-
-    except OSError:
-        # File probably doesn't exist yet
-        return []
+        with open(filepath, "rb") as f:
+            content = f.read()
+            # print(f"Read {len(content)} bytes from {filepath}") # Debug
+            return content
+    except OSError as e:
+        # File not found is expected when requesting older logs
+        if e.args[0] == 2:  # ENOENT
+            # print(f"Log file not found: {filepath}") # Debug
+            pass
+        else:
+            # Log other errors
+            print(f"Error reading log file '{filepath}': {e}")
+        return None
     except Exception as e:
-        # Log error to console if something else goes wrong
-        print(f"Error reading log file '{LOG_FILE}': {e}")
-        return []
+        print(f"Unexpected error reading log file '{filepath}': {e}")
+        return None
+
+
+# --- Log Clearing Function ---
+
+
+def clear_logs():
+    """Removes all log files from the log directory."""
+    global _current_log_index
+    _ensure_log_dir()
+    cleared_count = 0
+    error_count = 0
+    print(f"Attempting to clear logs in '{LOG_DIR}'...")
+    try:
+        entries = list(uos.ilistdir(LOG_DIR))  # Convert iterator to list
+        # print(f"Found {len(entries)} entries in {LOG_DIR}") # Debug
+        for entry in entries:
+            filename = entry[0]
+            file_type = entry[1]
+            full_path = f"{LOG_DIR}/{filename}"
+
+            # Check if it's a file and looks like one of our log files
+            if (
+                file_type == 0x8000
+                and filename.startswith(LOG_FILE_PREFIX)
+                and filename.endswith(LOG_FILE_SUFFIX)
+            ):
+                try:
+                    uos.remove(full_path)
+                    # print(f"Removed log file: {full_path}") # Debug
+                    cleared_count += 1
+                except OSError as e:
+                    print(f"Error removing log file '{full_path}': {e}")
+                    error_count += 1
+            # else: # Debug
+            #     print(f"Skipping non-log file or directory: {full_path}")
+
+        # Reset the current index to start fresh from 0 next time
+        _current_log_index = 0
+        print(f"Log clearing finished. Removed: {cleared_count}, Errors: {error_count}")
+        return True
+
+    except OSError as e:
+        print(f"Error listing or accessing log directory '{LOG_DIR}' during clear: {e}")
+        return False
 
 
 # --- End of device/log.py ---
