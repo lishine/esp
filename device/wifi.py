@@ -80,8 +80,17 @@ def wifi_connect_thread():
     if connect_to_network(0):
         return
 
-    # If primary fails, try secondary
-    log("Primary network connection failed, trying secondary network")
+    # If primary fails, disconnect, wait, then try secondary
+    log("Primary network connection failed.")
+    try:
+        log("Disconnecting WiFi before trying secondary...")
+        sta.disconnect()
+        # Wait a moment for the disconnect to process
+        time.sleep(1)
+    except Exception as e:
+        log(f"Error during disconnect: {e}")  # Log potential errors during disconnect
+
+    log("Trying secondary network...")
     if connect_to_network(1):
         return
 

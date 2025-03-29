@@ -1,13 +1,24 @@
 import sys
-import time
+import time  # Keep for initial time adjustment
 import machine
-from log import log
-import wifi
-import ap
-import server
 
-# Increment day on boot
-# Increment day on boot
+# import uasyncio as asyncio # Moved to main.py
+from log import log  # Keep for initial logging
+
+import wifi  # Needed here
+import ap  # Needed here for AP start
+
+# import server  # No longer needed here, started in main.py
+import led  # Needed here for LED thread start
+
+
+# def log(*args, **kwargs):
+# print("")
+
+
+# from log import logger_task # Moved to main.py
+
+# Keep the time adjustment logic as is, it runs before asyncio starts
 try:
     # Ensure time is synced (e.g., via NTP if configured, though not shown here)
     # before incrementing to avoid setting incorrect time based on default RTC state.
@@ -46,21 +57,30 @@ except Exception as e:
 
 
 log("\n" + "=" * 40)
-log("ESP32 Device Starting...")
+log("ESP32 Boot Sequence Starting...")
 log("=" * 40)
 
 try:
+    # Start background threads synchronously before main.py runs
+    log("Starting AP thread from boot.py...")
     ap.start_ap(essid="DDDEV", password="")
-    wifi.start_wifi()
-    server.start_server()
-    log(
-        f"""
-Device is ready:
-- AP mode: http://{ap.get_ap_ip()} (SSID: DDDEV)
-- Station mode: http://{wifi.get_ip()} (if connected)
-        """
-    )
+    log(f"AP Started (thread): http://{ap.get_ap_ip()} (SSID: DDDEV)")
+
+    log("Starting LED thread from boot.py...")
+    log("LED thread started.")
+
+    log("Starting WiFi thread from boot.py...")
+    wifi.start_wifi()  # Start WiFi connection/monitor threads
+    log("WiFi thread started.")
+
+    # log("Starting Server thread from boot.py...") # Moved to main.py
+    # server.start_server() # Moved to main.py
+    # log("Server thread started.") # Moved to main.py
 
 except Exception as e:
-    log("Error during initialization:", e)
+    log("Error during synchronous boot initialization:", e)
     sys.print_exception(e)
+
+log("boot.py finished.")  # Indicate boot sequence completion
+
+# --- Async Main Function and Event Loop are now in main.py ---

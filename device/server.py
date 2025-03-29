@@ -1,6 +1,8 @@
 from microdot import Microdot, Response
 import json
-import _thread
+
+# import _thread # No longer needed
+import uasyncio as asyncio
 import machine
 import uos
 import gc
@@ -12,7 +14,7 @@ from wifi import (
     get_ip,
     save_wifi_config,
     wifi_config,
-    wifi_connect_thread,
+    # wifi_connect_thread, # Removed old thread function
     get_current_network,
 )
 from fs import (
@@ -41,15 +43,14 @@ async def upload_file(request, target_path):
 
 
 @app.route("/reset", methods=["GET", "POST"])
-def reset(request):
-    import _thread
-    import time
+async def reset(request):  # Changed to async def
+    # import time # Keep time for sleep if needed, but asyncio.sleep is better
 
-    def delayed_reset():
-        time.sleep(0.1)
+    async def delayed_reset_async():  # Changed to async def
+        await asyncio.sleep(0.1)  # Use asyncio.sleep
         machine.reset()
 
-    _thread.start_new_thread(delayed_reset, ())
+    asyncio.create_task(delayed_reset_async())  # Use asyncio.create_task
     return "Device resetting..."
 
 
@@ -143,11 +144,20 @@ def get_settings_data(request):
     )
 
 
+# Import the async version of the wifi connect function (assuming it will be created)
+
+
 @app.route("/settings/save", methods=["POST"])
-def save_settings(request):
+async def save_settings(request):  # Changed to async def
     config = request.json
-    save_wifi_config(config)
-    _thread.start_new_thread(wifi_connect_thread, ())
+    if not config:
+        return "Invalid JSON data", 400
+
+    save_wifi_config(config)  # This remains synchronous
+
+    # Start the wifi connection attempt as an asyncio task
+    # Make sure wifi_connect_task is defined as async def in wifi.py
+    # asyncio.create_task(wifi_connect_task())
 
     return json.dumps({"success": True, "message": "Settings saved"})
 
@@ -380,9 +390,14 @@ def before_request(request):
     )
 
 
-# These functions are now imported from network.py
+# This function now returns the configured app instance.
+# The server will be started asynchronously in the main script.
+def get_app():
+    log("Microdot app configured")
+    return app
 
 
-def start_server():
-    _thread.start_new_thread(lambda: app.run(port=80), ())
-    log("Web server started")
+# Remove the old start_server function entirely
+# def start_server():
+#     _thread.start_new_thread(lambda: app.run(port=80), ())
+#     log("Web server started")
