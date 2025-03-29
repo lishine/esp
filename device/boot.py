@@ -5,7 +5,6 @@ import machine
 # import uasyncio as asyncio # Moved to main.py
 from log import log  # Keep for initial logging
 
-import wifi  # Needed here
 import ap  # Needed here for AP start
 
 # import server  # No longer needed here, started in main.py
@@ -66,9 +65,7 @@ try:
     ap.start_ap(essid="DDDEV", password="")
     log(f"AP Started (thread): http://{ap.get_ap_ip()} (SSID: DDDEV)")
 
-    log("Starting WiFi thread from boot.py...")
-    wifi.start_wifi()  # Start WiFi connection/monitor threads
-    log("WiFi thread started.")
+    # WiFi thread starting moved to main.py async task
 
     # log("Starting Server thread from boot.py...") # Moved to main.py
     # server.start_server() # Moved to main.py

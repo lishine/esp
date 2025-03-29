@@ -3,6 +3,7 @@ import sys
 from log import log  # Keep async logger
 import server  # Needed here for get_app()
 import led  # Import the led module
+import wifi  # Import the new wifi module
 
 # wifi, ap, led are started in boot.py
 # We only need the logger task here
@@ -21,6 +22,10 @@ async def main():
         log("Creating LED task...")
         asyncio.create_task(led.led_task())
         log("LED task created.")
+
+        log("Creating WiFi management task...")
+        asyncio.create_task(wifi.manage_wifi_connection())
+        log("WiFi management task created.")
 
         # Get the configured Microdot app from server.py
         app = server.get_app()
