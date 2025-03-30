@@ -16,7 +16,7 @@ MAX_LOG_FILE_SIZE = 3000  # Bytes
 _current_log_index = -1  # Uninitialized by default, set by writer task
 _log_dir_checked = False  # Flag to check dir only once
 _log_queue = []  # In-memory queue for log messages (bytes)
-_MAX_QUEUE_SIZE = 10  # Max messages before dropping
+_MAX_QUEUE_SIZE = 30  # Max messages before dropping
 _WRITE_THRESHOLD = 5  # Number of messages to trigger a write
 _write_event = asyncio.Event()  # Event to signal the writer task
 
@@ -153,7 +153,6 @@ async def _log_writer_task():
                 _write_event.clear()
                 print("Log writer triggered by event.")
             except TimeoutError:
-                print("Log writer triggered by timeout.")
                 pass  # Nothing specific to do on timeout itself
 
             # Process the queue if it has messages (either from event or timeout)
