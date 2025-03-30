@@ -106,7 +106,7 @@ show_usage() {
     echo "  log                    - View device logs"
     echo "  log-clear              - Clear the log file on the device"
     echo "  log-add-test           - Add 1000 test log entries"
-    echo "  la                     - List all files on the device"
+    echo "  la/ls                  - List all files on the device"
     echo "  fs-list                - Get JSON file listing for visual tools"
     echo "  free                   - Show free memory on the device"
     echo "  ping                   - Check if the device is responding"
@@ -134,7 +134,7 @@ show_usage() {
     echo "  ./run --ampy reset     - Reset the device using ampy"
     echo "  ./run --ampy rm main.py - Remove main.py using ampy"
     echo "  ./run --ampy upload main.py - Upload main.py using ampy"
-    echo "  ./run --ampy la        - List all files using ampy"
+    echo "  ./run --ampy la/ls     - List all files using ampy"
     echo "  ./run --ampy sync      - Upload all modified files using ampy"
 }
 
@@ -243,7 +243,7 @@ case "$COMMAND" in
        make_request "http://$ESP_IP/log/add-test-entries" "POST"
        ;;
 
-  la)
+  la|ls)
         check_sync_needed
         if [ "$USE_AMPY" = true ]; then
           echo "Listing all files on ESP32 using ampy..."
