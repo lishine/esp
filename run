@@ -115,10 +115,10 @@ show_usage() {
     echo "  rm --visual            - Interactive visual file removal"
     echo "  download <path>        - Download a file from the device"
     echo "  view <path>            - View the contents of a file on the device"
-    echo "  upload [--py] <file(s)> [target] - Upload one or more files (comma-separated), compiling .py to .mpy by default (except main.py, boot.py)"
-    echo "                                        --py: Upload .py files directly without compiling"
-    echo "  sync                   - Upload all modified files in device/ directory, compiling .py to .mpy by default (except main.py, boot.py)"
-    echo "  sync --py              - Upload all modified .py files directly without compiling"
+    echo "  upload [--py | --no-compile] <file(s)> [target] - Upload one or more files (comma-separated), compiling .py to .mpy by default (except main.py, boot.py)"
+    echo "                                        --py | --no-compile: Upload .py files directly without compiling"
+    echo "  sync [--py | --no-compile] - Upload all modified files in device/ directory, compiling .py to .mpy by default (except main.py, boot.py)"
+    echo "                                        --py | --no-compile: Upload all modified .py files directly without compiling"
     echo "  sync --dry-run         - Show which files would be uploaded (respects --compile)"
     echo "  sync --force           - Force upload all files in device/ directory (respects --compile)"
     echo ""
@@ -370,7 +370,7 @@ case "$COMMAND" in
         SKIP_COMPILE=false
         UPLOAD_ARGS=()
         for arg in "${ARGS[@]}"; do
-            if [ "$arg" == "--py" ]; then
+            if [ "$arg" == "--py" ] || [ "$arg" == "--no-compile" ]; then
                 SKIP_COMPILE=true
             else
                 UPLOAD_ARGS+=("$arg")
@@ -541,7 +541,7 @@ case "$COMMAND" in
         case "$arg" in
             --dry-run) DRY_RUN=true ;;
             --force) FORCE_UPLOAD=true ;;
-            --py) SKIP_COMPILE_SYNC=true ;; # Check for --py flag
+            --py|--no-compile) SKIP_COMPILE_SYNC=true ;; # Check for --py or --no-compile flag
             *) SYNC_ARGS+=("$arg") ;; # Should be empty if used correctly
         esac
     done
