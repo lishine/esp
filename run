@@ -135,6 +135,7 @@ show_usage() {
     echo "  ./run --ampy rm main.py - Remove main.py using ampy"
     echo "  ./run --ampy upload main.py - Upload main.py using ampy"
     echo "  ./run --ampy la        - List all files using ampy"
+    echo "  ./run --ampy sync      - Upload all modified files using ampy"
 }
 
 # Helper function to make a curl request with timeout
@@ -550,10 +551,15 @@ case "$COMMAND" in
             GENERATED_MPY_FILES+=("$mpy_file") # Add to cleanup list
           fi
 
-          # Build the upload command with or without AP flag
+          # Build the upload command with appropriate flags
           UPLOAD_CMD="$0"
           if [ "$FORCE_AP_MODE" = true ]; then
             UPLOAD_CMD="$UPLOAD_CMD --ap"
+          fi
+          
+          # Pass the --ampy flag if it was used
+          if [ "$USE_AMPY" = true ]; then
+            UPLOAD_CMD="$UPLOAD_CMD --ampy"
           fi
 
           # Execute the upload command using the potentially compiled file
@@ -569,8 +575,11 @@ case "$COMMAND" in
               echo "Falling back to AP IP address for this and future uploads"
               FORCE_AP_MODE=true
 
-              # Retry the upload with AP flag
+              # Retry the upload with AP flag (preserving --ampy if it was used)
               UPLOAD_CMD="$0 --ap"
+              if [ "$USE_AMPY" = true ]; then
+                UPLOAD_CMD="$UPLOAD_CMD --ampy"
+              fi
               echo "Retrying with: $UPLOAD_CMD upload \"$file_to_upload\""
               upload_output=$($UPLOAD_CMD upload "$file_to_upload" 2>&1)
               upload_status=$?
@@ -623,13 +632,21 @@ case "$COMMAND" in
           # Reset if ANY files were successfully uploaded in AP mode
           if [ $SUCCESSFUL_UPLOADS -gt 0 ]; then
             echo "$SUCCESSFUL_UPLOADS files were uploaded. Resetting device..."
-            "$0" --ap reset
+            RESET_CMD="$0 --ap"
+            if [ "$USE_AMPY" = true ]; then
+              RESET_CMD="$RESET_CMD --ampy"
+            fi
+            $RESET_CMD reset
           fi
         else
           # Reset if ANY files were successfully uploaded in normal mode
           if [ $SUCCESSFUL_UPLOADS -gt 0 ]; then
             echo "$SUCCESSFUL_UPLOADS files were uploaded. Resetting device..."
-            "$0" reset
+            RESET_CMD="$0"
+            if [ "$USE_AMPY" = true ]; then
+              RESET_CMD="$RESET_CMD --ampy"
+            fi
+            $RESET_CMD reset
           fi
         fi
       else
