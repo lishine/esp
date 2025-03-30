@@ -61,6 +61,12 @@ function processFiles(jsonData) {
     let res = [];
     for (let i = 0; i < entries.length; i++) {
       let entry = entries[i];
+
+      // Skip files matching the pattern *###.* (contains 3 digits followed by a dot)
+      if (!entry.is_dir && /\d{3}\./.test(entry.name)) {
+        continue;
+      }
+
       let isLast = i === entries.length - 1;
       let branch = isLast ? "└── " : "├── ";
       if (entry.is_dir === true) {
