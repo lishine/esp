@@ -33,6 +33,7 @@ JSON_FILE=$(mktemp)
 # Get file listing from ESP32 in JSON format
 echo "Fetching file list from ESP32..."
 FILE_LIST=$(./run fs-list 2>&1)
+echo this echo help the dialog not duplicate files on scroll $FILE_LIST
 RESULT=$?
 
 # Check if the command was successful

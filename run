@@ -1,77 +1,19 @@
 #!/bin/bash
-# ESP32 Device Management Script
-# Simplifies interactions with ESP32 device
+# ESP32 Device Management Script (Main Entry Point)
+# Simplifies interactions with ESP32 device by delegating tasks
 
-# Get the script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-IP_JSON_FILE="$SCRIPT_DIR/ip.json"
-UPLOAD_CHUNKED_SCRIPT_PATH="$SCRIPT_DIR/upload_chunked.sh"
+# Get the script directory (project root)
+SCRIPT_DIR_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )" # Fixed &&
 
-# Default AMPY port for serial communication
-AMPY_PORT="/dev/tty.usbmodem101"
+# Source common functions and variables from the scripts directory
+# shellcheck source=./scripts/common.sh
+source "$SCRIPT_DIR_ROOT/scripts/common.sh" || { echo "Error: Unable to source scripts/common.sh" >&2; exit 1; } # Fixed >&2
 
-# Function to check if jq is available
-check_jq() {
-    if ! command -v jq &> /dev/null; then
-        echo "Error: jq is not installed but required by this script."
-        echo "Please install jq using one of the following methods:"
-        echo "  - macOS: brew install jq"
-        echo "  - Ubuntu/Debian: sudo apt-get install jq"
-        echo "  - Windows with Chocolatey: choco install jq"
-        exit 1
-    fi
-}
-
-# Function to read IP from JSON file
-read_ip_from_json() {
-    if [ -f "$IP_JSON_FILE" ]; then
-        check_jq
-        jq -r '.ip' "$IP_JSON_FILE"
-        return 0
-    fi
-    return 1
-}
-
-# Function to write IP to JSON file
-write_ip_to_json() {
-    local new_ip="$1"
-    local json_content
-
-    if [ -f "$IP_JSON_FILE" ]; then
-        check_jq
-        # Read existing JSON and update only the IP field while preserving other values
-        json_content=$(jq --arg ip "$new_ip" '. + {ip: $ip}' "$IP_JSON_FILE")
-    else
-        # Create new JSON
-        json_content="{\"ip\": \"$new_ip\"}"
-    fi
-    echo "$json_content" > "$IP_JSON_FILE"
-}
-
-# Function to check if sync is needed
-check_sync_needed() {
-    local timestamp_file="$SCRIPT_DIR/.last_sync"
-
-    # If timestamp file doesn't exist, sync is needed
-    if [ ! -f "$timestamp_file" ]; then
-        echo "*** Sync required ***"
-        return 0
-    fi
-
-    # Check if any files in device/ directory are newer than timestamp file
-    if find "$SCRIPT_DIR/device" -type f -newer "$timestamp_file" -print -quit | grep -q .; then
-        echo "*** Sync required ***"
-        return 0
-    fi
-
-    return 1
-}
-
-AP_IP="192.168.4.1"
-
-# Check if --ap or --ampy flags are used
+# --- Argument Parsing for Flags (--ap, --ampy) ---
 USE_AP_IP=false
 USE_AMPY=false
+declare -a ALL_ARGS=("$@") # Keep original args for passing later
+
 for arg in "$@"; do
     if [ "$arg" == "--ap" ]; then
         USE_AP_IP=true
@@ -80,26 +22,30 @@ for arg in "$@"; do
     fi
 done
 
-# Read IP from JSON file
+# --- Determine Target IP ---
+# This logic remains here as it's needed before dispatching commands
 if [ "$USE_AP_IP" = true ]; then
-    ESP_IP="$AP_IP"
+    ESP_IP="$AP_IP" # AP_IP is sourced from common.sh
     echo "Using AP IP address: $ESP_IP"
-elif read_ip_from_json >/dev/null; then
-    # Capture the IP value separately without showing output
-    ESP_IP=$(read_ip_from_json 2>/dev/null)
+elif saved_ip=$(read_ip_from_json); then # read_ip_from_json is sourced
+    ESP_IP="$saved_ip"
+    # Optionally echo the used IP: echo "Using saved IP address: $ESP_IP"
 else
-    echo "Warning: IP file not found at $IP_JSON_FILE"
+    echo "Warning: IP file not found or invalid at $IP_JSON_FILE" # IP_JSON_FILE is sourced
     echo "Using AP IP address instead: $AP_IP"
     ESP_IP="$AP_IP"
 fi
+# Export ESP_IP so make_request (used by some commands below) can see it
+export ESP_IP
 
-# Display usage information
+# --- Display Usage Information ---
 show_usage() {
-    echo "Usage: ./run [--ap] <command> [arguments]"
+    # Usage info remains largely the same, but reflects the structure
+    echo "Usage: ./run [--ap] [--ampy] <command> [arguments]"
     echo ""
     echo "Options:"
-    echo "  --ap                   - Use AP IP address (192.168.4.1) instead of configured IP"
-    echo "  --ampy                 - Use ampy for serial communication instead of HTTP API"
+    echo "  --ap                   - Use AP IP address ($AP_IP) instead of configured IP"
+    echo "  --ampy                 - Use ampy (Port: $AMPY_PORT) for serial communication instead of HTTP API"
     echo ""
     echo "Commands:"
     echo "  reset                  - Reset the ESP32 device"
@@ -112,116 +58,62 @@ show_usage() {
     echo "  ping                   - Check if the device is responding"
     echo "  status                 - Check device status and update IP file if needed"
     echo "  rm <path>              - Remove a file from the device"
-    echo "  rm --visual            - Interactive visual file removal"
+    echo "  rm --visual            - Interactive visual file removal (uses scripts/rm-visual)"
     echo "  download <path>        - Download a file from the device"
     echo "  view <path>            - View the contents of a file on the device"
-    echo "  upload [--py | --no-compile] <file(s)> [target] - Upload one or more files (comma-separated), compiling .py to .mpy by default (except main.py, boot.py)"
-    echo "                                        --py | --no-compile: Upload .py files directly without compiling"
-    echo "  sync [--py | --no-compile] - Upload all modified files in device/ directory, compiling .py to .mpy by default (except main.py, boot.py)"
-    echo "                                        --py | --no-compile: Upload all modified .py files directly without compiling"
-    echo "  sync --dry-run         - Show which files would be uploaded (respects --compile)"
-    echo "  sync --force           - Force upload all files in device/ directory (respects --compile)"
+    echo "  upload [...]           - Upload files (delegated to scripts/upload.sh)"
+    echo "                           Args: [--py | --no-compile] <file(s)> [target]"
+    echo "  sync [...]             - Sync modified files (delegated to scripts/sync.sh)"
+    echo "                           Args: [--py | --no-compile] [--dry-run] [--force]"
     echo ""
     echo "Examples:"
-    echo "  ./run reset            - Reset the device"
-    echo "  ./run --ap log         - View device logs using AP IP"
-    echo "  ./run status           - Check device status and update IP file"
-    echo "  ./run rm main.py       - Remove main.py from the device"
-    echo "  ./run rm --visual      - Remove files using interactive selection"
-    echo "  ./run upload settings.html - Upload settings.html to the device"
-    echo "  ./run upload main.py,config.txt - Upload multiple files"
-    echo "  ./run upload main.py /app/ - Upload main.py to /app/ directory"
-    echo "  ./run sync             - Upload all modified files"
-    echo "  ./run --ampy reset     - Reset the device using ampy"
-    echo "  ./run --ampy rm main.py - Remove main.py using ampy"
-    echo "  ./run --ampy upload main.py - Upload main.py using ampy"
-    echo "  ./run --ampy la/ls     - List all files using ampy"
-    echo "  ./run --ampy sync      - Upload all modified files using ampy"
+    echo "  ./run reset"
+    echo "  ./run --ap log"
+    echo "  ./run status"
+    echo "  ./run rm main.py"
+    echo "  ./run rm --visual"
+    echo "  ./run upload settings.html"
+    echo "  ./run --ampy upload main.py"
+    echo "  ./run sync"
+    echo "  ./run sync --force --py"
+    echo "  ./run --ampy sync"
 }
 
-# Helper function to make a curl request with timeout
-# If the primary IP fails, it will try the AP IP if not already using it
-make_request() {
-    local url="$1"
-    local method="${2:-GET}"
-    local output_file="${3:-}"
-    local timeout=10
-    local curl_opts="-s -m $timeout"
-
-    # Process additional headers and options
-    shift 3 || true
-    local headers=()
-    local data_options=()
-
-    while [ $# -gt 0 ]; do
-        if [[ "$1" == "--data-binary" ]]; then
-            data_options+=("$1" "$2")
-            shift 2
-        elif [[ "$1" == *":"* ]]; then
-            headers+=("-H" "$1")
-            shift
-        else
-            # Handle other options
-            data_options+=("$1")
-            shift
-        fi
-    done
-
-    if [ -n "$output_file" ]; then
-        curl_opts="$curl_opts -o $output_file"
-    fi
-
-    if [ "$method" != "GET" ]; then
-        curl_opts="$curl_opts -X $method"
-    fi
-
-    # Try with the current IP
-    local response
-    response=$(curl $curl_opts "${headers[@]}" "${data_options[@]}" "$url" 2>/dev/null)
-    local status=$?
-
-    if [ $status -eq 0 ]; then
-        echo "$response"
-        return 0
-    else
-        # If the initial connection failed, report the error and exit
-        echo "Connection to $ESP_IP failed (Status: $status)." >&2
-        # No fallback attempt is made
-        return 1
-    fi
-}
-
-# Export the make_request function so it can be used by upload_chunked.sh
-export -f make_request
+# --- Command Dispatch ---
 
 # Check if a command was provided
-if [ $# -lt 1 ]; then
+if [ $# -lt 1 ] || [[ "${ALL_ARGS[0]}" == "--"* ]]; then # Handle case where only flags are given
     show_usage
     exit 1
 fi
 
-# Process arguments to filter out --ap and --ampy
-ARGS=()
-for arg in "$@"; do
-    if [ "$arg" != "--ap" ] && [ "$arg" != "--ampy" ]; then
-        ARGS+=("$arg")
+# Process arguments again to filter out --ap and --ampy for command/args extraction
+declare -a CMD_ARGS=()
+for arg in "${ALL_ARGS[@]}"; do
+    if [ "$arg" != "--ap" ] && [ "$arg" != "--ampy" ]; then # Fixed &&
+        CMD_ARGS+=("$arg")
     fi
 done
 
-COMMAND="${ARGS[0]}"
-if [ ${#ARGS[@]} -gt 0 ]; then
-    ARGS=("${ARGS[@]:1}")
+# Extract command and its arguments
+COMMAND="${CMD_ARGS[0]}"
+if [ ${#CMD_ARGS[@]} -gt 0 ]; then
+    ARGS=("${CMD_ARGS[@]:1}") # Arguments specific to the command
+else
+    ARGS=()
 fi
 
+
+# Main command logic using case statement
 case "$COMMAND" in
   reset)
-        check_sync_needed
+        check_sync_needed # Sourced from common.sh
         if [ "$USE_AMPY" = true ]; then
-          echo "Resetting ESP32 using ampy..."
+          echo "Resetting ESP32 using ampy (Port: $AMPY_PORT)..."
           ampy -p "$AMPY_PORT" reset
         else
           echo "Resetting ESP32 at $ESP_IP..."
-          make_request "http://$ESP_IP/reset" "POST"
+          make_request "http://$ESP_IP/reset" "POST" # make_request sourced
           echo "Reset command sent."
         fi
         ;;
@@ -247,7 +139,7 @@ case "$COMMAND" in
   la|ls)
         check_sync_needed
         if [ "$USE_AMPY" = true ]; then
-          echo "Listing all files on ESP32 using ampy..."
+          echo "Listing all files on ESP32 using ampy (Port: $AMPY_PORT)..."
           ampy -p "$AMPY_PORT" ls
         else
           echo "Listing all files on ESP32 at $ESP_IP..."
@@ -257,7 +149,7 @@ case "$COMMAND" in
 
   fs-list)
         check_sync_needed
-        echo "Getting JSON file listing from ESP32 at $ESP_IP..."
+        # echo "Getting JSON file listing from ESP32 at $ESP_IP..." # Removed for cleaner JSON output for rm --visual
         make_request "http://$ESP_IP/fs-list"
         ;;
 
@@ -277,21 +169,16 @@ case "$COMMAND" in
         check_sync_needed
         echo "Checking status of ESP32 at $ESP_IP..."
         response=$(make_request "http://$ESP_IP/status")
+        status_code=$?
         echo "$response"
-        # Check if response contains wifi_ip and extract it using jq
-        if printf '%s' "$response" | jq -e '.wifi_ip' >/dev/null 2>&1; then
-            # Extract the IP address from the JSON response
+
+        # Update IP file logic (uses sourced functions/variables)
+        if [ $status_code -eq 0 ] && printf '%s' "$response" | jq -e '.wifi_ip' >/dev/null 2>&1; then # Fixed && and >&1
             wifi_ip=$(echo "$response" | jq -r '.wifi_ip')
-
-            # Track if we need to update the IP file
             need_update=false
-
-            # Check if the IP file exists
             if [ -f "$IP_JSON_FILE" ]; then
-                # Extract current IP from JSON file
-                check_jq
+                check_jq # Sourced
                 current_ip=$(jq -r '.ip' "$IP_JSON_FILE")
-
                 if [ "$wifi_ip" != "$current_ip" ]; then
                     echo "IP has changed from $current_ip to $wifi_ip. Updating IP file..."
                     need_update=true
@@ -302,35 +189,35 @@ case "$COMMAND" in
                 echo "IP file not found at $IP_JSON_FILE. Creating with IP: $wifi_ip"
                 need_update=true
             fi
-
-            # Only update the file if needed
             if [ "$need_update" = true ]; then
-                write_ip_to_json "$wifi_ip"
+                write_ip_to_json "$wifi_ip" # Sourced
                 echo "IP file updated."
             fi
-        else
-            echo "WiFi not connected or status information incomplete."
+        elif [ $status_code -eq 0 ]; then
+             echo "WiFi not connected or status information incomplete."
+        # else make_request already printed an error
         fi
         ;;
 
   rm)
         check_sync_needed
         # Check if --visual flag is used
-        if [ ${#ARGS[@]} -gt 0 ] && [ "${ARGS[0]}" == "--visual" ]; then
-            # Run the visual rm script
-            "$SCRIPT_DIR/rm-visual"
-            exit 0
+        if [ ${#ARGS[@]} -gt 0 ] && [ "${ARGS[0]}" == "--visual" ]; then # Fixed &&
+            # Run the visual rm script from the scripts directory
+            echo "Launching visual file removal..."
+            "$SCRIPT_DIR_ROOT/scripts/rm-visual" # Updated path
+            exit $? # Exit with the status of rm-visual
         fi
 
         if [ ${#ARGS[@]} -lt 1 ]; then
-            echo "Error: Missing file path"
-            echo "Usage: ./run rm <path> or ./run rm --visual"
+            echo "Error: Missing file path" >&2 # Fixed >&2
+            echo "Usage: ./run rm <path> or ./run rm --visual" >&2 # Fixed >&2
             exit 1
         fi
         FILE_PATH="${ARGS[0]}"
-        
+
         if [ "$USE_AMPY" = true ]; then
-            echo "Removing file $FILE_PATH from ESP32 using ampy..."
+            echo "Removing file $FILE_PATH from ESP32 using ampy (Port: $AMPY_PORT)..."
             ampy -p "$AMPY_PORT" rm "$FILE_PATH"
         else
             echo "Removing file $FILE_PATH from ESP32 at $ESP_IP..."
@@ -341,21 +228,29 @@ case "$COMMAND" in
   download)
         check_sync_needed
         if [ ${#ARGS[@]} -lt 1 ]; then
-            echo "Error: Missing file path"
-            echo "Usage: ./run download <path>"
+            echo "Error: Missing file path" >&2 # Fixed >&2
+            echo "Usage: ./run download <path>" >&2 # Fixed >&2
             exit 1
         fi
         FILE_PATH="${ARGS[0]}"
-        echo "Downloading $FILE_PATH from ESP32 at $ESP_IP..."
-        make_request "http://$ESP_IP/fs/get/$FILE_PATH" "GET" "$(basename "$FILE_PATH")"
-        echo "Downloaded to $(basename "$FILE_PATH")"
+        DOWNLOAD_TARGET="$(basename "$FILE_PATH")"
+        echo "Downloading $FILE_PATH from ESP32 at $ESP_IP to $DOWNLOAD_TARGET..."
+        make_request "http://$ESP_IP/fs/get/$FILE_PATH" "GET" "$DOWNLOAD_TARGET"
+        if [ $? -eq 0 ]; then
+            echo "Downloaded to $DOWNLOAD_TARGET"
+        else
+            echo "Download failed." >&2 # Fixed >&2
+            # Optionally remove partially downloaded file
+            # rm -f "$DOWNLOAD_TARGET"
+            exit 1
+        fi
         ;;
 
   view)
         check_sync_needed
         if [ ${#ARGS[@]} -lt 1 ]; then
-            echo "Error: Missing file path"
-            echo "Usage: ./run view <path>"
+            echo "Error: Missing file path" >&2 # Fixed >&2
+            echo "Usage: ./run view <path>" >&2 # Fixed >&2
             exit 1
         fi
         FILE_PATH="${ARGS[0]}"
@@ -365,379 +260,39 @@ case "$COMMAND" in
 
   upload)
         check_sync_needed
-
-        # Check for --py flag (skip compilation)
-        SKIP_COMPILE=false
-        UPLOAD_ARGS=()
-        for arg in "${ARGS[@]}"; do
-            if [ "$arg" == "--py" ] || [ "$arg" == "--no-compile" ]; then
-                SKIP_COMPILE=true
-            else
-                UPLOAD_ARGS+=("$arg")
-            fi
-        done
-
-        if [ ${#UPLOAD_ARGS[@]} -lt 1 ]; then
-            echo "Error: Missing file path(s)"
-            echo "Usage: ./run upload [--py] <file(s)> [target]"
-            exit 1
-        fi
-        FILES="${UPLOAD_ARGS[0]}"
-        TARGET_PATH="${UPLOAD_ARGS[1]:-}"
-
-        # Track generated .mpy files for cleanup
-        declare -a GENERATED_MPY_FILES=()
-
-        # Function to clean up generated MPY files
-        cleanup_mpy() {
-            if [ ${#GENERATED_MPY_FILES[@]} -gt 0 ]; then
-                echo "Cleaning up ${#GENERATED_MPY_FILES[@]} locally generated .mpy file(s)..."
-                rm -f "${GENERATED_MPY_FILES[@]}"
-                echo "Cleanup complete."
-            fi
-        }
-        # Ensure cleanup happens on exit
-        trap cleanup_mpy EXIT
-
+        echo "Delegating upload to scripts/upload.sh..."
+        # Prepare args for upload.sh
+        upload_args=("--ip" "$ESP_IP") # Pass the determined IP
         if [ "$USE_AMPY" = true ]; then
-            # Using ampy for upload
-            # ampy doesn't support comma-separated files or compilation easily, handle first file only
-            FILE_PATH=$(echo "$FILES" | cut -d',' -f1 | xargs)  # Get first file and trim whitespace
-            
-            if [ ! -f "$FILE_PATH" ]; then
-                echo "Error: File '$FILE_PATH' not found" >&2
-                exit 1
-            fi
-
-            file_to_upload_ampy="$FILE_PATH"
-            base_name=$(basename "$FILE_PATH")
-
-            # Compile by default unless --py is used or it's main.py/boot.py
-            if [[ "$FILE_PATH" == *.py ]] && [ "$SKIP_COMPILE" == false ] && [ "$base_name" != "main.py" ] && [ "$base_name" != "boot.py" ]; then
-                mpy_file="${FILE_PATH%.py}.mpy"
-                echo "Compiling $FILE_PATH to $mpy_file for ESP32-C3..."
-                mpy_cross_cmd="mpy-cross -march=rv32imc -O2 -s \"$FILE_PATH\" -o \"$mpy_file\" \"$FILE_PATH\""
-                echo "Running: $mpy_cross_cmd"
-                compile_output=$(eval $mpy_cross_cmd 2>&1)
-                compile_status=$?
-                if [ $compile_status -ne 0 ]; then
-                    echo "Error: mpy-cross failed for $FILE_PATH. Output:" >&2
-                    echo "$compile_output" >&2
-                    exit 1
-                fi
-                echo "Compilation successful."
-                file_to_upload_ampy="$mpy_file"
-                GENERATED_MPY_FILES+=("$mpy_file") # Add to cleanup list
-            fi
-
-            target_ampy_path="$TARGET_PATH"
-            # If target path is a directory, append the (potentially .mpy) filename
-            if [[ -n "$target_ampy_path" ]] && [[ "$target_ampy_path" == */ ]]; then
-                target_ampy_path="$target_ampy_path$(basename "$file_to_upload_ampy")"
-            elif [[ -z "$target_ampy_path" ]]; then
-                target_ampy_path="$(basename "$file_to_upload_ampy")" # Default target is filename in root
-            fi
-
-            echo "Uploading $file_to_upload_ampy to ESP32 using ampy as $target_ampy_path..."
-            ampy -p "$AMPY_PORT" put "$file_to_upload_ampy" "$target_ampy_path"
-            ampy_status=$?
-            if [ $ampy_status -ne 0 ]; then
-                echo "Error: ampy upload failed for $file_to_upload_ampy." >&2
-                exit 1
-            fi
-
-        else
-            # Using HTTP API for upload
-            # Convert comma-separated files into array
-            IFS=',' read -r -a FILE_ARRAY <<< "$FILES"
-            TOTAL_FILES=${#FILE_ARRAY[@]}
-
-            for ((i=0; i<${#FILE_ARRAY[@]}; i++)); do
-                FILE_PATH=$(echo "${FILE_ARRAY[$i]}" | xargs)  # Trim whitespace
-
-                if [ ! -f "$FILE_PATH" ]; then
-                    echo "Error: File '$FILE_PATH' not found" >&2
-                    exit 1
-                fi
-
-                # Print separator with current file number
-                echo "------$((i+1)) of $TOTAL_FILES---------"
-
-                file_to_upload_http="$FILE_PATH"
-                base_name=$(basename "$FILE_PATH")
-                target_http_path="$TARGET_PATH" # Base target path
-
-                # Compile by default unless --py is used or it's main.py/boot.py
-                if [[ "$FILE_PATH" == *.py ]] && [ "$SKIP_COMPILE" == false ] && [ "$base_name" != "main.py" ] && [ "$base_name" != "boot.py" ]; then
-                    mpy_file="${FILE_PATH%.py}.mpy"
-                    echo "Compiling $FILE_PATH to $mpy_file for ESP32-C3..."
-                    mpy_cross_cmd="mpy-cross -march=rv32imc -O2 -s \"$FILE_PATH\" -o \"$mpy_file\" \"$FILE_PATH\""
-                    echo "Running: $mpy_cross_cmd"
-                    compile_output=$(eval $mpy_cross_cmd 2>&1)
-                    compile_status=$?
-                    if [ $compile_status -ne 0 ]; then
-                        echo "Error: mpy-cross failed for $FILE_PATH. Output:" >&2
-                        echo "$compile_output" >&2
-                        exit 1
-                    fi
-                    echo "Compilation successful."
-                    file_to_upload_http="$mpy_file"
-                    GENERATED_MPY_FILES+=("$mpy_file") # Add to cleanup list
-                fi
-
-                # Determine the final target path on the device
-                final_target_name=$(basename "$file_to_upload_http")
-                if [ -n "$target_http_path" ]; then
-                    # If target path is specified, append the (potentially .mpy) filename
-                    final_target_path_on_device="$target_http_path$final_target_name"
-                    echo "Uploading $file_to_upload_http to ESP32 at $ESP_IP as $final_target_path_on_device..."
-                else
-                    # If no target path, upload to root with (potentially .mpy) filename
-                    final_target_path_on_device="$final_target_name"
-                    echo "Uploading $file_to_upload_http to ESP32 at $ESP_IP as /$final_target_name..."
-                fi
-
-                # Export variables and functions for upload_chunked.sh
-                export ESP_IP AP_IP USE_AP_IP
-                # Call the upload script
-                "$UPLOAD_CHUNKED_SCRIPT_PATH" "$file_to_upload_http" "$final_target_path_on_device"
-                upload_result=$?
-                if [ "$upload_result" -ne 0 ]; then
-                    echo "Error: Upload of $file_to_upload_http failed."
-                    exit 1
-                fi
-            done
+            upload_args+=("--ampy")
         fi
-        # Cleanup is handled by the trap
+        # Pass the specific arguments meant for upload (e.g., --py, files, target)
+        upload_args+=("${ARGS[@]}")
+
+        "$SCRIPT_DIR_ROOT/scripts/upload.sh" "${upload_args[@]}"
+        exit $? # Exit with the status of upload.sh
         ;;
+
   sync)
-    check_sync_needed
-    TIMESTAMP_FILE="$SCRIPT_DIR/.last_sync"
-    TIMESTAMP_DIR=$(dirname "$TIMESTAMP_FILE")
-
-    # Check if the directory exists, create it if not
-    if [ ! -d "$TIMESTAMP_DIR" ]; then
-      echo "Creating directory: $TIMESTAMP_DIR"
-      mkdir -p "$TIMESTAMP_DIR" || {
-        echo "Error: Failed to create directory $TIMESTAMP_DIR" >&2
-        exit 1
-      }
-    fi
-
-    if [ ! -f "$TIMESTAMP_FILE" ]; then
-      echo "Creating timestamp file: $TIMESTAMP_FILE"
-      date +%s > "$TIMESTAMP_FILE" || {
-        echo "Error: Failed to create timestamp file $TIMESTAMP_FILE" >&2
-        exit 1
-      }
-    fi
-
-    # Parse sync-specific flags
-    DRY_RUN=false
-    FORCE_UPLOAD=false
-    SKIP_COMPILE_SYNC=false # Flag to skip compilation for sync
-    SYNC_ARGS=() # Store remaining args for upload (should be none)
-    for arg in "${ARGS[@]}"; do
-        case "$arg" in
-            --dry-run) DRY_RUN=true ;;
-            --force) FORCE_UPLOAD=true ;;
-            --py|--no-compile) SKIP_COMPILE_SYNC=true ;; # Check for --py or --no-compile flag
-            *) SYNC_ARGS+=("$arg") ;; # Should be empty if used correctly
-        esac
-    done
-
-    if [ "$DRY_RUN" == true ]; then
-      echo "Dry run mode: showing files that would be processed."
-    fi
-    if [ "$FORCE_UPLOAD" == true ]; then
-      echo "Force upload mode: processing all files."
-    fi
-    if [ "$SKIP_COMPILE_SYNC" == true ]; then
-      echo "Skip compile mode enabled (--py): --py flag will be passed to upload command."
-    else
-      echo "Default compile mode enabled: .py files (except main.py, boot.py) will be compiled by upload command."
-    fi
-
-    # Get list of files to process
-    if [ "$FORCE_UPLOAD" == true ]; then
-      echo "Finding all files in device/ directory..."
-      FILES=()
-      while IFS= read -r -d '' file; do
-        # Exclude .mpy files if compile mode is NOT enabled, to avoid uploading stale ones
-        if ! [[ "$file" == *.mpy && "$COMPILE_MPY" == false ]]; then
-            FILES+=("$file")
-        fi
-      done < <(find "$SCRIPT_DIR/device" -type f -print0)
-    else
-      echo "Finding modified files since last sync..."
-      FILES=()
-      while IFS= read -r -d '' file; do
-        # Exclude .mpy files if compile mode is NOT enabled
-        if ! [[ "$file" == *.mpy && "$COMPILE_MPY" == false ]]; then
-            FILES+=("$file")
-        fi
-      done < <(find "$SCRIPT_DIR/device" -type f -newer "$TIMESTAMP_FILE" -print0)
-    fi
-
-    # Check if any files were found
-    if [ ${#FILES[@]} -eq 0 ]; then
-      echo "No files to sync."
-      # Update timestamp even if no files changed, to reflect the check
-      if [ "$DRY_RUN" == false ]; then
-        date +%s > "$TIMESTAMP_FILE" || echo "Warning: Failed to update timestamp file $TIMESTAMP_FILE" >&2
-      fi
-      exit 0
-    fi
-
-    echo "Sync command called"
-    echo "Found ${#FILES[@]} files to process."
-
-    # Process files individually by calling the upload command
-    if [ "$DRY_RUN" == false ]; then
-      echo "Processing files individually via upload command:"
-
-      # Track if we should use AP IP for remaining uploads (determined by first failure)
-      FORCE_AP_MODE=false
-      if [ "$USE_AP_IP" = true ]; then
-        FORCE_AP_MODE=true # Start in AP mode if --ap was passed to sync
-      fi
-
-      TOTAL_FILES=${#FILES[@]}
-      CURRENT_FILE=0
-      SUCCESSFUL_UPLOADS=0
-
-      for file in "${FILES[@]}"; do
-        CURRENT_FILE=$((CURRENT_FILE + 1))
-        echo "------- Processing file $CURRENT_FILE of $TOTAL_FILES: $file -------"
-
-        # Build the upload command arguments
-        UPLOAD_CMD_ARGS=()
-        if [ "$FORCE_AP_MODE" = true ]; then
-          UPLOAD_CMD_ARGS+=("--ap")
-        fi
+        # No need for check_sync_needed here, sync.sh does it
+        echo "Delegating sync to scripts/sync.sh..."
+        # Prepare args for sync.sh
+        sync_args=("--ip" "$ESP_IP") # Pass the determined IP
         if [ "$USE_AMPY" = true ]; then
-          UPLOAD_CMD_ARGS+=("--ampy")
+            sync_args+=("--ampy")
         fi
-        UPLOAD_CMD_ARGS+=("upload") # The command itself
-        if [ "$SKIP_COMPILE_SYNC" = true ]; then # Pass --py if sync was called with --py
-          UPLOAD_CMD_ARGS+=("--py")
-        fi
-        UPLOAD_CMD_ARGS+=("$file") # The file to upload
+         # Pass the specific arguments meant for sync (e.g., --py, --force, --dry-run)
+        sync_args+=("${ARGS[@]}")
 
-        # Execute the upload command using the script itself ($0)
-        echo "Running: $0 ${UPLOAD_CMD_ARGS[@]}"
-        # Use process substitution to capture stdout and stderr separately
-        # Redirect stderr to stdout for capture, then filter grep errors
-        upload_output=$( "$0" "${UPLOAD_CMD_ARGS[@]}" 2>&1 | grep -v "grep: writing output" )
-        upload_status=$?
-        echo "$upload_output" # Show output from the upload command
+        "$SCRIPT_DIR_ROOT/scripts/sync.sh" "${sync_args[@]}"
+        exit $? # Exit with the status of sync.sh
+        ;;
 
-        # Check if the upload succeeded
-        if [ "$upload_status" -ne 0 ] || echo "$upload_output" | grep -q "Error"; then
-          # Check if the failure was due to connection and we haven't forced AP mode yet
-          # The upload command's make_request handles the actual fallback message now
-          # We just need to detect if the upload failed and we weren't already in AP mode
-          if [ "$FORCE_AP_MODE" = false ] && echo "$upload_output" | grep -q "Connection to .* failed"; then
-            echo "Upload failed, attempting fallback to AP IP for this and future uploads..."
-            FORCE_AP_MODE=true
-
-            # Rebuild command args with --ap
-            UPLOAD_CMD_ARGS=("--ap") # Start fresh, add --ap
-            if [ "$USE_AMPY" = true ]; then
-              UPLOAD_CMD_ARGS+=("--ampy")
-            fi
-            UPLOAD_CMD_ARGS+=("upload")
-            if [ "$COMPILE_MPY" = true ]; then
-              UPLOAD_CMD_ARGS+=("--compile")
-            fi
-            UPLOAD_CMD_ARGS+=("$file")
-
-            # Retry the upload
-            echo "Retrying with: $0 ${UPLOAD_CMD_ARGS[@]}"
-            upload_output=$( "$0" "${UPLOAD_CMD_ARGS[@]}" 2>&1 | grep -v "grep: writing output" )
-            upload_status=$?
-            echo "$upload_output"
-
-            # Check if retry succeeded
-            if [ "$upload_status" -ne 0 ] || echo "$upload_output" | grep -q "Error"; then
-              echo "Error: Upload of $file failed even with AP IP. Sync aborted." >&2
-              exit 1 # Abort sync on persistent failure
-            else
-              SUCCESSFUL_UPLOADS=$((SUCCESSFUL_UPLOADS + 1))
-            fi
-          else
-            # Upload failed for a reason other than initial connection, or failed after fallback
-            echo "Error: Upload of $file failed. Sync aborted." >&2
-            exit 1 # Abort sync
-          fi
-        else
-          # Upload succeeded on the first try (or was already in AP mode)
-          SUCCESSFUL_UPLOADS=$((SUCCESSFUL_UPLOADS + 1))
-        fi
-
-        # Add a short delay between uploads if not using ampy (ampy is slower anyway)
-        if [ "$USE_AMPY" = false ] && [ $CURRENT_FILE -lt $TOTAL_FILES ]; then
-          echo "Waiting briefly before next file upload..."
-          sleep 0.5 # Shorter delay as upload_chunked might be faster
-        fi
-      done
-
-      echo "Sync finished. Successfully processed $SUCCESSFUL_UPLOADS out of $TOTAL_FILES files."
-
-      # Reset the device if any files were successfully uploaded
-      if [ $SUCCESSFUL_UPLOADS -gt 0 ]; then
-        echo "Resetting device..."
-        RESET_CMD_ARGS=()
-        if [ "$FORCE_AP_MODE" = true ]; then # Use the final determined mode
-          RESET_CMD_ARGS+=("--ap")
-        fi
-        if [ "$USE_AMPY" = true ]; then
-          RESET_CMD_ARGS+=("--ampy")
-        fi
-        RESET_CMD_ARGS+=("reset")
-        "$0" "${RESET_CMD_ARGS[@]}" # Call reset using the script itself
-      else
-        echo "No files were successfully uploaded, skipping reset."
-      fi
-
-    else
-      # Dry run: Show what the upload command would do based on --py flag
-      echo "Would process these files via upload command (dry run):"
-      for file in "${FILES[@]}"; do
-         base_name=$(basename "$file")
-         action="Compile & Upload" # Default action
-         source_file="$file"
-         target_file_name="$base_name" # Default target name
-
-         if [[ "$file" == *.py ]]; then
-            if [ "$SKIP_COMPILE_SYNC" == true ] || [ "$base_name" == "main.py" ] || [ "$base_name" == "boot.py" ]; then
-                action="Upload .py" # Action if skipping compile
-                target_file_name="$base_name"
-            else
-                # Default compilation case for .py files
-                target_file_name="${base_name%.py}.mpy"
-            fi
-         else
-            # Non-python files are just uploaded
-            action="Upload"
-            target_file_name="$base_name"
-         fi
-         echo "  $action $source_file -> $target_file_name"
-      done
-    fi
-
-    # Update timestamp file only if not a dry run
-    if [ "$DRY_RUN" == false ]; then
-      date +%s > "$TIMESTAMP_FILE" || {
-        echo "Error: Failed to update timestamp file $TIMESTAMP_FILE" >&2
-        # Don't exit here, sync might have partially succeeded
-      }
-      echo "Timestamp updated."
-    fi
-    ;;
   *)
-    echo "Error: Unknown command '$COMMAND'"
+    echo "Error: Unknown command '$COMMAND'" >&2 # Fixed >&2
     show_usage
     exit 1
     ;;
 esac
+
+exit 0 # Default exit code for successful command execution
