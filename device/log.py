@@ -2,6 +2,8 @@
 import utime
 import uos
 import gc
+import uasyncio as asyncio
+from uasyncio import TimeoutError
 
 # --- Configuration ---
 LOG_DIR = "logs"
@@ -11,8 +13,12 @@ MAX_LOG_FILE_SIZE = 3000  # Bytes
 # MAX_LOG_FILES = None # No limit implemented in this version
 
 # --- Module State ---
-_current_log_index = -1  # Uninitialized
+_current_log_index = -1  # Uninitialized by default, set by writer task
 _log_dir_checked = False  # Flag to check dir only once
+_log_queue = []  # In-memory queue for log messages (bytes)
+_MAX_QUEUE_SIZE = 10  # Max messages before dropping
+_WRITE_THRESHOLD = 5  # Number of messages to trigger a write
+_write_event = asyncio.Event()  # Event to signal the writer task
 
 # --- Constants ---
 _MONTH_ABBR = (
@@ -101,18 +107,9 @@ def _get_log_filepath(index):
 
 
 def log(*args, **kwargs):
-    """Log function that writes messages to rotating files and prints to console."""
-    global _current_log_index
+    """Formats a log message, prints it to console, and queues it for async file writing."""
 
-    # 1. Ensure log directory exists
-    _ensure_log_dir()
-
-    # 2. Initialize current log index if needed
-    if _current_log_index == -1:
-        _current_log_index = get_latest_log_index()
-        # print(f"Initialized log index to: {_current_log_index}") # Debug
-
-    # 3. Format the message with timestamp
+    # 1. Format the message with timestamp
     ticks_now_ms = utime.ticks_ms()
     now = utime.localtime()
     ms = ticks_now_ms % 1000
@@ -121,45 +118,117 @@ def log(*args, **kwargs):
     )
     message = " ".join(str(arg) for arg in args)
     output = f"{timestamp} {message}\n"
-    output_bytes = output.encode("utf-8")  # Encode once for size check and write
 
-    # 4. Determine current log file path
-    current_filepath = _get_log_filepath(_current_log_index)
-
-    # 5. Check current file size and rotate if necessary
-    try:
-        stat = uos.stat(current_filepath)
-        current_size = stat[6]
-        # print(f"Current log file: {current_filepath}, Size: {current_size}") # Debug
-    except OSError as e:
-        # File probably doesn't exist yet (ENOENT)
-        if e.args[0] == 2:
-            current_size = 0
-            # print(f"Log file {current_filepath} not found, starting new.") # Debug
-        else:
-            print(f"Error stating log file '{current_filepath}': {e}")
-            current_size = 0  # Assume 0 size on error to avoid infinite loop
-
-    if current_size > 0 and (current_size + len(output_bytes)) > MAX_LOG_FILE_SIZE:
-        _current_log_index += 1
-        current_filepath = _get_log_filepath(_current_log_index)
-        current_size = 0  # Reset size for the new file
-        print(f"Rotating log to new file: {current_filepath}")
-        gc.collect()  # Collect garbage before potentially writing a lot
-
-    # 6. Write to the current log file
-    try:
-        with open(current_filepath, "ab") as f:  # Use 'ab' (append binary)
-            f.write(output_bytes)
-    except Exception as e:
-        print(f"Error writing to log file '{current_filepath}': {e}")
-        # Fallback: Try printing error to console if file write fails
-        print("--- LOG WRITE FAILED ---")
-        print(output, end="")
-        print("--- END LOG WRITE FAILED ---")
-
-    # 7. Always print to console
+    # 2. Always print to console
     print(output, end="", **kwargs)
+
+    # 3. Queue the message for the writer task
+    output_bytes = output.encode("utf-8")
+
+    if len(_log_queue) >= _MAX_QUEUE_SIZE:
+        # Queue is full, drop the message and print an error directly
+        print(f"--- LOG QUEUE FULL (MAX {_MAX_QUEUE_SIZE}) - DROPPING MESSAGE ---")
+        print(output, end="")  # Print the dropped message content as well
+        print(f"--- END DROPPED MESSAGE ---")
+        return  # Do not queue or signal
+
+    _log_queue.append(output_bytes)
+
+    # 4. Signal the writer task if the threshold is met
+    if len(_log_queue) >= _WRITE_THRESHOLD:
+        _write_event.set()
+
+
+# --- Async Log Writer Task ---
+
+
+async def _log_writer_task():
+    """Async task that waits for log messages and writes them to files."""
+    global _current_log_index
+
+    # Initialize log directory and find starting index
+    _ensure_log_dir()
+    _current_log_index = get_latest_log_index()
+    print(f"Log writer task started. Initial log index: {_current_log_index}")
+
+    while True:
+        try:
+            # Wait for the event or timeout after 3 seconds
+            try:
+                await asyncio.wait_for_ms(_write_event.wait(), 3000)
+                # Event was set before timeout
+                _write_event.clear()
+                # print("Log writer triggered by event.") # Debug
+            except TimeoutError:
+                # Timeout occurred, proceed to check queue anyway
+                # print("Log writer triggered by timeout.") # Debug
+                pass  # Nothing specific to do on timeout itself
+
+            # Process the queue if it has messages (either from event or timeout)
+            if _log_queue:
+                messages_to_write = _log_queue[:]  # Make a copy
+                _log_queue.clear()  # Clear the original queue
+
+                # print(f"Writing {len(messages_to_write)} log messages.") # Debug
+
+                current_filepath = _get_log_filepath(_current_log_index)
+                current_size = 0
+                try:
+                    # Get initial size of the current log file
+                    stat = uos.stat(current_filepath)
+                    current_size = stat[6]
+                except OSError as e:
+                    if e.args[0] != 2:  # Ignore ENOENT (file not found)
+                        print(
+                            f"Error stating log file '{current_filepath}' in writer: {e}"
+                        )
+                    # If file doesn't exist, current_size remains 0
+
+                # Process each message in the batch
+                for message_bytes in messages_to_write:
+                    # Check rotation *before* writing this message
+                    if (
+                        current_size > 0
+                        and (current_size + len(message_bytes)) > MAX_LOG_FILE_SIZE
+                    ):
+                        _current_log_index += 1
+                        current_filepath = _get_log_filepath(_current_log_index)
+                        current_size = 0  # Reset size for the new file
+                        print(f"Rotating log to new file: {current_filepath}")
+                        gc.collect()
+
+                    # Write the message
+                    try:
+                        with open(current_filepath, "ab") as f:
+                            bytes_written = f.write(message_bytes)
+                            if bytes_written is not None:
+                                current_size += bytes_written
+                            else:
+                                # If write returns None, try to get size again
+                                try:
+                                    stat = uos.stat(current_filepath)
+                                    current_size = stat[6]
+                                except OSError:
+                                    # If stat fails after write, estimate based on what we tried to write
+                                    current_size += len(message_bytes)
+                    except Exception as e:
+                        print(
+                            f"Error writing to log file '{current_filepath}' in writer: {e}"
+                        )
+                        # Avoid potential tight loops on persistent write errors for this file
+                        await asyncio.sleep_ms(100)
+                        # We might lose subsequent messages in this batch if the error persists
+            # else: # Debug
+            # print("Log writer woke up, but queue is empty.")
+
+        except Exception as e:
+            print(f"Error in log writer task main loop: {e}")
+            # Avoid tight loop on unexpected errors in the task logic itself
+            await asyncio.sleep_ms(500)
+
+        # Yield control briefly even if no event occurred or no messages processed
+        # This prevents the task from potentially starving others if events fire rapidly
+        await asyncio.sleep_ms(10)
 
 
 # --- Log Reading Function ---
