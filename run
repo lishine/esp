@@ -58,7 +58,7 @@ show_usage() {
     echo "  ping                   - Check if the device is responding"
     echo "  status                 - Check device status and update IP file if needed"
     echo "  rm <path>              - Remove a file from the device"
-    echo "  rm --visual            - Interactive visual file removal (uses scripts/rm-visual)"
+    echo "  rm-visual              - Interactive visual file removal (uses scripts/rm-visual)"
     echo "  download <path>        - Download a file from the device"
     echo "  view <path>            - View the contents of a file on the device"
     echo "  upload [...]           - Upload files (delegated to scripts/upload.sh)"
@@ -71,7 +71,7 @@ show_usage() {
     echo "  ./run --ap log"
     echo "  ./run status"
     echo "  ./run rm main.py"
-    echo "  ./run rm --visual"
+    echo "  ./run rm-visual"
     echo "  ./run upload settings.html"
     echo "  ./run --ampy upload main.py"
     echo "  ./run sync"
@@ -201,17 +201,10 @@ case "$COMMAND" in
 
   rm)
         check_sync_needed
-        # Check if --visual flag is used
-        if [ ${#ARGS[@]} -gt 0 ] && [ "${ARGS[0]}" == "--visual" ]; then # Fixed &&
-            # Run the visual rm script from the scripts directory
-            echo "Launching visual file removal..."
-            "$SCRIPT_DIR_ROOT/scripts/rm-visual" # Updated path
-            exit $? # Exit with the status of rm-visual
-        fi
 
         if [ ${#ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path" >&2 # Fixed >&2
-            echo "Usage: ./run rm <path> or ./run rm --visual" >&2 # Fixed >&2
+            echo "Usage: ./run rm <path>" >&2 # Fixed >&2
             exit 1
         fi
         FILE_PATH="${ARGS[0]}"
@@ -223,6 +216,14 @@ case "$COMMAND" in
             echo "Removing file $FILE_PATH from ESP32 at $ESP_IP..."
             make_request "http://$ESP_IP/rm/$FILE_PATH" "DELETE"
         fi
+        ;;
+
+  rm-visual)
+        check_sync_needed
+        # Run the visual rm script from the scripts directory
+        echo "Launching visual file removal..."
+        "$SCRIPT_DIR_ROOT/scripts/rm-visual" # Updated path
+        exit $? # Exit with the status of rm-visual
         ;;
 
   download)
