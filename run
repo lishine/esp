@@ -115,10 +115,10 @@ show_usage() {
     echo "  rm --visual            - Interactive visual file removal"
     echo "  download <path>        - Download a file from the device"
     echo "  view <path>            - View the contents of a file on the device"
-    echo "  upload [--compile] <file(s)> [target] - Upload one or more files (comma-separated) using upload_chunked.sh"
-    echo "                                        --compile: Compile .py files (except main.py, boot.py) to .mpy before upload"
-    echo "  sync                   - Upload all modified files in device/ directory as .py"
-    echo "  sync --compile         - Compile .py files to .mpy (except main.py, boot.py) before uploading using the upload command"
+    echo "  upload [--py] <file(s)> [target] - Upload one or more files (comma-separated), compiling .py to .mpy by default (except main.py, boot.py)"
+    echo "                                        --py: Upload .py files directly without compiling"
+    echo "  sync                   - Upload all modified files in device/ directory, compiling .py to .mpy by default (except main.py, boot.py)"
+    echo "  sync --py              - Upload all modified .py files directly without compiling"
     echo "  sync --dry-run         - Show which files would be uploaded (respects --compile)"
     echo "  sync --force           - Force upload all files in device/ directory (respects --compile)"
     echo ""
@@ -366,12 +366,12 @@ case "$COMMAND" in
   upload)
         check_sync_needed
 
-        # Check for --compile flag
-        COMPILE_MPY=false
+        # Check for --py flag (skip compilation)
+        SKIP_COMPILE=false
         UPLOAD_ARGS=()
         for arg in "${ARGS[@]}"; do
-            if [ "$arg" == "--compile" ]; then
-                COMPILE_MPY=true
+            if [ "$arg" == "--py" ]; then
+                SKIP_COMPILE=true
             else
                 UPLOAD_ARGS+=("$arg")
             fi
@@ -379,7 +379,7 @@ case "$COMMAND" in
 
         if [ ${#UPLOAD_ARGS[@]} -lt 1 ]; then
             echo "Error: Missing file path(s)"
-            echo "Usage: ./run upload [--compile] <file(s)> [target]"
+            echo "Usage: ./run upload [--py] <file(s)> [target]"
             exit 1
         fi
         FILES="${UPLOAD_ARGS[0]}"
@@ -412,8 +412,8 @@ case "$COMMAND" in
             file_to_upload_ampy="$FILE_PATH"
             base_name=$(basename "$FILE_PATH")
 
-            # Compile if requested, not main.py or boot.py
-            if [[ "$FILE_PATH" == *.py ]] && [ "$COMPILE_MPY" == true ] && [ "$base_name" != "main.py" ] && [ "$base_name" != "boot.py" ]; then
+            # Compile by default unless --py is used or it's main.py/boot.py
+            if [[ "$FILE_PATH" == *.py ]] && [ "$SKIP_COMPILE" == false ] && [ "$base_name" != "main.py" ] && [ "$base_name" != "boot.py" ]; then
                 mpy_file="${FILE_PATH%.py}.mpy"
                 echo "Compiling $FILE_PATH to $mpy_file for ESP32-C3..."
                 mpy_cross_cmd="mpy-cross -march=rv32imc -O2 -s \"$FILE_PATH\" -o \"$mpy_file\" \"$FILE_PATH\""
@@ -467,8 +467,8 @@ case "$COMMAND" in
                 base_name=$(basename "$FILE_PATH")
                 target_http_path="$TARGET_PATH" # Base target path
 
-                # Compile if requested, not main.py or boot.py
-                if [[ "$FILE_PATH" == *.py ]] && [ "$COMPILE_MPY" == true ] && [ "$base_name" != "main.py" ] && [ "$base_name" != "boot.py" ]; then
+                # Compile by default unless --py is used or it's main.py/boot.py
+                if [[ "$FILE_PATH" == *.py ]] && [ "$SKIP_COMPILE" == false ] && [ "$base_name" != "main.py" ] && [ "$base_name" != "boot.py" ]; then
                     mpy_file="${FILE_PATH%.py}.mpy"
                     echo "Compiling $FILE_PATH to $mpy_file for ESP32-C3..."
                     mpy_cross_cmd="mpy-cross -march=rv32imc -O2 -s \"$FILE_PATH\" -o \"$mpy_file\" \"$FILE_PATH\""
@@ -535,13 +535,13 @@ case "$COMMAND" in
     # Parse sync-specific flags
     DRY_RUN=false
     FORCE_UPLOAD=false
-    COMPILE_MPY=false
-    SYNC_ARGS=() # Store remaining args for upload
+    SKIP_COMPILE_SYNC=false # Flag to skip compilation for sync
+    SYNC_ARGS=() # Store remaining args for upload (should be none)
     for arg in "${ARGS[@]}"; do
         case "$arg" in
             --dry-run) DRY_RUN=true ;;
             --force) FORCE_UPLOAD=true ;;
-            --compile) COMPILE_MPY=true ;;
+            --py) SKIP_COMPILE_SYNC=true ;; # Check for --py flag
             *) SYNC_ARGS+=("$arg") ;; # Should be empty if used correctly
         esac
     done
@@ -552,8 +552,10 @@ case "$COMMAND" in
     if [ "$FORCE_UPLOAD" == true ]; then
       echo "Force upload mode: processing all files."
     fi
-    if [ "$COMPILE_MPY" == true ]; then
-      echo "Compile mode enabled: --compile flag will be passed to upload command."
+    if [ "$SKIP_COMPILE_SYNC" == true ]; then
+      echo "Skip compile mode enabled (--py): --py flag will be passed to upload command."
+    else
+      echo "Default compile mode enabled: .py files (except main.py, boot.py) will be compiled by upload command."
     fi
 
     # Get list of files to process
@@ -617,8 +619,8 @@ case "$COMMAND" in
           UPLOAD_CMD_ARGS+=("--ampy")
         fi
         UPLOAD_CMD_ARGS+=("upload") # The command itself
-        if [ "$COMPILE_MPY" = true ]; then
-          UPLOAD_CMD_ARGS+=("--compile")
+        if [ "$SKIP_COMPILE_SYNC" = true ]; then # Pass --py if sync was called with --py
+          UPLOAD_CMD_ARGS+=("--py")
         fi
         UPLOAD_CMD_ARGS+=("$file") # The file to upload
 
@@ -699,18 +701,28 @@ case "$COMMAND" in
       fi
 
     else
-      # Dry run: Show what the upload command would do
+      # Dry run: Show what the upload command would do based on --py flag
       echo "Would process these files via upload command (dry run):"
       for file in "${FILES[@]}"; do
          base_name=$(basename "$file")
-         action="Upload"
-         target_file="$file"
-         # Determine if compilation would happen based on upload command logic
-         if [[ "$file" == *.py ]] && [ "$COMPILE_MPY" == true ] && [ "$base_name" != "main.py" ] && [ "$base_name" != "boot.py" ]; then
-            action="Compile & Upload"
-            target_file="${file%.py}.mpy"
+         action="Compile & Upload" # Default action
+         source_file="$file"
+         target_file_name="$base_name" # Default target name
+
+         if [[ "$file" == *.py ]]; then
+            if [ "$SKIP_COMPILE_SYNC" == true ] || [ "$base_name" == "main.py" ] || [ "$base_name" == "boot.py" ]; then
+                action="Upload .py" # Action if skipping compile
+                target_file_name="$base_name"
+            else
+                # Default compilation case for .py files
+                target_file_name="${base_name%.py}.mpy"
+            fi
+         else
+            # Non-python files are just uploaded
+            action="Upload"
+            target_file_name="$base_name"
          fi
-         echo "  $action $file -> $(basename "$target_file")"
+         echo "  $action $source_file -> $target_file_name"
       done
     fi
 
