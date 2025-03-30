@@ -1,71 +1,30 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # ESP32 Device Management Script (Main Entry Point)
-# Simplifies interactions with ESP32 device using argparse-bash
+# Simplifies interactions with ESP32 device by delegating tasks
 
 # Get the script directory (project root)
-SCRIPT_DIR_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SCRIPT_DIR_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )" # Fixed &&
 
-# Source common functions and variables
+# Source common functions and variables from the scripts directory
 # shellcheck source=./scripts/common.sh
-source "$SCRIPT_DIR_ROOT/scripts/common.sh" || { echo "Error: Unable to source scripts/common.sh" >&2; exit 1; }
+source "$SCRIPT_DIR_ROOT/scripts/common.sh" || { echo "Error: Unable to source scripts/common.sh" >&2; exit 1; } # Fixed >&2
 
-# Source argparse-bash
-source "$SCRIPT_DIR_ROOT/scripts/argparse.bash" || { echo "Error: Unable to source scripts/argparse.bash" >&2; exit 1; }
+# --- Argument Parsing for Flags (--ap, --ampy) ---
+USE_AP_IP=false
+USE_AMPY=false
+declare -a ALL_ARGS=("$@") # Keep original args for passing later
 
-# --- Define Arguments and Commands (Python argparse syntax) ---
-
-# Note: This function now *outputs* Python code for argparse.bash to use.
-parser_definition() {
-    # Main parser setup
-    echo "parser.description = 'ESP32 Device Management Script. Interacts with the device via HTTP API or ampy.'"
-    echo "parser.add_argument('--ap', action='store_true', help='Use AP IP address ($AP_IP) instead of configured IP')"
-    echo "parser.add_argument('--ampy', action='store_true', help='Use ampy (Port: $AMPY_PORT) for serial communication instead of HTTP API')"
-
-    # Subparsers setup
-    echo "subparsers = parser.add_subparsers(dest='command', help='Available commands', required=True)" # Use dest='command'
-
-    # --- Define Commands ---
-    echo "parser_reset = subparsers.add_parser('reset', help='Reset the ESP32 device')"
-    echo "parser_log = subparsers.add_parser('log', help='View device logs')"
-    echo "parser_log_clear = subparsers.add_parser('log-clear', help='Clear the log file on the device')"
-    echo "parser_log_add_test = subparsers.add_parser('log-add-test', help='Add 1000 test log entries')"
-    echo "parser_ls = subparsers.add_parser('ls', help='List all files on the device (alias for la)')"
-    echo "parser_la = subparsers.add_parser('la', help='List all files on the device')"
-    echo "parser_fs_list = subparsers.add_parser('fs-list', help='Get JSON file listing for visual tools')"
-    echo "parser_free = subparsers.add_parser('free', help='Show free memory on the device')"
-    echo "parser_ping = subparsers.add_parser('ping', help='Check if the device is responding')"
-    echo "parser_status = subparsers.add_parser('status', help='Check device status and update IP file if needed')"
-
-    echo "parser_rm = subparsers.add_parser('rm', help='Remove a file from the device')"
-    echo "parser_rm.add_argument('path', help='Path of the file to remove on the device')" # 'path' argument
-
-    echo "parser_rm_visual = subparsers.add_parser('rm-visual', help='Interactive visual file removal (uses scripts/rm-visual)')"
-
-    echo "parser_download = subparsers.add_parser('download', help='Download a file from the device')"
-    echo "parser_download.add_argument('path', help='Path of the file to download from the device')" # 'path' argument
-
-    echo "parser_view = subparsers.add_parser('view', help='View the contents of a file on the device')"
-    echo "parser_view.add_argument('path', help='Path of the file to view on the device')" # 'path' argument
-
-    echo "parser_upload = subparsers.add_parser('upload', help='Upload files (delegated to scripts/upload.sh)')"
-    echo "parser_upload.add_argument('upload_args', nargs=argparse.REMAINDER, help='Arguments for upload.sh (e.g., [--py|--no-compile] <file(s)> [target])')" # Capture remaining args
-
-    echo "parser_sync = subparsers.add_parser('sync', help='Sync modified files (delegated to scripts/sync.sh)')"
-    echo "parser_sync.add_argument('sync_args', nargs=argparse.REMAINDER, help='Arguments for sync.sh (e.g., [--py|--no-compile] [--dry-run] [--force])')" # Capture remaining args
-
-    # Help command is usually handled implicitly by argparse, but defining explicitly can sometimes help
-    # echo "parser_help = subparsers.add_parser('help', help='Show help message')"
-}
-
-# --- Parse Arguments ---
-# Pass the parser definition (python code) via stdin to the argparse function
-# The result is stored in global variables like $COMMAND, $AP, $AMPY, $PATH, $UPLOAD_ARGS etc. (uppercase)
-# Note: argparse.bash converts python args.my_arg to bash MY_ARG
-argparse "$@" <<< "$(parser_definition)" || exit 1
+for arg in "$@"; do
+    if [ "$arg" == "--ap" ]; then
+        USE_AP_IP=true
+    elif [ "$arg" == "--ampy" ]; then
+        USE_AMPY=true
+    fi
+done
 
 # --- Determine Target IP ---
-# Use the flag parsed by argparse (now uppercase: AP, AMPY)
-if [ "$AP" = "yes" ]; then # argparse.bash sets boolean flags to "yes" or ""
+# This logic remains here as it's needed before dispatching commands
+if [ "$USE_AP_IP" = true ]; then
     ESP_IP="$AP_IP" # AP_IP is sourced from common.sh
     echo "Using AP IP address: $ESP_IP"
 elif saved_ip=$(read_ip_from_json); then # read_ip_from_json is sourced
@@ -76,18 +35,84 @@ else
     echo "Using AP IP address instead: $AP_IP"
     ESP_IP="$AP_IP"
 fi
-# Export ESP_IP so make_request can see it
+# Export ESP_IP so make_request (used by some commands below) can see it
 export ESP_IP
+
+# --- Display Usage Information ---
+show_usage() {
+    # Usage info remains largely the same, but reflects the structure
+    echo "Usage: ./run [--ap] [--ampy] <command> [arguments]"
+    echo ""
+    echo "Options:"
+    echo "  --ap                   - Use AP IP address ($AP_IP) instead of configured IP"
+    echo "  --ampy                 - Use ampy (Port: $AMPY_PORT) for serial communication instead of HTTP API"
+    echo ""
+    echo "Commands:"
+    echo "  reset                  - Reset the ESP32 device"
+    echo "  log                    - View device logs"
+    echo "  log-clear              - Clear the log file on the device"
+    echo "  log-add-test           - Add 1000 test log entries"
+    echo "  la/ls                  - List all files on the device"
+    echo "  fs-list                - Get JSON file listing for visual tools"
+    echo "  free                   - Show free memory on the device"
+    echo "  ping                   - Check if the device is responding"
+    echo "  status                 - Check device status and update IP file if needed"
+    echo "  rm <path>              - Remove a file from the device"
+    echo "  rm-visual              - Interactive visual file removal (uses scripts/rm-visual)"
+    echo "  download <path>        - Download a file from the device"
+    echo "  view <path>            - View the contents of a file on the device"
+    echo "  upload [...]           - Upload files (delegated to scripts/upload.sh)"
+    echo "                           Args: [--py | --no-compile] <file(s)> [target]"
+    echo "  sync [...]             - Sync modified files (delegated to scripts/sync.sh)"
+    echo "                           Args: [--py | --no-compile] [--dry-run] [--force]"
+    echo ""
+    echo "Examples:"
+    echo "  ./run reset"
+    echo "  ./run --ap log"
+    echo "  ./run status"
+    echo "  ./run rm main.py"
+    echo "  ./run rm-visual"
+    echo "  ./run upload settings.html"
+    echo "  ./run --ampy upload main.py"
+    echo "  ./run sync"
+    echo "  ./run sync --force --py"
+    echo "  ./run --ampy sync"
+}
 
 # --- Command Dispatch ---
 
-# Main command logic using case statement with $COMMAND from argparse
+# Check if a command was provided
+if [ $# -lt 1 ] || [[ "${ALL_ARGS[0]}" == "--"* ]]; then # Handle case where only flags are given
+    show_usage
+    exit 1
+fi
+
+# Process arguments again to filter out --ap and --ampy for command/args extraction
+declare -a CMD_ARGS=()
+for arg in "${ALL_ARGS[@]}"; do
+    if [ "$arg" != "--ap" ] && [ "$arg" != "--ampy" ]; then # Fixed &&
+        CMD_ARGS+=("$arg")
+    fi
+done
+
+# Extract command and its arguments
+COMMAND="${CMD_ARGS[0]}"
+if [ ${#CMD_ARGS[@]} -gt 0 ]; then
+    ARGS=("${CMD_ARGS[@]:1}") # Arguments specific to the command
+else
+    ARGS=()
+fi
+
+
+# Main command logic using case statement
 case "$COMMAND" in
   reset)
         check_sync_needed # Sourced from common.sh
-        if [ "$AMPY" = "yes" ]; then
+        if [ "$USE_AMPY" = true ]; then
           echo "Resetting ESP32 using ampy (Port: $AMPY_PORT)..."
-          ampy -p "$AMPY_PORT" reset
+          ampy_cmd="ampy -p \"$AMPY_PORT\" reset"
+          echo "Running ampy command: $ampy_cmd"
+          eval $ampy_cmd
         else
           echo "Resetting ESP32 at $ESP_IP..."
           make_request "http://$ESP_IP/reset" "POST" # make_request sourced
@@ -115,9 +140,11 @@ case "$COMMAND" in
 
   la|ls)
         check_sync_needed
-        if [ "$AMPY" = "yes" ]; then
+        if [ "$USE_AMPY" = true ]; then
           echo "Listing all files on ESP32 using ampy (Port: $AMPY_PORT)..."
-          ampy -p "$AMPY_PORT" ls
+          ampy_cmd="ampy -p \"$AMPY_PORT\" ls"
+          echo "Running ampy command: $ampy_cmd"
+          eval $ampy_cmd
         else
           echo "Listing all files on ESP32 at $ESP_IP..."
           make_request "http://$ESP_IP/la"
@@ -126,7 +153,7 @@ case "$COMMAND" in
 
   fs-list)
         check_sync_needed
-        # echo "Getting JSON file listing from ESP32 at $ESP_IP..." # Removed for cleaner JSON output
+        # echo "Getting JSON file listing from ESP32 at $ESP_IP..." # Removed for cleaner JSON output for rm --visual
         make_request "http://$ESP_IP/fs-list"
         ;;
 
@@ -150,7 +177,7 @@ case "$COMMAND" in
         echo "$response"
 
         # Update IP file logic (uses sourced functions/variables)
-        if [ $status_code -eq 0 ] && printf '%s' "$response" | jq -e '.wifi_ip' >/dev/null 2>&1; then
+        if [ $status_code -eq 0 ] && printf '%s' "$response" | jq -e '.wifi_ip' >/dev/null 2>&1; then # Fixed && and >&1
             wifi_ip=$(echo "$response" | jq -r '.wifi_ip')
             need_update=false
             if [ -f "$IP_JSON_FILE" ]; then
@@ -178,12 +205,19 @@ case "$COMMAND" in
 
   rm)
         check_sync_needed
-        # FILE_PATH is now $PATH from argparse (uppercase)
-        FILE_PATH="$PATH"
 
-        if [ "$AMPY" = "yes" ]; then
+        if [ ${#ARGS[@]} -lt 1 ]; then
+            echo "Error: Missing file path" >&2 # Fixed >&2
+            echo "Usage: ./run rm <path>" >&2 # Fixed >&2
+            exit 1
+        fi
+        FILE_PATH="${ARGS[0]}"
+
+        if [ "$USE_AMPY" = true ]; then
             echo "Removing file $FILE_PATH from ESP32 using ampy (Port: $AMPY_PORT)..."
-            ampy -p "$AMPY_PORT" rm "$FILE_PATH"
+            ampy_cmd="ampy -p \"$AMPY_PORT\" rm \"$FILE_PATH\""
+            echo "Running ampy command: $ampy_cmd"
+            eval $ampy_cmd
         else
             echo "Removing file $FILE_PATH from ESP32 at $ESP_IP..."
             make_request "http://$ESP_IP/rm/$FILE_PATH" "DELETE"
@@ -194,21 +228,25 @@ case "$COMMAND" in
         check_sync_needed
         # Run the visual rm script from the scripts directory
         echo "Launching visual file removal..."
-        "$SCRIPT_DIR_ROOT/scripts/rm-visual"
+        "$SCRIPT_DIR_ROOT/scripts/rm-visual" # Updated path
         exit $? # Exit with the status of rm-visual
         ;;
 
   download)
         check_sync_needed
-        # FILE_PATH is now $PATH from argparse (uppercase)
-        FILE_PATH="$PATH"
+        if [ ${#ARGS[@]} -lt 1 ]; then
+            echo "Error: Missing file path" >&2 # Fixed >&2
+            echo "Usage: ./run download <path>" >&2 # Fixed >&2
+            exit 1
+        fi
+        FILE_PATH="${ARGS[0]}"
         DOWNLOAD_TARGET="$(basename "$FILE_PATH")"
         echo "Downloading $FILE_PATH from ESP32 at $ESP_IP to $DOWNLOAD_TARGET..."
         make_request "http://$ESP_IP/fs/get/$FILE_PATH" "GET" "$DOWNLOAD_TARGET"
         if [ $? -eq 0 ]; then
             echo "Downloaded to $DOWNLOAD_TARGET"
         else
-            echo "Download failed." >&2
+            echo "Download failed." >&2 # Fixed >&2
             # Optionally remove partially downloaded file
             # rm -f "$DOWNLOAD_TARGET"
             exit 1
@@ -217,8 +255,12 @@ case "$COMMAND" in
 
   view)
         check_sync_needed
-        # FILE_PATH is now $PATH from argparse (uppercase)
-        FILE_PATH="$PATH"
+        if [ ${#ARGS[@]} -lt 1 ]; then
+            echo "Error: Missing file path" >&2 # Fixed >&2
+            echo "Usage: ./run view <path>" >&2 # Fixed >&2
+            exit 1
+        fi
+        FILE_PATH="${ARGS[0]}"
         echo "Viewing file $FILE_PATH from ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/view/$FILE_PATH"
         ;;
@@ -227,15 +269,14 @@ case "$COMMAND" in
         check_sync_needed
         echo "Delegating upload to scripts/upload.sh..."
         # Prepare args for upload.sh
-        upload_script_args=("--ip" "$ESP_IP") # Pass the determined IP
-        if [ "$AMPY" = "yes" ]; then
-            upload_script_args+=("--ampy")
+        upload_args=("--ip" "$ESP_IP") # Pass the determined IP
+        if [ "$USE_AMPY" = true ]; then
+            upload_args+=("--ampy")
         fi
-        # Pass the remaining arguments captured by argparse
-        # Note: UPLOAD_ARGS is the array of remaining args (uppercase)
-        upload_script_args+=("${UPLOAD_ARGS[@]}")
+        # Pass the specific arguments meant for upload (e.g., --py, files, target)
+        upload_args+=("${ARGS[@]}")
 
-        "$SCRIPT_DIR_ROOT/scripts/upload.sh" "${upload_script_args[@]}"
+        "$SCRIPT_DIR_ROOT/scripts/upload.sh" "${upload_args[@]}"
         exit $? # Exit with the status of upload.sh
         ;;
 
@@ -243,25 +284,20 @@ case "$COMMAND" in
         # No need for check_sync_needed here, sync.sh does it
         echo "Delegating sync to scripts/sync.sh..."
         # Prepare args for sync.sh
-        sync_script_args=("--ip" "$ESP_IP") # Pass the determined IP
-        if [ "$AMPY" = "yes" ]; then
-            sync_script_args+=("--ampy")
+        sync_args=("--ip" "$ESP_IP") # Pass the determined IP
+        if [ "$USE_AMPY" = true ]; then
+            sync_args+=("--ampy")
         fi
-         # Pass the remaining arguments captured by argparse
-         # Note: SYNC_ARGS is the array of remaining args (uppercase)
-        sync_script_args+=("${SYNC_ARGS[@]}")
+         # Pass the specific arguments meant for sync (e.g., --py, --force, --dry-run)
+        sync_args+=("${ARGS[@]}")
 
-        "$SCRIPT_DIR_ROOT/scripts/sync.sh" "${sync_script_args[@]}"
+        "$SCRIPT_DIR_ROOT/scripts/sync.sh" "${sync_args[@]}"
         exit $? # Exit with the status of sync.sh
         ;;
 
-  # help command is handled by argparse itself when called like ./run --help or ./run rm --help
-
   *)
-    # This case should ideally not be reached if argparse is working correctly,
-    # as it handles unknown commands. But keep it as a fallback.
-    echo "Error: Unknown command '$COMMAND'" >&2
-    # Consider calling the parser's help function if possible, or exit
+    echo "Error: Unknown command '$COMMAND'" >&2 # Fixed >&2
+    show_usage
     exit 1
     ;;
 esac

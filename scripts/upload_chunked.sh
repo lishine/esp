@@ -1,14 +1,8 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Chunked upload script for ESP32
-# This script splits files into 4000-byte chunks and uploads them to the ESP32
-#
-# Required environment variables:
-#   ESP_IP: The IP address of the ESP32 device
-#
 # Usage: ESP_IP=<device_ip> ./upload_chunked.sh <file_path> [target_path]
 # Example: ESP_IP=192.168.4.1 ./upload_chunked.sh large_file.bin /data/large_file.bin
 
-# Function to display progress bar
 show_progress() {
     local percent=$1
     local width=40
@@ -25,7 +19,6 @@ show_progress() {
     echo -ne "$progress\r"
 }
 
-# Check arguments
 if [ $# -lt 1 ]; then
     echo "Usage: $0 <file_path>"
     exit 1
@@ -35,13 +28,11 @@ FILE_PATH="$1"
 TARGET_PATH=$(basename "$FILE_PATH")
 CHUNK_SIZE=4000  # 4000 bytes as specified
 
-# Check if file exists
 if [ ! -f "$FILE_PATH" ]; then
     echo "Error: File $FILE_PATH not found"
     exit 1
 fi
 
-# Get file size (cross-platform)
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS
     FILE_SIZE=$(stat -f%z "$FILE_PATH")
@@ -50,10 +41,8 @@ else
     FILE_SIZE=$(stat -c%s "$FILE_PATH")
 fi
 
-# Calculate number of chunks
 CHUNK_COUNT=$(( ($FILE_SIZE + $CHUNK_SIZE - 1) / $CHUNK_SIZE ))
 
-# Check if ESP_IP environment variable is set
 if [ -z "$ESP_IP" ]; then
     echo "Error: ESP_IP environment variable is required"
     echo "Please set ESP_IP environment variable before running this script"
@@ -90,11 +79,9 @@ fi
 
 echo "Uploading $FILE_PATH ($FILE_SIZE bytes) to $TARGET_PATH in $CHUNK_COUNT chunks"
 
-# Create temp directory for chunks
 TEMP_DIR=$(mktemp -d)
 echo "Using temporary directory: $TEMP_DIR"
 
-# Split file into chunks
 echo "Splitting file into chunks..."
 CHUNK_INDEX=0
 
@@ -117,12 +104,10 @@ while [ $CHUNK_INDEX -lt $CHUNK_COUNT ]; do
         dd if="$FILE_PATH" bs=1 skip=$OFFSET count=$BYTES of="$CHUNK_FILE" 2>/dev/null
     fi
     
-    # Calculate progress percentage
     CHUNK_SIZE_ACTUAL=$(stat -f%z "$CHUNK_FILE" 2>/dev/null || stat -c%s "$CHUNK_FILE")
     TOTAL_UPLOADED=$(( $OFFSET + $CHUNK_SIZE_ACTUAL ))
     PERCENT=$(( ($TOTAL_UPLOADED * 100) / $FILE_SIZE ))
     
-    # Upload this chunk
     echo -n "Uploading chunk $(($CHUNK_INDEX+1))/$CHUNK_COUNT (${CHUNK_SIZE_ACTUAL} bytes): "
     show_progress $PERCENT
     
@@ -130,7 +115,6 @@ while [ $CHUNK_INDEX -lt $CHUNK_COUNT ]; do
     
     echo -e "\nServer response: $RESPONSE"
     
-    # Check if the response contains success:true or is empty (error)
     if [ -z "$RESPONSE" ]; then
         echo "Error uploading chunk $(($CHUNK_INDEX+1)) - No response from server"
         rm -rf "$TEMP_DIR"
@@ -150,7 +134,6 @@ while [ $CHUNK_INDEX -lt $CHUNK_COUNT ]; do
     CHUNK_INDEX=$(($CHUNK_INDEX + 1))
 done
 
-# Check if the last response contained "chunks", which means the server already combined them
 if ! echo "$RESPONSE" | grep -q "chunks"; then
     # If not, and we have multiple chunks, send a completion request
     if [ $CHUNK_COUNT -gt 1 ]; then
@@ -175,7 +158,6 @@ else
     echo "Server already combined chunks on last chunk upload"
 fi
 
-# Clean up
 rm -rf "$TEMP_DIR"
 echo "Temporary files cleaned up"
 echo "Upload of $FILE_PATH to $TARGET_PATH completed successfully"

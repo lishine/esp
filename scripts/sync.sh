@@ -1,9 +1,9 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Script to synchronize modified files from ./device directory to ESP32
 
 # Source common functions and variables
 # shellcheck source=./common.sh
-source "$(dirname "$0")/common.sh" || { echo "Error: Unable to source common.sh" >&amp;2; exit 1; }
+source "$(dirname "$0")/common.sh" || { echo "Error: Unable to source common.sh" >&2; exit 1; } # Fixed >&2
 
 # --- Argument Parsing ---
 USE_AMPY=false
@@ -45,11 +45,11 @@ done
 
 # Validate required arguments
 if [ -z "$ESP_IP" ]; then
-    echo "Error: --ip <address> is required." >&amp;2
+    echo "Error: --ip <address> is required." >&2 # Fixed >&2
     exit 1
 fi
 if [ ${#SYNC_ARGS[@]} -gt 0 ]; then
-    echo "Warning: Unexpected arguments passed to sync: ${SYNC_ARGS[*]}" >&amp;2
+    echo "Warning: Unexpected arguments passed to sync: ${SYNC_ARGS[*]}" >&2 # Fixed >&2
 fi
 # Export ESP_IP for potential use in subshells if needed, though upload.sh takes it as arg
 export ESP_IP
@@ -60,8 +60,8 @@ export ESP_IP
 if [ ! -d "$SCRIPT_DIR_COMMON" ]; then
   echo "Creating directory: $SCRIPT_DIR_COMMON"
   mkdir -p "$SCRIPT_DIR_COMMON" || {
-    echo "Error: Failed to create directory $SCRIPT_DIR_COMMON" >&amp;2
-    exit 1
+    echo "Error: Failed to create directory $SCRIPT_DIR_COMMON" >&2; # Fixed >&2
+    exit 1;
   }
 fi
 
@@ -69,8 +69,8 @@ fi
 if [ ! -f "$TIMESTAMP_FILE" ]; then
   echo "Creating initial timestamp file: $TIMESTAMP_FILE"
   date +%s > "$TIMESTAMP_FILE" || {
-    echo "Error: Failed to create timestamp file $TIMESTAMP_FILE" >&amp;2
-    exit 1
+    echo "Error: Failed to create timestamp file $TIMESTAMP_FILE" >&2; # Fixed >&2
+    exit 1;
   }
 fi
 
@@ -90,18 +90,57 @@ fi
 # Get list of files to process
 FILES_TO_PROCESS=()
 if [ "$FORCE_UPLOAD" == true ]; then
-  echo "Finding all files in $DEVICE_DIR directory..."
-  # Find all files, excluding the directory itself and potential hidden files if desired
-  while IFS= read -r -d '' file; do
-      # Optional: Exclude specific patterns if needed, e.g., hidden files: [[ $(basename "$file") != .* ]] &&
-      FILES_TO_PROCESS+=("$file")
-  done < <(find "$DEVICE_DIR" -type f -print0)
+  echo "Finding all files in $DEVICE_DIR (respecting .gitignore)..."
+  # Check if DEVICE_DIR is within a git repository
+  if ! git -C "$PROJECT_ROOT_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+      echo "Warning: '$DEVICE_DIR' is not in a git repository. Falling back to finding all non-hidden files." >&2
+      # Fallback to find behavior (excluding hidden) if not in a git repo
+      while IFS= read -r -d '' file; do
+          FILES_TO_PROCESS+=("$file")
+      done < <(find "$DEVICE_DIR" -name '.*' -prune -o -type f -print0)
+  else
+      # Use git ls-files to get all non-ignored files (tracked & untracked) within DEVICE_DIR
+      mapfile -t potential_files < <(git -C "$PROJECT_ROOT_DIR" ls-files --cached --others --exclude-standard --full-name "$DEVICE_DIR/")
+      for file_rel_repo in "${potential_files[@]}"; do
+          # Construct full path from project root
+          file_full_path="$PROJECT_ROOT_DIR/$file_rel_repo"
+          # Ensure the file actually exists and is a file
+          if [[ -f "$file_full_path" ]]; then
+              FILES_TO_PROCESS+=("$file_full_path")
+          fi
+      done
+  fi
 else
-  echo "Finding modified files in $DEVICE_DIR since last sync ($TIMESTAMP_FILE)..."
-  # Find files newer than the timestamp file
-  while IFS= read -r -d '' file; do
-      FILES_TO_PROCESS+=("$file")
-  done < <(find "$DEVICE_DIR" -type f -newer "$TIMESTAMP_FILE" -print0)
+  echo "Finding modified files in $DEVICE_DIR (respecting .gitignore) since last sync ($TIMESTAMP_FILE)..."
+  # Check if DEVICE_DIR is within a git repository
+  if ! git -C "$PROJECT_ROOT_DIR" rev-parse --is-inside-work-tree > /dev/null 2>&1; then
+      echo "Warning: '$DEVICE_DIR' is not in a git repository. Falling back to finding all modified files." >&2
+      # Fallback to original find behavior if not in a git repo
+      while IFS= read -r -d '' file; do
+          FILES_TO_PROCESS+=("$file")
+      done < <(find "$DEVICE_DIR" -type f -newer "$TIMESTAMP_FILE" -print0)
+  else
+      # Use git ls-files to respect .gitignore, then filter by modification time
+      last_sync_time=$(cat "$TIMESTAMP_FILE")
+      # Get list of non-ignored files (tracked & untracked) within DEVICE_DIR relative to repo root
+      # Use mapfile/readarray for safer filename handling
+      mapfile -t potential_files < <(git -C "$PROJECT_ROOT_DIR" ls-files --cached --others --exclude-standard --full-name "$DEVICE_DIR/")
+
+      for file_rel_repo in "${potential_files[@]}"; do
+          # Construct full path from project root
+          file_full_path="$PROJECT_ROOT_DIR/$file_rel_repo"
+          # Ensure the file actually exists (git ls-files might list deleted but staged files)
+          # And ensure it's a file, not a directory listed somehow
+          if [[ -f "$file_full_path" ]]; then
+              # Get modification time (macOS compatible)
+              # Handle potential errors during stat
+              mod_time=$(stat -f %m "$file_full_path" 2>/dev/null)
+              if [[ -n "$mod_time" && "$mod_time" -gt "$last_sync_time" ]]; then
+                  FILES_TO_PROCESS+=("$file_full_path")
+              fi
+          fi
+      done
+  fi
 fi
 
 # Check if any files were found
@@ -109,7 +148,7 @@ if [ ${#FILES_TO_PROCESS[@]} -eq 0 ]; then
   echo "No files to sync."
   # Update timestamp even if no files changed, to reflect the check
   if [ "$DRY_RUN" == false ]; then
-    date +%s > "$TIMESTAMP_FILE" || echo "Warning: Failed to update timestamp file $TIMESTAMP_FILE" >&amp;2
+    date +%s > "$TIMESTAMP_FILE" || echo "Warning: Failed to update timestamp file $TIMESTAMP_FILE" >&2 # Fixed >&2
   fi
   exit 0
 fi
@@ -130,8 +169,8 @@ if [ "$DRY_RUN" == false ]; then
 
   for file in "${FILES_TO_PROCESS[@]}"; do
     CURRENT_FILE_NUM=$((CURRENT_FILE_NUM + 1))
-    relative_path="${file#$DEVICE_DIR/}" # Get path relative to device/
-    target_path="/$relative_path" # Target path on device (usually root + relative path)
+    relative_path="${file#$DEVICE_DIR/}" # Get path relative to device/, e.g., "ap.py" or "subdir/foo.py"
+    target_dir=$(dirname "/$relative_path") # Get target directory, e.g., "/" or "/subdir"
 
     echo "------- Processing file $CURRENT_FILE_NUM of $TOTAL_FILES: $file -------"
 
@@ -144,21 +183,21 @@ if [ "$DRY_RUN" == false ]; then
       UPLOAD_CMD_ARGS+=("--py")
     fi
     UPLOAD_CMD_ARGS+=("$file") # The source file path
-    UPLOAD_CMD_ARGS+=("$target_path") # The target path on device
+    UPLOAD_CMD_ARGS+=("$target_dir") # The target directory on device
 
     # Execute the upload command
     echo "Running: $SCRIPT_DIR_COMMON/upload.sh ${UPLOAD_CMD_ARGS[@]}"
     # Capture output to check for errors
-    upload_output=$("$SCRIPT_DIR_COMMON/upload.sh" "${UPLOAD_CMD_ARGS[@]}" 2>&amp;1)
+    upload_output=$("$SCRIPT_DIR_COMMON/upload.sh" "${UPLOAD_CMD_ARGS[@]}" 2>&1) # Fixed 2>&1
     upload_status=$?
     echo "$upload_output" # Show output from the upload script
 
     # Check if the upload succeeded
     if [ "$upload_status" -ne 0 ]; then
-        echo "Error: Upload of $file failed (Status: $upload_status)." >&amp;2
+        echo "Error: Upload of $file failed (Status: $upload_status)." >&2 # Fixed >&2
         # Check if the failure was due to connection and we haven't forced AP mode yet
         # Look for the specific error message from make_request in common.sh
-        if [ "$FORCE_AP_MODE_INTERNAL" = false ] &amp;&amp; echo "$upload_output" | grep -q "Connection to .* failed"; then
+        if [ "$FORCE_AP_MODE_INTERNAL" = false ] && echo "$upload_output" | grep -q "Connection to .* failed"; then # Fixed &&
             echo "Upload failed due to connection, attempting fallback to AP IP ($AP_IP) for this and future uploads..."
             FORCE_AP_MODE_INTERNAL=true
             CURRENT_ESP_IP="$AP_IP" # Switch IP for subsequent calls
@@ -167,18 +206,18 @@ if [ "$DRY_RUN" == false ]; then
             UPLOAD_CMD_ARGS=("--ip" "$CURRENT_ESP_IP") # Use AP_IP now
             if [ "$USE_AMPY" = true ]; then UPLOAD_CMD_ARGS+=("--ampy"); fi
             if [ "$SKIP_COMPILE_SYNC" = true ]; then UPLOAD_CMD_ARGS+=("--py"); fi
-            UPLOAD_CMD_ARGS+=("$file")
-            UPLOAD_CMD_ARGS+=("$target_path")
+            UPLOAD_CMD_ARGS+=("$file") # The source file path
+            UPLOAD_CMD_ARGS+=("$target_dir") # The target directory on device
 
             # Retry the upload
             echo "Retrying with: $SCRIPT_DIR_COMMON/upload.sh ${UPLOAD_CMD_ARGS[@]}"
-            upload_output=$("$SCRIPT_DIR_COMMON/upload.sh" "${UPLOAD_CMD_ARGS[@]}" 2>&amp;1)
+            upload_output=$("$SCRIPT_DIR_COMMON/upload.sh" "${UPLOAD_CMD_ARGS[@]}" 2>&1) # Fixed 2>&1
             upload_status=$?
             echo "$upload_output"
 
             # Check if retry succeeded
             if [ "$upload_status" -ne 0 ]; then
-              echo "Error: Upload of $file failed even with AP IP. Sync aborted." >&amp;2
+              echo "Error: Upload of $file failed even with AP IP. Sync aborted." >&2 # Fixed >&2
               exit 1 # Abort sync on persistent failure
             else
               echo "Retry successful."
@@ -186,7 +225,7 @@ if [ "$DRY_RUN" == false ]; then
             fi
         else
             # Upload failed for a reason other than initial connection, or failed after fallback
-            echo "Sync aborted due to upload failure." >&amp;2
+            echo "Sync aborted due to upload failure." >&2 # Fixed >&2
             exit 1 # Abort sync
         fi
     else
@@ -195,7 +234,7 @@ if [ "$DRY_RUN" == false ]; then
     fi
 
     # Add a short delay between uploads if not using ampy (ampy is slower anyway)
-    if [ "$USE_AMPY" = false ] &amp;&amp; [ $CURRENT_FILE_NUM -lt $TOTAL_FILES ]; then
+    if [ "$USE_AMPY" = false ] && [ $CURRENT_FILE_NUM -lt $TOTAL_FILES ]; then # Fixed &&
       echo "Waiting briefly before next file upload..."
       sleep 0.5
     fi
@@ -215,10 +254,10 @@ if [ "$DRY_RUN" == false ]; then
     if [ "$FORCE_AP_MODE_INTERNAL" = true ]; then
         RESET_CMD_ARGS+=("--ap") # Tell run script to use AP IP
     fi
+    RESET_CMD_ARGS+=("reset") # Add the command first
      if [ "$USE_AMPY" = true ]; then
-        RESET_CMD_ARGS+=("--ampy")
+        RESET_CMD_ARGS+=("--ampy") # Add the flag after the command
     fi
-    RESET_CMD_ARGS+=("reset")
 
     # Construct path to the root run script
     ROOT_RUN_SCRIPT="$PROJECT_ROOT_DIR/run"
@@ -227,7 +266,7 @@ if [ "$DRY_RUN" == false ]; then
         echo "Running: $ROOT_RUN_SCRIPT ${RESET_CMD_ARGS[@]}"
         "$ROOT_RUN_SCRIPT" "${RESET_CMD_ARGS[@]}"
     else
-        echo "Error: Cannot find or execute root run script at $ROOT_RUN_SCRIPT" >&amp;2
+        echo "Error: Cannot find or execute root run script at $ROOT_RUN_SCRIPT" >&2 # Fixed >&2
         # Decide if this is a fatal error for sync
     fi
   else
@@ -239,31 +278,37 @@ else
   echo "Would process these files via upload script (dry run):"
   for file in "${FILES_TO_PROCESS[@]}"; do
      base_name=$(basename "$file")
-     relative_path="${file#$DEVICE_DIR/}"
-     target_path="/$relative_path"
-     action="Compile &amp; Upload" # Default action
+     relative_path="${file#$DEVICE_DIR/}" # e.g., "ap.py" or "subdir/foo.py"
+     target_dir=$(dirname "/$relative_path") # e.g., "/" or "/subdir"
+     action="Compile & Upload" # Default action
      source_file="$file"
      target_file_name="$base_name" # Default target name
 
      if [[ "$file" == *.py ]]; then
         if [ "$SKIP_COMPILE_SYNC" == true ] || [ "$base_name" == "main.py" ] || [ "$base_name" == "boot.py" ]; then
             action="Upload .py" # Action if skipping compile
-            target_file_name="$base_name"
+            target_file_name="$base_name" # Target is .py
         else
             # Default compilation case for .py files
-            action="Compile &amp; Upload"
-            target_file_name="${base_name%.py}.mpy"
+            action="Compile & Upload"
+            target_file_name="${base_name%.py}.mpy" # Target is .mpy
         fi
      else
         # Non-python files are just uploaded
         action="Upload"
-        target_file_name="$base_name"
+        target_file_name="$base_name" # Target is original name
      fi
-     # Adjust target name based on compilation status for display
-     if [[ "$action" == "Compile & Upload" ]]; then
-         target_path="/${relative_path%.py}.mpy"
+
+     # Construct the final target path for display, ensuring correct directory handling
+     # dirname "/" gives "/", dirname "/foo.py" gives "/"
+     # dirname "/subdir/foo.py" gives "/subdir"
+     if [[ "$target_dir" == "/" ]]; then
+         final_target_path="/$target_file_name"
+     else
+         final_target_path="$target_dir/$target_file_name"
      fi
-     echo "  $action $source_file -> $target_path"
+
+     echo "  $action $source_file -> $final_target_path"
   done
 fi
 
@@ -271,7 +316,7 @@ fi
 if [ "$DRY_RUN" == false ]; then
   echo "Updating timestamp file: $TIMESTAMP_FILE"
   date +%s > "$TIMESTAMP_FILE" || {
-    echo "Error: Failed to update timestamp file $TIMESTAMP_FILE" >&amp;2
+    echo "Error: Failed to update timestamp file $TIMESTAMP_FILE" >&2; # Fixed >&2
     # Don't exit here, sync might have partially succeeded
   }
   echo "Timestamp updated."

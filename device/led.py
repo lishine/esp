@@ -1,20 +1,16 @@
 from machine import Pin
 import uasyncio as asyncio
 
-# --- Configuration ---
 LED_PIN = 8
 
-# --- Initialization ---
 led = Pin(LED_PIN, Pin.OUT)
 led.on()  # Initialize LED to off (active low)
 
-# --- State Variables ---
 _led_mode = "IDLE"  # Possible modes: 'IDLE', 'SEQUENCE', 'CONTINUOUS'
 _sequence_params = None  # Tuple: (count, on_time_ms, off_time_ms)
 _continuous_interval_ms = None  # Integer: interval in milliseconds
 
 
-# --- Core Task ---
 async def led_task():
     """Main asynchronous task to control the LED based on the current mode."""
     global _led_mode, _sequence_params, _continuous_interval_ms
@@ -72,7 +68,6 @@ async def led_task():
             await asyncio.sleep_ms(50)
 
 
-# --- Control Functions ---
 def led_turn_on():
     """Turn the LED on (LED is active low)."""
     led.off()

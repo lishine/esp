@@ -1,4 +1,3 @@
-# import socket # No longer needed
 import _thread
 import network
 
@@ -13,7 +12,6 @@ def start_ap(essid="DDDEV", password=""):
     ap.active(True)
     ap.config(essid=essid, password=password)
     try:
-        # Use try/except as blink might fail if LED thread has issues
         blink_sequence(count=2)
     except Exception as e:
         log(f"Error during AP start blink: {e}")
@@ -34,9 +32,3 @@ def get_ap_ip():
             return "Error"
     else:
         return "AP_Inactive"
-
-
-# --- DNS Server Functions Removed ---
-# def make_dns_response(data, ip_addr): ...
-# def extract_domain_from_dns_query(data): ...
-# def dns_server(): ...

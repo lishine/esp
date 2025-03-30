@@ -1,6 +1,6 @@
 import sys
-import machine  # Keep machine import if needed elsewhere, otherwise remove
-from log import log  # Keep for initial logging
+import machine
+from log import log
 import rtc  # Import the new rtc module
 
 # Adjust time using the dedicated function
@@ -10,7 +10,6 @@ log("\n" + "=" * 40)
 log("ESP32 Boot Sequence Starting...")
 log("=" * 40)
 
-# Log Reset Cause
 reset_cause_val = machine.reset_cause()
 reset_causes = {
     machine.PWRON_RESET: "Power On Reset",
@@ -25,8 +24,4 @@ cause_str = reset_causes.get(
 log(f"**** Reset Cause: {cause_str} ****")
 
 
-# Synchronous initializations (like AP, WiFi, Server) moved to main.py
-
-log("boot.py finished.")  # Indicate boot sequence completion
-
-# --- Async Main Function and Event Loop are now in main.py ---
+log("boot.py finished.")

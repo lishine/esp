@@ -1,21 +1,18 @@
 from microdot import Microdot, Response
 import json
 
-# import _thread # No longer needed
 import uasyncio as asyncio
 import machine
 import uos
-import gc  # Keep gc import for now, might be useful elsewhere
+import gc
 from upload import handle_upload
 
-# Updated import from log.py
 from log import log, read_log_file_content, get_latest_log_index, clear_logs
 from wifi import (
     is_connected,
     get_ip,
     save_wifi_config,
     wifi_config,
-    # wifi_connect_thread, # Removed old thread function
     get_current_network,
 )
 from fs import (
@@ -45,7 +42,6 @@ async def upload_file(request, target_path):
 
 @app.route("/reset", methods=["GET", "POST"])
 async def reset(request):  # Changed to async def
-    # import time # Keep time for sleep if needed, but asyncio.sleep is better
 
     async def delayed_reset_async():  # Changed to async def
         await asyncio.sleep(0.1)  # Use asyncio.sleep
@@ -198,15 +194,11 @@ def status(request):
     return json.dumps(response)
 
 
-# --- Removed old /log route ---
-# This route is obsolete with chunked logging. Use /api/log/chunk instead.
-
-
 @app.route("/free")
 def get_free_space(request):
     """Return free space information about the filesystem"""
     try:
-        # import os # Already imported via uos
+
         fs_stat = uos.statvfs("/")
         # Calculate free space in KB
         free_kb = (fs_stat[0] * fs_stat[3]) / 1024

@@ -40,7 +40,6 @@ _MONTH_ABBR = (
 
 
 def _ensure_log_dir():
-    """Ensures the log directory exists."""
     global _log_dir_checked
     if _log_dir_checked:
         return
@@ -48,7 +47,6 @@ def _ensure_log_dir():
         uos.stat(LOG_DIR)
         # print(f"Log directory '{LOG_DIR}' already exists.") # Debug
     except OSError as e:
-        # If directory doesn't exist (errno 2: ENOENT)
         if e.args[0] == 2:
             try:
                 uos.mkdir(LOG_DIR)
@@ -63,7 +61,6 @@ def _ensure_log_dir():
 
 
 def get_latest_log_index():
-    """Finds the highest index of existing log files."""
     _ensure_log_dir()
     latest_index = -1
     try:
@@ -107,7 +104,6 @@ def _get_log_filepath(index):
 
 
 def log(*args, **kwargs):
-    """Formats a log message, prints it to console, and queues it for async file writing."""
 
     # 1. Format the message with timestamp
     ticks_now_ms = utime.ticks_ms()
@@ -126,7 +122,6 @@ def log(*args, **kwargs):
     output_bytes = output.encode("utf-8")
 
     if len(_log_queue) >= _MAX_QUEUE_SIZE:
-        # Queue is full, drop the message and print an error directly
         print(f"--- LOG QUEUE FULL (MAX {_MAX_QUEUE_SIZE}) - DROPPING MESSAGE ---")
         print(output, end="")  # Print the dropped message content as well
         print(f"--- END DROPPED MESSAGE ---")
@@ -143,7 +138,6 @@ def log(*args, **kwargs):
 
 
 async def _log_writer_task():
-    """Async task that waits for log messages and writes them to files."""
     global _current_log_index
 
     # Initialize log directory and find starting index
@@ -156,12 +150,10 @@ async def _log_writer_task():
             # Wait for the event or timeout after 3 seconds
             try:
                 await asyncio.wait_for_ms(_write_event.wait(), 3000)
-                # Event was set before timeout
                 _write_event.clear()
-                # print("Log writer triggered by event.") # Debug
+                print("Log writer triggered by event.")
             except TimeoutError:
-                # Timeout occurred, proceed to check queue anyway
-                # print("Log writer triggered by timeout.") # Debug
+                print("Log writer triggered by timeout.")
                 pass  # Nothing specific to do on timeout itself
 
             # Process the queue if it has messages (either from event or timeout)
@@ -217,7 +209,6 @@ async def _log_writer_task():
                         )
                         # Avoid potential tight loops on persistent write errors for this file
                         await asyncio.sleep_ms(100)
-                        # We might lose subsequent messages in this batch if the error persists
             # else: # Debug
             # print("Log writer woke up, but queue is empty.")
 
@@ -229,9 +220,6 @@ async def _log_writer_task():
         # Yield control briefly even if no event occurred or no messages processed
         # This prevents the task from potentially starving others if events fire rapidly
         await asyncio.sleep_ms(10)
-
-
-# --- Log Reading Function ---
 
 
 def read_log_file_content(file_index):
@@ -257,7 +245,6 @@ def read_log_file_content(file_index):
             # print(f"Read {len(content)} bytes from {filepath}") # Debug
             return content
     except OSError as e:
-        # File not found is expected when requesting older logs
         if e.args[0] == 2:  # ENOENT
             # print(f"Log file not found: {filepath}") # Debug
             pass
@@ -268,9 +255,6 @@ def read_log_file_content(file_index):
     except Exception as e:
         print(f"Unexpected error reading log file '{filepath}': {e}")
         return None
-
-
-# --- Log Clearing Function ---
 
 
 def clear_logs():
@@ -312,6 +296,3 @@ def clear_logs():
     except OSError as e:
         print(f"Error listing or accessing log directory '{LOG_DIR}' during clear: {e}")
         return False
-
-
-# --- End of device/log.py ---

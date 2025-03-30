@@ -4,7 +4,6 @@ from log import log
 
 
 def format_size(size):
-    """Format file size in human-readable format"""
     if size < 1024:
         return f"{size}B"
     elif size < 1024 * 1024:
@@ -14,7 +13,6 @@ def format_size(size):
 
 
 def get_file_details(path="."):
-    """Get detailed file listing with sizes and dates"""
     try:
         result = []
         files = os.listdir(path)
@@ -53,12 +51,9 @@ def get_file_details(path="."):
 
 def get_hierarchical_list_with_sizes(path=".", prefix="", _initial_files=None):
     """
-    Get a recursive list of files in tree format with sizes.
-    Supports truncating the 'logs' directory listing.
-    _initial_files: Internal parameter to pass a pre-defined list (e.g., for truncation).
-    """
     # Define current_dir_name early to avoid unbound error in final except block
     # Use string splitting for basename, as uos may not have os.path.basename
+    """
     current_dir_name = path.split("/")[-1] if "/" in path else path
     try:
         result = []
@@ -185,9 +180,6 @@ def get_hierarchical_list_with_sizes(path=".", prefix="", _initial_files=None):
 
 
 def get_file_list(path=".", prefix="", is_last=True):
-    """
-    Get a recursive list of files in tree format with vertical lines
-    """
     try:
         result = []
         files = os.listdir(path)
@@ -234,7 +226,6 @@ def get_file_list(path=".", prefix="", is_last=True):
 
 
 def exists(path):
-    """Check if a file or directory exists"""
     try:
         os.stat(path)
         return True
@@ -243,7 +234,6 @@ def exists(path):
 
 
 def is_dir(path):
-    """Check if a path is a directory"""
     try:
         return (os.stat(path)[0] & 0x4000) != 0
     except:
@@ -251,10 +241,6 @@ def is_dir(path):
 
 
 def remove_if_empty_or_file(path):
-    """
-    Remove a path if it's a file or an empty directory.
-    Returns True if successfully removed, False otherwise.
-    """
     try:
         if not exists(path):
             return False
@@ -275,9 +261,6 @@ def remove_if_empty_or_file(path):
 
 
 def remove_empty_parents(path):
-    """
-    Remove empty parent directories recursively.
-    """
     try:
         if "/" not in path:
             return True
@@ -303,10 +286,6 @@ def remove_empty_parents(path):
 
 
 def get_hierarchical_json(path=".", include_dirs=True):
-    """
-    Get a recursive list of files in JSON format
-    Returns a list of dictionaries with file information
-    """
     log("get_hierarchical_json")
     try:
         result = []

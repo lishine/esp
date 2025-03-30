@@ -5,6 +5,8 @@ from machine import Pin  # Keep for potential direct use if needed
 from log import log
 import led  # Import led module for async functions
 
+MAX_WAIT = 5
+
 
 # --- Configuration Loading/Saving (Keep as is) ---
 def load_wifi_config():
@@ -62,7 +64,7 @@ async def _try_connect(network_index):
         sta.connect(ssid, password)
 
         # Wait for connection with timeout
-        max_wait = 5  # seconds
+        max_wait = MAX_WAIT  # seconds
         wait_interval = 1  # second
         for _ in range(max_wait // wait_interval):
             if sta.isconnected():

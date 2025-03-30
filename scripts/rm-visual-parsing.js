@@ -1,18 +1,8 @@
 #!/usr/bin/env node
 
-/**
- * ESP32 File System JSON Parser
- * Extracts and processes JSON data from ESP32 file listings
- */
-
 const fs = require("fs");
 const path = require("path");
 
-/**
- * Extract valid JSON from potentially mixed output
- * @param {string} rawData - Raw output from ESP32 file listing command
- * @returns {object} Parsed JSON object or null if extraction failed
- */
 function extractJson(rawData) {
   // First attempt: Try to parse the entire output as JSON
   try {
@@ -49,13 +39,6 @@ function extractJson(rawData) {
   return null;
 }
 
-/**
- * Process file list recursively to create a hierarchical display
- * @param {object} jsonData - Parsed JSON data of files and directories
- * @param {string} prefix - Current path prefix for display
- * @param {number} depth - Current recursion depth
- * @returns {Array} Array of formatted file entries for dialog display
- */
 function processFiles(jsonData) {
   function generateTree(entries, prefix) {
     let res = [];
@@ -92,23 +75,12 @@ function processFiles(jsonData) {
   return generateTree(jsonData, "");
 }
 
-/**
- * Format file entries for dialog display
- * @param {Array} fileEntries - Array of file entry objects
- * @returns {string} Formatted string for dialog display
- */
 function formatForDialog(fileEntries) {
   return fileEntries
     .map((entry) => `"${entry.path}" "${entry.display}" off`)
     .join("\n");
 }
 
-/**
- * Main function to parse ESP32 file listing
- * @param {string} inputFile - Path to file containing raw ESP32 output
- * @param {string} outputFile - Path to write formatted dialog entries
- * @returns {boolean} Success status
- */
 function parseEsp32FileList(inputFile, outputFile) {
   try {
     // Read the raw file data

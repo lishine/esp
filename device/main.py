@@ -8,14 +8,7 @@ import led  # Import the led module
 import wifi  # Import the new wifi module
 import ap  # Import the ap module
 
-# wifi, ap, led are started in boot.py
-# We only need the logger task here
-# from led import led_turn_off # No longer needed here
 
-# led_turn_off() # Should be handled by led thread init if needed
-
-
-# --- Async Main Function ---
 async def main():
     log.log("main.py: Starting...")
     try:
@@ -92,9 +85,6 @@ async def main():
         log.log("Async main finished.")
 
 
-# --- Start Event Loop ---
-# This runs the main coroutine, which starts the logger task
-# and then keeps the loop alive for it.
 log.log("Starting asyncio event loop for logger...")
 try:
     asyncio.run(main())

@@ -1,16 +1,37 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # Common functions and variables for ESP32 management scripts
 
-# Get the directory where this common script resides
+# --- Dependency Checks ---
+
+# Check Bash version (need >= 4 for mapfile used in sync.sh)
+if (( BASH_VERSINFO[0] < 4 )); then
+    echo "Error: Bash version 4 or higher is required (you have $BASH_VERSION)." >&2
+    echo "On macOS, run: brew install bash" >&2
+    echo "Then ensure the new bash is used (e.g., by starting a new terminal or using '/usr/local/bin/bash script.sh')." >&2
+    exit 1
+fi
+
+# Check for jq early
+check_jq() {
+    if ! command -v jq > /dev/null; then
+        echo "Error: jq is not installed but required for IP address management and status parsing." >&2
+        echo "Please install jq:" >&2
+        echo "  macOS: brew install jq" >&2
+        echo "  Debian/Ubuntu: sudo apt-get update && sudo apt-get install jq" >&2
+        echo "  Other systems: Check your package manager." >&2
+        exit 1
+    fi
+}
+check_jq # Run the check immediately
+
+# --- Script Setup ---
+
 SCRIPT_DIR_COMMON="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-# Get the root project directory (one level up from scripts)
 PROJECT_ROOT_DIR="$(dirname "$SCRIPT_DIR_COMMON")"
 
-# Configuration Files (relative to this script's directory)
 IP_JSON_FILE="$SCRIPT_DIR_COMMON/ip.json"
 TIMESTAMP_FILE="$SCRIPT_DIR_COMMON/.last_sync"
 
-# Paths (relative to this script's directory or project root)
 UPLOAD_CHUNKED_SCRIPT_PATH="$SCRIPT_DIR_COMMON/upload_chunked.sh"
 DEVICE_DIR="$PROJECT_ROOT_DIR/device" # Path to the device source files
 
@@ -20,7 +41,6 @@ AMPY_PORT="/dev/tty.usbmodem101"
 # Default AP IP
 AP_IP="192.168.4.1"
 
-# Function to check if jq is available
 check_jq() {
     if ! command -v jq > /dev/null; then
         echo "Error: jq is not installed but required." >&2
@@ -29,12 +49,9 @@ check_jq() {
     fi
 }
 
-# Function to read IP from JSON file
-# Usage: read_ip_from_json
-# Returns: IP address on stdout, exit code 0 on success, 1 on failure
 read_ip_from_json() {
     if [ -f "$IP_JSON_FILE" ]; then
-        check_jq
+        # check_jq is already called at the start
         local ip
         ip=$(jq -r '.ip' "$IP_JSON_FILE" 2>/dev/null)
         if [ -n "$ip" ] && [ "$ip" != "null" ]; then
@@ -45,8 +62,6 @@ read_ip_from_json() {
     return 1
 }
 
-# Function to write IP to JSON file
-# Usage: write_ip_to_json <new_ip>
 write_ip_to_json() {
     local new_ip="$1"
     local json_content
@@ -56,7 +71,7 @@ write_ip_to_json() {
         return 1
     fi
 
-    check_jq
+    # check_jq is already called at the start
     if [ -f "$IP_JSON_FILE" ]; then
         # Read existing JSON and update only the IP field while preserving other values
         json_content=$(jq --arg ip "$new_ip" '. + {ip: $ip}' "$IP_JSON_FILE")
@@ -69,9 +84,6 @@ write_ip_to_json() {
     return $? # Return the status of the printf command
 }
 
-# Function to check if sync is needed
-# Usage: check_sync_needed
-# Returns: Exit code 0 if sync is needed, 1 otherwise. Prints message to stdout.
 check_sync_needed() {
     # If timestamp file doesn't exist, sync is needed
     if [ ! -f "$TIMESTAMP_FILE" ]; then
@@ -89,10 +101,6 @@ check_sync_needed() {
     return 1
 }
 
-# Helper function to make a curl request with timeout (Identical to original run script)
-# Usage: make_request <url> [method] [output_file] [curl_options...]
-# Expects ESP_IP to be set in the calling script's environment
-# Returns: Response body on stdout, exit code 0 on success, 1 on failure.
 make_request() {
     local url="$1"
     local method="${2:-GET}"
@@ -100,18 +108,15 @@ make_request() {
     local timeout=10
     local curl_opts="-s -m $timeout" # Original: String concatenation
 
-    # Check if ESP_IP is set
     if [ -z "$ESP_IP" ]; then
         echo "Error: ESP_IP variable is not set for make_request." >&2
         return 1
     fi
 
-    # Process additional headers and options passed as arguments
     shift 3 || true # Shift past url, method, output_file
-    local headers=() # Original: Array
-    local data_options=() # Original: Array
+    local headers=()
+    local data_options=()
 
-    # Original loop logic
     while [ $# -gt 0 ]; do
         if [[ "$1" == "--data-binary" ]]; then
             if [ -z "$2" ]; then echo "Error: --data-binary requires an argument." >&2; return 1; fi
@@ -127,7 +132,6 @@ make_request() {
         fi
     done
 
-    # Original string concatenation for -o and -X
     if [ -n "$output_file" ]; then
         curl_opts="$curl_opts -o \"$output_file\"" # Add quotes for safety, though original didn't have them explicitly here
     fi
@@ -138,11 +142,8 @@ make_request() {
 
     # Try with the current ESP_IP
     local response
-    # Original curl execution: mixed string and arrays, stderr discarded
-    # Need to use eval if curl_opts contains quoted arguments like -o "filename"
-    # However, the original didn't use eval. Let's stick to that for strict identity.
-    # If filenames have spaces, the original might have failed.
-    # Using the exact original call structure:
+    local full_curl_cmd="curl $curl_opts ${headers[@]} ${data_options[@]} \"$url\""
+    echo "Running curl command: $full_curl_cmd" >&2 # Print to stderr to avoid interfering with stdout capture
     response=$(curl $curl_opts "${headers[@]}" "${data_options[@]}" "$url" 2>/dev/null)
     local status=$?
 
@@ -157,8 +158,6 @@ make_request() {
 }
 
 
-# Export functions so they can be used by scripts sourcing this file
-# and potentially by subshells (like in the original sync command)
 export -f check_jq read_ip_from_json write_ip_to_json check_sync_needed make_request
 
 # Export variables that might be needed by sub-scripts directly
