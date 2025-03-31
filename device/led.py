@@ -1,10 +1,11 @@
-from machine import Pin
 import uasyncio as asyncio
+from log import log
 
 LED_PIN = 8
+led_pin_obj = None  # Will be initialized externally by init_io.py
 
-led = Pin(LED_PIN, Pin.OUT)
-led.on()  # Initialize LED to off (active low)
+# led = Pin(LED_PIN, Pin.OUT) # Removed: Initialization moved to init_io.py
+# led.on()  # Removed: Initialization moved to init_io.py
 
 _led_mode = "IDLE"  # Possible modes: 'IDLE', 'SEQUENCE', 'CONTINUOUS'
 _sequence_params = None  # Tuple: (count, on_time_ms, off_time_ms)
@@ -70,12 +71,18 @@ async def led_task():
 
 def led_turn_on():
     """Turn the LED on (LED is active low)."""
-    led.off()
+    if led_pin_obj:
+        led_pin_obj.value(0)  # Active low means 0 is ON
+    else:
+        log("LED Pin not initialized")
 
 
 def led_turn_off():
     """Turn the LED off (LED is active low)."""
-    led.on()
+    if led_pin_obj:
+        led_pin_obj.value(1)  # Active low means 1 is OFF
+    else:
+        log("LED Pin not initialized")
 
 
 def blink_sequence(count=3, on_time=0.1, off_time=0.1):

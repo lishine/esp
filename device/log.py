@@ -1,4 +1,3 @@
-# --- Start of device/log.py ---
 import utime
 import uos
 import gc
