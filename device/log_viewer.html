@@ -53,7 +53,7 @@
     <script>
         const logContainer = document.getElementById('logContainer');
         const loadOlderBtn = document.getElementById('loadOlderBtn');
-        const logApiUrl = "http://10.100.102.8/api/log/chunk";
+        const logApiUrl = `http://${window.location.hostname}/api/log/chunk`; // Use hostname from URL
         const updateInterval = 7000; // 7 seconds
 
         let currentLogIndex = -1;
