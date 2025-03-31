@@ -177,29 +177,32 @@ case "$COMMAND" in
         echo "$response"
 
         # Update IP file logic (uses sourced functions/variables)
-        if [ $status_code -eq 0 ] && printf '%s' "$response" | jq -e '.wifi_ip' >/dev/null 2>&1; then # Fixed && and >&1
-            wifi_ip=$(echo "$response" | jq -r '.wifi_ip')
-            need_update=false
-            if [ -f "$IP_JSON_FILE" ]; then
-                check_jq # Sourced
-                current_ip=$(jq -r '.ip' "$IP_JSON_FILE")
-                if [ "$wifi_ip" != "$current_ip" ]; then
-                    echo "IP has changed from $current_ip to $wifi_ip. Updating IP file..."
-                    need_update=true
+        # Only attempt to update the IP file if we are NOT using the AP IP
+        if [ "$ESP_IP" != "$AP_IP" ]; then
+            if [ $status_code -eq 0 ] && printf '%s' "$response" | jq -e '.ip' >/dev/null 2>&1; then # Check for .ip
+                device_ip=$(echo "$response" | jq -r '.ip') # Extract .ip
+                need_update=false
+                if [ -f "$IP_JSON_FILE" ]; then
+                    check_jq # Sourced
+                    current_ip=$(jq -r '.ip' "$IP_JSON_FILE")
+                    if [ "$device_ip" != "$current_ip" ]; then
+                        echo "IP has changed from $current_ip to $device_ip. Updating IP file..."
+                        need_update=true
+                    else
+                        echo "IP unchanged: $device_ip"
+                    fi
                 else
-                    echo "IP unchanged: $wifi_ip"
+                    echo "IP file not found at $IP_JSON_FILE. Creating with IP: $device_ip"
+                    need_update=true
                 fi
-            else
-                echo "IP file not found at $IP_JSON_FILE. Creating with IP: $wifi_ip"
-                need_update=true
+                if [ "$need_update" = true ]; then
+                    write_ip_to_json "$device_ip" # Sourced
+                    echo "IP file updated."
+                fi
+            elif [ $status_code -eq 0 ]; then
+                 echo "WiFi not connected or status information incomplete."
+            # else make_request already printed an error
             fi
-            if [ "$need_update" = true ]; then
-                write_ip_to_json "$wifi_ip" # Sourced
-                echo "IP file updated."
-            fi
-        elif [ $status_code -eq 0 ]; then
-             echo "WiFi not connected or status information incomplete."
-        # else make_request already printed an error
         fi
         ;;
 

@@ -20,6 +20,10 @@ _MAX_QUEUE_SIZE = 30  # Max messages before dropping
 _WRITE_THRESHOLD = 5  # Number of messages to trigger a write
 _write_event = asyncio.Event()  # Event to signal the writer task
 
+# --- Statistics (Rolling Window) ---
+_ROLLING_WINDOW_SIZE = 5
+_last_write_times_us = []  # Stores the last N write durations in microseconds
+
 # --- Constants ---
 _MONTH_ABBR = (
     "Jan",
@@ -139,6 +143,7 @@ def log(*args, **kwargs):
 
 async def _log_writer_task():
     global _current_log_index
+    global _last_write_times_us  # Use the list for rolling window
 
     # Initialize log directory and find starting index
     _ensure_log_dir()
@@ -149,9 +154,9 @@ async def _log_writer_task():
         try:
             # Wait for the event or timeout after 3 seconds
             try:
-                await asyncio.wait_for_ms(_write_event.wait(), 3000)
+                await asyncio.wait_for_ms(_write_event.wait(), 3000)  # type: ignore
                 _write_event.clear()
-                print("Log writer triggered by event.")
+                # print("Log writer triggered by event.") # Debug
             except TimeoutError:
                 pass  # Nothing specific to do on timeout itself
 
@@ -190,18 +195,31 @@ async def _log_writer_task():
 
                     # Write the message
                     try:
+                        start_us = utime.ticks_us()
                         with open(current_filepath, "ab") as f:
                             bytes_written = f.write(message_bytes)
-                            if bytes_written is not None:
-                                current_size += bytes_written
-                            else:
-                                # If write returns None, try to get size again
-                                try:
-                                    stat = uos.stat(current_filepath)
-                                    current_size = stat[6]
-                                except OSError:
-                                    # If stat fails after write, estimate based on what we tried to write
-                                    current_size += len(message_bytes)
+                        end_us = utime.ticks_us()
+                        write_duration_us = utime.ticks_diff(end_us, start_us)
+
+                        # Update rolling window stats
+                        _last_write_times_us.append(write_duration_us)
+                        # Keep only the last N entries
+                        if len(_last_write_times_us) > _ROLLING_WINDOW_SIZE:
+                            _last_write_times_us.pop(0)  # Remove the oldest entry
+
+                        if bytes_written is not None:
+                            # If write returns None, try to get size again
+                            try:
+                                stat = uos.stat(current_filepath)
+                                current_size = stat[6]
+                            except OSError:
+                                # If stat fails after write, estimate based on what we tried to write
+                                current_size += len(message_bytes)
+                        else:
+                            # If write returns None, assume bytes_written is the length of message_bytes
+                            # This might happen on some MicroPython ports/versions
+                            current_size += len(message_bytes)
+
                     except Exception as e:
                         print(
                             f"Error writing to log file '{current_filepath}' in writer: {e}"
@@ -258,7 +276,7 @@ def read_log_file_content(file_index):
 
 def clear_logs():
     """Removes all log files from the log directory."""
-    global _current_log_index
+    global _current_log_index, _last_write_times_us
     _ensure_log_dir()
     cleared_count = 0
     error_count = 0
@@ -289,9 +307,32 @@ def clear_logs():
 
         # Reset the current index to start fresh from 0 next time
         _current_log_index = 0
+        # Clear the stats window as well
+        _last_write_times_us.clear()
         print(f"Log clearing finished. Removed: {cleared_count}, Errors: {error_count}")
         return True
 
     except OSError as e:
         print(f"Error listing or accessing log directory '{LOG_DIR}' during clear: {e}")
         return False
+
+
+def get_log_write_stats():
+    """
+    Calculates and returns the log write time statistics based on a rolling window.
+
+    Returns:
+        dict: A dictionary containing 'log_write_time_max' (microseconds)
+              and 'log_write_time_avg' (microseconds) for the last N writes.
+              Returns 0 for both if no writes have occurred in the window.
+    """
+    if not _last_write_times_us:
+        avg_time_us = 0
+        max_time_us = 0
+    else:
+        total_time_us = sum(_last_write_times_us)
+        count = len(_last_write_times_us)
+        avg_time_us = float(total_time_us) / count
+        max_time_us = max(_last_write_times_us)
+
+    return {"log_write_time_max": max_time_us, "log_write_time_avg": avg_time_us}

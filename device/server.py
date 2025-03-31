@@ -7,7 +7,13 @@ import uos
 import gc
 from upload import handle_upload
 
-from log import log, read_log_file_content, get_latest_log_index, clear_logs
+from log import (
+    log,
+    read_log_file_content,
+    get_latest_log_index,
+    clear_logs,
+    get_log_write_stats,
+)
 from wifi import (
     is_connected,
     get_ip,
@@ -188,10 +194,15 @@ def ping(request):
 @app.route("/status")
 def status(request):
     """Return device status including WiFi IP if connected"""
-    response = {"status": "ok"}
+    response = {}
     if is_connected():
-        response["wifi_ip"] = get_ip()
-    return json.dumps(response)
+        response["ip"] = get_ip()
+    else:
+        response["ip"] = None
+    response["stat"] = get_log_write_stats()  # Add log stats
+    return Response(
+        body=json.dumps(response), headers={"Content-Type": "application/json"}
+    )
 
 
 @app.route("/free")
