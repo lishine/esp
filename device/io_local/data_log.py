@@ -14,7 +14,7 @@ from . import neo7m
 # Buzzer doesn't typically have data to log continuously
 
 # --- Constants ---
-DATA_LOG_INTERVAL_S = 1
+DATA_LOG_INTERVAL_S = 10
 
 # --- Data Gathering Functions (Optional Abstraction) ---
 # These could be simple wrappers or add formatting
