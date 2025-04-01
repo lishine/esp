@@ -43,15 +43,3 @@ def init_io():
     # buzzer.init_buzzer()
 
     log("IO initialization complete.")  # Changed log.log to log
-
-
-# Optional: Function to start background tasks if needed centrally
-# def start_io_tasks():
-#     log("Starting IO background tasks...")
-#     if led.led_pin_obj: # Check if LED init succeeded
-#         asyncio.create_task(led.led_task())
-#     esc_telemetry.start_esc_reader()
-#     ds18b20.start_ds18b20_reader()
-#     neo7m.start_neo7m_reader()
-#     # Buzzer tasks are typically started on demand (e.g., play_sequence_async)
-#     log("IO background tasks started.")
