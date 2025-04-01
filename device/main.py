@@ -12,9 +12,9 @@ import wifi
 import ap
 
 # IO related modules
-import io.init_io as init_io
-import io.data_log as data_log
-import io.neo7m as neo7m  # Only needed for neo7m.start_neo7m_reader()
+import io_local.init_io as init_io
+import io_local.data_log as data_log
+import io_local.neo7m as neo7m  # Only needed for neo7m.start_neo7m_reader()
 
 # --- Constants ---
 # Removed DATA_LOG_INTERVAL_S (moved to data_log.py)
