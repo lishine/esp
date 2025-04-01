@@ -5,7 +5,7 @@ from machine import Pin  # Keep for potential direct use if needed
 from log import log
 import led  # Import led module for async functions
 
-MAX_WAIT = 5
+MAX_WAIT = 4
 
 
 # --- Configuration Loading/Saving (Keep as is) ---
@@ -143,7 +143,7 @@ async def manage_wifi_connection():
                     3.0
                 )  # Slow blink for connected state (Sync call)
                 # Wait longer after successful connection before checking again
-                await asyncio.sleep(15)
+                await asyncio.sleep(5)
             else:
                 log(
                     "All configured WiFi networks failed to connect. Retrying in 30s..."
