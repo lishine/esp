@@ -25,7 +25,7 @@ if [ $# -lt 1 ]; then
 fi
 
 FILE_PATH="$1"
-TARGET_PATH=$(basename "$FILE_PATH")
+TARGET_PATH="${2:-$(basename "$FILE_PATH")}" # Use $2 if provided, else default to basename of $1
 CHUNK_SIZE=4000  # 4000 bytes as specified
 
 if [ ! -f "$FILE_PATH" ]; then
