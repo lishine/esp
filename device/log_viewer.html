@@ -79,7 +79,7 @@
             }
         }
 
-        // Function to render logs (prepend new lines)
+        // Function to render logs (prepend new lines) without scrolling
         function renderNewLogs(lines) {
             const reversedLines = lines.reverse(); // Reverse to show newest first
             let newContent = '';
@@ -89,10 +89,31 @@
                     displayedLogLines.add(line);
                 }
             });
+
+            if (!newContent) return; // Nothing new to add
+
             if (logContainer.innerHTML === 'Loading logs...') {
                 logContainer.innerHTML = newContent;
             } else {
-                logContainer.innerHTML = newContent + logContainer.innerHTML;
+                const oldScrollHeight = logContainer.scrollHeight;
+                const oldScrollTop = logContainer.scrollTop;
+                const isScrolledToBottom = oldScrollHeight - logContainer.clientHeight <= oldScrollTop + 1; // +1 for tolerance
+
+                logContainer.insertAdjacentHTML('afterbegin', newContent);
+
+                const newScrollHeight = logContainer.scrollHeight;
+
+                // Maintain scroll position unless user was scrolled near the bottom
+                // If new content is added at the top, the scroll position needs adjustment
+                // to keep the same content visible.
+                if (!isScrolledToBottom) {
+                    logContainer.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
+                }
+                // If the user was scrolled to the bottom, adding content at the top
+                // should naturally keep them viewing the newest (top) content without adjustment.
+                // However, if the content addition itself causes scroll, this might need refinement.
+                // Let's test this behavior first. If issues persist, we might need to explicitly
+                // scroll to top (scrollTop = 0) when new content is added.
             }
         }
 
