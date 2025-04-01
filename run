@@ -81,19 +81,20 @@ show_usage() {
 
 # --- Command Dispatch ---
 
-# Check if a command was provided
-if [ $# -lt 1 ] || [[ "${ALL_ARGS[0]}" == "--"* ]]; then # Handle case where only flags are given
-    show_usage
-    exit 1
-fi
-
-# Process arguments again to filter out --ap and --ampy for command/args extraction
+# Process arguments to filter out --ap and --ampy for command/args extraction
 declare -a CMD_ARGS=()
 for arg in "${ALL_ARGS[@]}"; do
-    if [ "$arg" != "--ap" ] && [ "$arg" != "--ampy" ]; then # Fixed &&
+    if [ "$arg" != "--ap" ] && [ "$arg" != "--ampy" ]; then
         CMD_ARGS+=("$arg")
     fi
 done
+
+# Check if a command was provided after filtering flags
+if [ ${#CMD_ARGS[@]} -eq 0 ]; then
+    echo "Error: No command specified." >&2
+    show_usage
+    exit 1
+fi
 
 # Extract command and its arguments
 COMMAND="${CMD_ARGS[0]}"
@@ -231,7 +232,12 @@ case "$COMMAND" in
         check_sync_needed
         # Run the visual rm script from the scripts directory
         echo "Launching visual file removal..."
-        "$SCRIPT_DIR_ROOT/scripts/rm-visual" # Updated path
+        # Pass the --ap flag if it was used
+        declare -a rm_visual_args=()
+        if [ "$USE_AP_IP" = true ]; then
+            rm_visual_args+=("--ap")
+        fi
+        "$SCRIPT_DIR_ROOT/scripts/rm-visual" "${rm_visual_args[@]}"
         exit $? # Exit with the status of rm-visual
         ;;
 

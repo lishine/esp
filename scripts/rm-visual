@@ -22,12 +22,20 @@ fi
 
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
+# Parse arguments
+RUN_ARGS=""
+if [[ "$1" == "--ap" ]]; then
+    RUN_ARGS="--ap"
+    echo "Using AP IP address: 192.168.4.1" # Assuming ./run handles the IP lookup
+    echo "Launching visual file removal..."
+fi
+
 TEMP_FILE=$(mktemp)
 SELECTED_FILES=$(mktemp)
 JSON_FILE=$(mktemp)
 
 echo "Fetching file list from ESP32..."
-FILE_LIST=$(./run fs-list 2>&1)
+FILE_LIST=$(./run $RUN_ARGS fs-list 2>&1)
 echo this echo help the dialog not duplicate files on scroll $FILE_LIST
 RESULT=$?
 
@@ -105,7 +113,7 @@ if [ -s "$SELECTED_FILES" ]; then
         if [[ "$confirm" =~ ^[Yy]$ ]]; then
             for file in $SELECTED; do
                 echo "Deleting $file..."
-                ./run rm "$file"
+                ./run $RUN_ARGS rm "$file"
             done
             echo "Deletion complete."
         else
