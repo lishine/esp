@@ -44,7 +44,7 @@ def _parse_gpgga(parts):
         fix_quality = int(parts[6]) if parts[6] else 0
         gps_fix = fix_quality > 0
         time_str = parts[1] if len(parts) > 1 else "N/A"
-        sats = parts[7] if len(parts) > 7 and parts[7] else "0"
+        sats_str = parts[7] if len(parts) > 7 and parts[7] else "0"
         alt = parts[9] if len(parts) > 9 and parts[9] else "N/A"
         # Format time for logging
         formatted_time = time_str
@@ -54,8 +54,11 @@ def _parse_gpgga(parts):
             except IndexError:  # Handle potential malformed time_str
                 pass  # Keep original time_str if formatting fails
         # log(
-        #     f"GPS GPGGA Parsed: Fix={gps_fix} (Qual={fix_quality}), Sats={sats}, Alt={alt}m, Time={formatted_time}"
+        #     f"GPS GPGGA Parsed: Fix={gps_fix} (Qual={fix_quality}), Sats={sats_str}, Alt={alt}m, Time={formatted_time}"
         # )
+
+        # Satellites in view (parts[7]) - Parse regardless of fix status
+        gps_satellites = int(sats_str) if sats_str else 0
 
         if gps_fix:
             # Time (parts[1]): HHMMSS.sss
@@ -79,20 +82,19 @@ def _parse_gpgga(parts):
                 lon = -lon
             gps_longitude = lon
 
-            # Satellites in view (parts[7])
-            gps_satellites = int(parts[7]) if parts[7] else 0
+            # Satellites already parsed above
+            pass
 
             # Altitude (parts[9]) - meters above mean sea level
             gps_altitude = float(parts[9]) if parts[9] else 0.0
         else:
-            # No fix, reset relevant data
-            gps_satellites = 0
-            # Keep last known time/position? Or reset? Resetting seems safer.
+            # No fix, keep satellite count but reset other relevant data if desired
+            # Resetting position/time seems safer if fix is lost for a while.
             # gps_latitude = 0.0
             # gps_longitude = 0.0
             # gps_altitude = 0.0
             # gps_time_utc = (0, 0, 0)
-            pass  # Keep last known good values if fix is lost temporarily
+            pass  # Keep last known good values for position/time if fix is lost temporarily
 
     except (ValueError, IndexError) as e:
         log(f"Error parsing GPGGA: {e}, parts: {parts}")

@@ -52,7 +52,7 @@ def _log_gps():
     if gps_data["fix"]:
         return f"GPS:Fix({gps_data['satellites']}),{gps_data['latitude']:.5f},{gps_data['longitude']:.5f},{gps_data['altitude']:.1f}m"
     else:
-        return "GPS:NoFix"
+        return f"GPS:NoFix(Sat:{gps_data['satellites']})"
 
 
 # --- Data Logging Task ---
