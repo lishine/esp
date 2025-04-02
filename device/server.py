@@ -1,4 +1,4 @@
-from microdot import Microdot, Response
+from lib.microdot import Microdot, Response
 import json
 
 import uasyncio as asyncio
@@ -114,9 +114,10 @@ def view_file(request, filename):
 @app.route("/settings", methods=["GET"])
 def get_settings(request):
     def generate_html():
-        chunk_size = 4096
+        chunk_size = 1024  # Reduced chunk size
         try:
             with open("settings.html", "r") as f:
+                gc.collect()  # Explicit garbage collection before reading
                 while True:
                     chunk = f.read(chunk_size)
                     if not chunk:

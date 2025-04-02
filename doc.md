@@ -56,3 +56,19 @@ curl http://192.168.4.1/list
 curl -F "file=@myfile.py" http://192.168.4.1/upload
 curl http://192.168.4.1/reset
 ```
+
+custom micropython build to disable serial on uart
+gcl micropython
+edit boards/ESP32_GENERIC_C3/mpconfigboard.h:
+
+// This configuration is for a generic ESP32C3 board with 4MiB (or more) of flash.
+
+#define MICROPY_HW_BOARD_NAME "ESP32C3 module"
+#define MICROPY_HW_MCU_NAME "ESP32C3"
+
+// Enable UART REPL for modules that have an external USB-UART and don't use native USB.
+#define MICROPY_HW_ENABLE_UART_REPL (0)
+
+// Disable UART REPL to free UART0
+#define MICROPY_HW_UART_REPL (-1)
+#define MICROPY_HW_ENABLE_UART_REPL (0)

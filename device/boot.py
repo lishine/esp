@@ -7,7 +7,9 @@ import rtc  # Import the new rtc module
 # This ensures UART0 is free for other uses (like GPS), especially if
 # the default console is the USB Serial/JTAG. Index 1 refers to UART0.
 # try:
-#     uos.dupterm(None, 0) # Disable REPL on UART0 - No longer needed as GPS uses SoftUART
+#     uos.dupterm(
+#         None, 1
+#     )  # Disable REPL on UART0 - No longer needed as GPS uses SoftUART
 #     log("REPL disabled on UART0.")
 # except Exception as e:
 #     log(f"Could not disable REPL on UART0: {e}")

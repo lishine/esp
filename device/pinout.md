@@ -19,9 +19,8 @@ This document summarizes the GPIO pin usage for this project based on the curren
 | 8    | GPIO8, STRAP | I/O           | **LED**                      | **Used** |                                             |
 | 9    | GPIO9, STRAP | I/O, Strap    | **DS18B20 (OneWire)**        | **Used** | boot, pull up 10k on board, add another 10k |
 | 10   | GPIO10       | I/O           | **Buzzer**                   | **Used** |                                             |
-| 20   | GPIO20       | I/O, UART     | **NEO-7M GPS (UART0 RX)**    | **Used** | UART0 Default RX.                           |
-| 21   | GPIO21       | I/O, UART     | **NEO-7M GPS (UART0 TX)**    | **Used** | UART0 Default TX.                           |
-| 22   | GPIO22       | I/O           |                              | Free     |                                             |
+| 20   | GPIO20       | I/O, UART     | **NEO-7M GPS (UART1 RX)**    | **Used** |                                             |
+| 21   | GPIO21       | I/O, UART     | **NEO-7M GPS (UART1 TX)**    | **Used** |                                             |
 
 ## Power Pins
 

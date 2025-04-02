@@ -4,7 +4,7 @@ from log import log
 
 
 # --- Configuration ---
-GPS_UART_ID = 1  # Using UART1
+GPS_UART_ID = 0  # Using UART1
 GPS_TX_PIN = 2  # ESP32 TX -> GPS RX
 GPS_RX_PIN = 7  # ESP32 RX <- GPS TX
 GPS_BAUDRATE = 9600  # Common default for NEO-xM modules
@@ -53,9 +53,9 @@ def _parse_gpgga(parts):
                 formatted_time = f"{time_str[0:2]}:{time_str[2:4]}:{time_str[4:6]}"
             except IndexError:  # Handle potential malformed time_str
                 pass  # Keep original time_str if formatting fails
-        log(
-            f"GPS GPGGA Parsed: Fix={gps_fix} (Qual={fix_quality}), Sats={sats}, Alt={alt}m, Time={formatted_time}"
-        )
+        # log(
+        #     f"GPS GPGGA Parsed: Fix={gps_fix} (Qual={fix_quality}), Sats={sats}, Alt={alt}m, Time={formatted_time}"
+        # )
 
         if gps_fix:
             # Time (parts[1]): HHMMSS.sss
@@ -122,9 +122,9 @@ def _parse_gprmc(parts):
                 formatted_date = f"{date_str[0:2]}/{date_str[2:4]}/20{date_str[4:6]}"
             except IndexError:  # Handle potential malformed date_str
                 pass  # Keep original date_str if formatting fails
-        log(
-            f"GPS GPRMC Parsed: Fix={gps_fix} (Status={status}), Time={formatted_time}, Date={formatted_date}"
-        )
+        # log(
+        #     f"GPS GPRMC Parsed: Fix={gps_fix} (Status={status}), Time={formatted_time}, Date={formatted_date}"
+        # )
 
         if gps_fix:
             # Time (parts[1]): HHMMSS.sss
@@ -187,7 +187,7 @@ def init_neo7m():
             baudrate=GPS_BAUDRATE,
             tx=Pin(GPS_TX_PIN),
             rx=Pin(GPS_RX_PIN),
-            rxbuf=4096,
+            # rxbuf=4096,
             timeout=10,
         )  # Short timeout
         log(f"GPS UART({GPS_UART_ID}) initialized.")
