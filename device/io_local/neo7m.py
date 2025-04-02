@@ -2,15 +2,11 @@ from machine import UART, Pin
 import uasyncio as asyncio
 from log import log
 
+
 # --- Configuration ---
-GPS_UART_ID = 0  # Using UART0 as requested
-# IMPORTANT: Default pins for UART0 on many ESP32s (including C3) are often
-# used for USB/Serial communication (REPL). Using UART0 might conflict
-# if the REPL is active (though less likely on C3 with native USB).
-# Disabling REPL on UART0 via uos.dupterm(None, 1) in boot.py is recommended.
-# Using default UART0 pins according to pinout table.
-GPS_TX_PIN = 21  # GPIO21 (Pinout Table - UART0 Default TX)
-GPS_RX_PIN = 20  # GPIO20 (Pinout Table - UART0 Default RX)
+GPS_UART_ID = 1  # Using UART1
+GPS_TX_PIN = 2  # ESP32 TX -> GPS RX
+GPS_RX_PIN = 7  # ESP32 RX <- GPS TX
 GPS_BAUDRATE = 9600  # Common default for NEO-xM modules
 
 # --- State ---
@@ -47,6 +43,19 @@ def _parse_gpgga(parts):
         # Check fix quality (parts[6]): 0=No fix, 1=GPS fix, 2=DGPS fix, etc.
         fix_quality = int(parts[6]) if parts[6] else 0
         gps_fix = fix_quality > 0
+        time_str = parts[1] if len(parts) > 1 else "N/A"
+        sats = parts[7] if len(parts) > 7 and parts[7] else "0"
+        alt = parts[9] if len(parts) > 9 and parts[9] else "N/A"
+        # Format time for logging
+        formatted_time = time_str
+        if len(time_str) >= 6 and "." in time_str:  # Check basic format HHMMSS.sss
+            try:
+                formatted_time = f"{time_str[0:2]}:{time_str[2:4]}:{time_str[4:6]}"
+            except IndexError:  # Handle potential malformed time_str
+                pass  # Keep original time_str if formatting fails
+        log(
+            f"GPS GPGGA Parsed: Fix={gps_fix} (Qual={fix_quality}), Sats={sats}, Alt={alt}m, Time={formatted_time}"
+        )
 
         if gps_fix:
             # Time (parts[1]): HHMMSS.sss
@@ -95,8 +104,27 @@ def _parse_gprmc(parts):
     global gps_fix, gps_latitude, gps_longitude, gps_time_utc, gps_date
     try:
         # Status (parts[2]): A=Active/Valid, V=Void/Invalid
-        status = parts[2]
+        status = parts[2] if len(parts) > 2 else "N/A"
         gps_fix = status == "A"
+        time_str = parts[1] if len(parts) > 1 else "N/A"
+        date_str = parts[9] if len(parts) > 9 else "N/A"
+        # Format time for logging
+        formatted_time = time_str
+        if len(time_str) >= 6 and "." in time_str:  # Check basic format HHMMSS.sss
+            try:
+                formatted_time = f"{time_str[0:2]}:{time_str[2:4]}:{time_str[4:6]}"
+            except IndexError:  # Handle potential malformed time_str
+                pass  # Keep original time_str if formatting fails
+        # Format date for logging
+        formatted_date = date_str
+        if len(date_str) == 6:
+            try:
+                formatted_date = f"{date_str[0:2]}/{date_str[2:4]}/20{date_str[4:6]}"
+            except IndexError:  # Handle potential malformed date_str
+                pass  # Keep original date_str if formatting fails
+        log(
+            f"GPS GPRMC Parsed: Fix={gps_fix} (Status={status}), Time={formatted_time}, Date={formatted_date}"
+        )
 
         if gps_fix:
             # Time (parts[1]): HHMMSS.sss
@@ -135,37 +163,23 @@ def _parse_gprmc(parts):
         log(f"Error parsing GPRMC: {e}, parts: {parts}")
         gps_fix = False
 
+        # if uart.any():
+        #     line_bytes = uart.readline()
+        #     if not line_bytes:
+        #         await asyncio.sleep_ms(10)
+        #         continue
+        # else:
+        #     # No data available, yield control briefly
+        #     await asyncio.sleep_ms(10)  # Shorter sleep interva
+
 
 # --- Initialization ---
 def init_neo7m():
-    """
-    Initializes UART0 for the NEO-7M GPS module.
-
-    WARNING: UART0 is often used for the REPL (console) and flashing/debugging
-    on ESP32 boards, especially the C3 variant. Using it for GPS might lead to
-    conflicts or prevent the REPL from working.
-
-    Potential Issues & Solutions:
-    1. REPL Conflict: If the REPL is running on UART0, the GPS module won't work reliably.
-       - Solution A: Disable the REPL on UART0 (e.g., `uos.dupterm(None, 1)` in boot.py)
-                    and potentially redirect it to UART1 if needed and pins are available.
-       - Solution B: Use a different UART (UART1 or UART2 if available on your board)
-                    with appropriate, free GPIO pins. Check your board's pinout.
-    2. Pin Conflict: Ensure the chosen TX/RX pins (currently {GPS_TX_PIN}/{GPS_RX_PIN})
-                     are not used by other peripherals or essential functions.
-       - Solution: Modify GPS_TX_PIN and GPS_RX_PIN in this file to match available pins.
-    3. Hardware UART Limitation: Some boards might have limitations on which pins
-                                can be used for hardware UARTs.
-       - Solution: Consider using `machine.SoftUART` if hardware UARTs are unavailable,
-                   but be aware of potential performance impacts.
-
-    This function attempts initialization but success depends on resolving these conflicts.
-    """
+    """Initializes UART1 for the NEO-7M GPS module using the configured pins."""
     global uart
     log(
         f"Attempting to initialize NEO-7M GPS on UART({GPS_UART_ID}) TX={GPS_TX_PIN}, RX={GPS_RX_PIN}"
     )
-    log("WARNING: UART0 conflict possible with REPL/USB. Check init_neo7m() comments.")
     try:
         # Ensure pins are correctly assigned
         uart = UART(
@@ -173,15 +187,22 @@ def init_neo7m():
             baudrate=GPS_BAUDRATE,
             tx=Pin(GPS_TX_PIN),
             rx=Pin(GPS_RX_PIN),
+            rxbuf=4096,
             timeout=10,
         )  # Short timeout
         log(f"GPS UART({GPS_UART_ID}) initialized.")
         return True
     except Exception as e:
         log(f"Error initializing GPS UART({GPS_UART_ID}): {e}")
-        log("-> Check for REPL/pin conflicts or try different UART/pins.")
+        log("-> Check pin assignments and connections.")
         uart = None
         return False
+
+    # log("Starting GPS NMEA reader task...")
+    # while True:
+    #     if uart.any():
+    #         print(uart.readline())  # Print raw GPS data
+    #     await asyncio.sleep_ms(200)
 
 
 # --- Data Reading Task ---
@@ -200,10 +221,15 @@ async def _read_neo7m_task():
             # Using readline() on StreamReader handles buffering and line endings
             line_bytes = await reader.readline()  # type: ignore # Pylance false positive
 
+            # if line_bytes: # DEBUG: Log raw bytes received
+            #     log(
+            #         f"GPS RAW RX ({len(line_bytes)} bytes): {line_bytes}"
+            #     )
             if not line_bytes:
                 # log("GPS Read timeout or empty line") # Debug
                 await asyncio.sleep_ms(100)  # Avoid busy-looping on empty reads
                 continue
+            # If we reach here, line_bytes is not empty
 
             try:
                 line = line_bytes.decode("ascii").strip()
