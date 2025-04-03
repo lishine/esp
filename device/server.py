@@ -29,6 +29,7 @@ from fs import (
     remove_empty_parents,
 )
 from captive import register_captive_portal_routes
+import io_local.gps_config as gps_config
 
 # Import network utilities
 from netutils import get_client_ip, get_device_info
@@ -146,6 +147,35 @@ def get_settings_data(request):
         ),
         headers={"Content-Type": "application/json"},
     )
+
+
+# --- GPS Settings Routes ---
+
+
+@app.route("/api/gps-settings", methods=["GET"])
+def get_gps_settings_page(request):
+    """Serves the GPS settings HTML page."""
+
+    def generate_html():
+        chunk_size = 1024
+        try:
+            with open("io_local/gps_settings.html", "r") as f:
+                gc.collect()
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+        except OSError:
+            yield "GPS Settings HTML file not found"
+
+    return Response(body=generate_html(), headers={"Content-Type": "text/html"})  # type: ignore
+
+
+@app.route("/api/gps-settings/data", methods=["POST"])
+async def handle_gps_settings_data_route(request):
+    # Delegate to the function in gps_config
+    return await gps_config.handle_gps_settings_data(request)
 
 
 # Import the async version of the wifi connect function (assuming it will be created)

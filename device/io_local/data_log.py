@@ -9,7 +9,7 @@ from . import esc_telemetry
 from . import ds18b20
 
 # from . import ina226 # Keep file but don't log
-from . import neo7m
+from . import gps_reader
 
 # Buzzer doesn't typically have data to log continuously
 
@@ -48,7 +48,7 @@ def _log_ds18b20():
 
 
 def _log_gps():
-    gps_data = neo7m.get_gps_data()
+    gps_data = gps_reader.get_gps_data()
     if gps_data["fix"]:
         return f"GPS:Fix({gps_data['satellites']}),{gps_data['latitude']:.5f},{gps_data['longitude']:.5f},{gps_data['altitude']:.1f}m"
     else:

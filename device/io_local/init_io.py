@@ -10,7 +10,7 @@ from . import esc_telemetry
 from . import ds18b20
 
 # from . import ina226 # Keep file but don't init
-from . import neo7m
+from . import gps_reader
 from . import buzzer
 
 
@@ -39,7 +39,7 @@ def init_io():
     # esc_telemetry.init_esc_telemetry()
     # ds18b20.init_ds18b20()
     # ina226.init_ina226() # Commented out as requested
-    neo7m.init_neo7m()
+    gps_reader.init_gps_reader()
     # buzzer.init_buzzer()
 
     log("IO initialization complete.")  # Changed log.log to log

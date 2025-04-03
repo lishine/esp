@@ -14,7 +14,7 @@ import ap
 # IO related modules
 import io_local.init_io as init_io
 import io_local.data_log as data_log
-import io_local.neo7m as neo7m  # Only needed for neo7m.start_neo7m_reader()
+import io_local.gps_reader as gps_reader  # Only needed for gps_reader.start_gps_reader()
 
 # --- Constants ---
 # Removed DATA_LOG_INTERVAL_S (moved to data_log.py)
@@ -62,7 +62,7 @@ async def main():
         log("Starting sensor reader tasks...")  # Changed log.log to log
         # esc_telemetry.start_esc_reader()  # Starts the async task internally
         # ds18b20.start_ds18b20_reader()  # Starts the async task internally
-        neo7m.start_neo7m_reader()  # Starts the async task internally
+        gps_reader.start_gps_reader()  # Starts the async task internally
         log(
             "Sensor reader tasks started (if sensors initialized correctly)."
         )  # Changed log.log to log

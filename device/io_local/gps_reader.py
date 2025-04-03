@@ -19,6 +19,7 @@ gps_satellites = 0
 gps_time_utc = (0, 0, 0)  # (hour, minute, second)
 gps_date = (0, 0, 0)  # (day, month, year)
 _reader_task = None
+_uart_lock = asyncio.Lock()  # Lock for coordinating UART access
 
 
 # --- NMEA Parsing Helper ---
@@ -176,8 +177,8 @@ def _parse_gprmc(parts):
 
 
 # --- Initialization ---
-def init_neo7m():
-    """Initializes UART1 for the NEO-7M GPS module using the configured pins."""
+def init_gps_reader():
+    """Initializes UART1 for the GPS module using the configured pins."""
     global uart
     log(
         f"Attempting to initialize NEO-7M GPS on UART({GPS_UART_ID}) TX={GPS_TX_PIN}, RX={GPS_RX_PIN}"
@@ -208,7 +209,7 @@ def init_neo7m():
 
 
 # --- Data Reading Task ---
-async def _read_neo7m_task():
+async def _read_gps_task():
     """Asynchronous task to continuously read and parse NMEA sentences from GPS."""
     if uart is None:
         log("GPS UART not initialized. Cannot start reader task.")
@@ -283,14 +284,14 @@ async def _read_neo7m_task():
         await asyncio.sleep_ms(10)
 
 
-def start_neo7m_reader():
+def start_gps_reader():
     """Starts the asynchronous GPS NMEA reader task."""
     global _reader_task
     if uart is None:
         log("Cannot start GPS reader: UART not initialized.")
         return False
     if _reader_task is None:
-        _reader_task = asyncio.create_task(_read_neo7m_task())
+        _reader_task = asyncio.create_task(_read_gps_task())
         log("GPS NMEA reader task created.")
         return True
     else:
@@ -340,3 +341,13 @@ def get_gps_data():
         "time_utc": gps_time_utc,
         "date": gps_date,
     }
+
+
+def get_uart():
+    """Returns the initialized UART object for the GPS."""
+    return uart
+
+
+def get_uart_lock():
+    """Returns the asyncio Lock used for UART access."""
+    return _uart_lock

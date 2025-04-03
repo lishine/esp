@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>GPS Settings</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body {
+            font-family: sans-serif;
+            padding: 15px;
+        }
+
+        .setting {
+            margin-bottom: 15px;
+            padding: 10px;
+            border: 1px solid #ccc;
+            border-radius: 5px;
+        }
+
+        label {
+            display: inline-block;
+            min-width: 120px;
+        }
+
+        input[type=number] {
+            width: 60px;
+        }
+
+        button {
+            margin-left: 10px;
+            padding: 5px 10px;
+        }
+
+        #status {
+            margin-top: 15px;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <h1>GPS Settings</h1>
+
+    <div class="setting">
+        <label>Navigation Rate:</label>
+        <span id="currentRate">--</span> Hz
+        <button id="getRateBtn">Retrieve Current</button>
+    </div>
+
+    <div class="setting">
+        <label for="newRate">Set New Rate (Hz):</label>
+        <input type="number" id="newRate" name="newRate" min="1" max="10" value="1">
+        <button id="setRateBtn">Set Rate</button>
+    </div>
+
+    <div id="status"></div>
+
+    <script>
+        const getRateBtn = document.getElementById('getRateBtn');
+        const setRateBtn = document.getElementById('setRateBtn');
+        const currentRateSpan = document.getElementById('currentRate');
+        const newRateInput = document.getElementById('newRate');
+        const statusDiv = document.getElementById('status');
+
+        function showStatus(message, isError = false) {
+            statusDiv.textContent = message;
+            statusDiv.style.color = isError ? 'red' : 'green';
+            // Clear status after a few seconds
+            setTimeout(() => { statusDiv.textContent = ''; }, 5000);
+        }
+
+        getRateBtn.addEventListener('click', async () => {
+            statusDiv.textContent = 'Retrieving rate...';
+            statusDiv.style.color = 'black';
+            currentRateSpan.textContent = '--';
+            try {
+                const response = await fetch('/api/gps-settings/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'get_rate' })
+                });
+                const data = await response.json();
+                if (response.ok && data.success && data.rate) {
+                    currentRateSpan.textContent = data.rate.rate_hz;
+                    showStatus('Rate retrieved successfully.');
+                } else {
+                    throw new Error(data.message || 'Failed to retrieve rate.');
+                }
+            } catch (error) {
+                console.error('Error getting rate:', error);
+                showStatus(`Error: ${error.message}`, true);
+            }
+        });
+
+        setRateBtn.addEventListener('click', async () => {
+            const rate = parseInt(newRateInput.value, 10);
+            if (isNaN(rate) || rate < 1 || rate > 10) {
+                showStatus('Please enter a valid rate between 1 and 10 Hz.', true);
+                return;
+            }
+            statusDiv.textContent = `Setting rate to ${rate} Hz...`;
+            statusDiv.style.color = 'black';
+            try {
+                const response = await fetch('/api/gps-settings/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'set_rate', rate: rate })
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    showStatus(`Rate set to ${rate} Hz successfully. Retrieve again to confirm.`);
+                    // Optionally update current rate display immediately, though retrieving is safer
+                    // currentRateSpan.textContent = rate;
+                } else {
+                    throw new Error(data.message || 'Failed to set rate.');
+                }
+            } catch (error) {
+                console.error('Error setting rate:', error);
+                showStatus(`Error: ${error.message}`, true);
+            }
+        });
+    </script>
+</body>
+</html>

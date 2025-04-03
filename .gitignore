@@ -61,3 +61,5 @@ prepare-commit-msg
 
 *.code-workspace
 .aider*
+
+*.uf2
