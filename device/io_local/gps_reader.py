@@ -1,13 +1,15 @@
 from machine import UART, Pin
 import uasyncio as asyncio
+import time
 from log import log
 
 
 # --- Configuration ---
-GPS_UART_ID = 0  # Using UART1
-GPS_TX_PIN = 2  # ESP32 TX -> GPS RX
-GPS_RX_PIN = 7  # ESP32 RX <- GPS TX
+GPS_UART_ID = 1  # Using UART1
+GPS_TX_PIN = 17  # ESP32 TX -> GPS RX
+GPS_RX_PIN = 18  # ESP32 RX <- GPS TX
 GPS_BAUDRATE = 9600  # Common default for NEO-xM modules
+COMM_TIMEOUT_MS = 5000  # 5 seconds timeout for communication status
 
 # --- State ---
 uart = None
@@ -20,6 +22,7 @@ gps_time_utc = (0, 0, 0)  # (hour, minute, second)
 gps_date = (0, 0, 0)  # (day, month, year)
 _reader_task = None
 _uart_lock = asyncio.Lock()  # Lock for coordinating UART access
+_last_valid_data_time = 0  # Timestamp of the last valid NMEA sentence
 
 
 # --- NMEA Parsing Helper ---
@@ -190,7 +193,7 @@ def init_gps_reader():
             baudrate=GPS_BAUDRATE,
             tx=Pin(GPS_TX_PIN),
             rx=Pin(GPS_RX_PIN),
-            # rxbuf=4096,
+            rxbuf=4096,
             timeout=10,
         )  # Short timeout
         log(f"GPS UART({GPS_UART_ID}) initialized.")
@@ -269,12 +272,20 @@ async def _read_gps_task():
             # --- Parse Specific Sentences ---
             parts = sentence.split(",")
             sentence_type = parts[0]
+            parsed_successfully = False
 
             if sentence_type == "$GPGGA" and len(parts) >= 10:
                 _parse_gpgga(parts)
+                parsed_successfully = True  # Assume parsing means valid data received
             elif sentence_type == "$GPRMC" and len(parts) >= 10:
                 _parse_gprmc(parts)
+                parsed_successfully = True  # Assume parsing means valid data received
             # Add parsers for other sentences (GSA, GSV, etc.) if needed
+
+            # Update last valid data time if parsing was successful
+            if parsed_successfully:
+                global _last_valid_data_time
+                _last_valid_data_time = time.ticks_ms()
 
         except Exception as e:
             log(f"Error in GPS reader task loop: {e}")
@@ -331,15 +342,34 @@ def get_gps_date():
 
 
 def get_gps_data():
-    """Returns a dictionary containing all current GPS data."""
+    """Returns a dictionary containing all current GPS data, including communication status and formatted date/time."""
+    # Check communication status
+    com_ok = False
+    if _last_valid_data_time != 0:  # Ensure we've received at least one message
+        time_since_last_data = time.ticks_diff(time.ticks_ms(), _last_valid_data_time)
+        com_ok = time_since_last_data < COMM_TIMEOUT_MS
+
+    com_status = "COM" if com_ok else "NOCOM"
+
+    # Format date and time
+    d, m, y = gps_date
+    h, mn, s = gps_time_utc
+    formatted_date = f"{d:02d}/{m:02d}/{y}" if y > 0 else "00/00/0000"
+    formatted_time = (
+        f"{h:02d}:{mn:02d}:{s:02d}" if h > 0 or mn > 0 or s > 0 else "00:00:00"
+    )
+
     return {
         "fix": gps_fix,
         "latitude": gps_latitude,
         "longitude": gps_longitude,
         "altitude": gps_altitude,
         "satellites": gps_satellites,
-        "time_utc": gps_time_utc,
-        "date": gps_date,
+        "time_utc": gps_time_utc,  # Keep raw tuple
+        "date": gps_date,  # Keep raw tuple
+        "formatted_time": formatted_time,
+        "formatted_date": formatted_date,
+        "com_status": com_status,
     }
 
 
