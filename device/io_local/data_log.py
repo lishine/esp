@@ -49,10 +49,12 @@ def _log_ds18b20():
 
 def _log_gps():
     gps_data = gps_reader.get_gps_data()
+    fix_str = "Fix" if gps_data["fix"] else "NoFix"
+    location_str = ""
     if gps_data["fix"]:
-        return f"GPS:Fix({gps_data['satellites']}),{gps_data['latitude']:.5f},{gps_data['longitude']:.5f},{gps_data['altitude']:.1f}m"
-    else:
-        return f"GPS:NoFix(Sat:{gps_data['satellites']})"
+        location_str = f",{gps_data['latitude']:.5f},{gps_data['longitude']:.5f},{gps_data['altitude']:.1f}m"
+
+    return f"GPS:{gps_data['com_status']}|{gps_data['formatted_date']} {gps_data['formatted_time']}|{fix_str}(Sat:{gps_data['satellites']}){location_str}"
 
 
 # --- Data Logging Task ---
