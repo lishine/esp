@@ -1,6 +1,7 @@
 # Centralized initialization for IO components
 
-from machine import Pin  # Needed for LED init
+from machine import Pin  # Still needed for NeoPixel pin definition
+from neopixel import NeoPixel  # Import NeoPixel
 from log import log
 import led
 
@@ -18,20 +19,19 @@ def init_io():
     """Initialize all IO components."""
     log("Initializing IO components...")  # Changed log.log to log
 
-    # --- Initialize LED ---
-    # Moved from led.py module level
+    # --- Initialize NeoPixel LED ---
+    # Moved from led.py module level, adapted for NeoPixel
     try:
-        # Use the pin defined in led.py
-        led.led_pin_obj = Pin(led.LED_PIN, Pin.OUT)
-        led.led_pin_obj.value(
-            1
-        )  # Initialize LED to off (assuming active low based on led.py logic led.on())
-        log(f"LED initialized on Pin {led.LED_PIN}")  # Changed log.log to log
+        # Use the pin and pixel count defined in led.py
+        pin_obj = Pin(led.NEOPIXEL_PIN, Pin.OUT)
+        led.np_obj = NeoPixel(pin_obj, led.NUM_PIXELS)
+        # Initialize LED to off
+        led.np_obj.fill(led.OFF_COLOR)
+        led.np_obj.write()
+        log(f"NeoPixel LED initialized on Pin {led.NEOPIXEL_PIN}")
     except Exception as e:
-        log(
-            f"Error initializing LED on Pin {led.LED_PIN}: {e}"
-        )  # Changed log.log to log
-        led.led_pin_obj = None  # Indicate failure
+        log(f"Error initializing NeoPixel LED on Pin {led.NEOPIXEL_PIN}: {e}")
+        led.np_obj = None  # Indicate failure
 
     # --- Initialize Sensors/Actuators ---
     # Initialize components sequentially. Check return values if needed.

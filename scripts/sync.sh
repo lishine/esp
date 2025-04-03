@@ -6,7 +6,7 @@
 source "$(dirname "$0")/common.sh" || { echo "Error: Unable to source common.sh" >&2; exit 1; } # Fixed >&2
 
 # --- Argument Parsing ---
-USE_AMPY=false
+USE_MPREMOTE=false # Renamed from USE_AMPY
 DRY_RUN=false
 FORCE_UPLOAD=false
 SKIP_COMPILE_SYNC=false
@@ -20,8 +20,8 @@ while [[ $# -gt 0 ]]; do
         ESP_IP="$2"
         shift 2
         ;;
-        --ampy)
-        USE_AMPY=true
+        --mpremote) # Renamed from --ampy
+        USE_MPREMOTE=true # Renamed from USE_AMPY
         shift
         ;;
         --dry-run)
@@ -124,7 +124,7 @@ else
       last_sync_time=$(cat "$TIMESTAMP_FILE")
       # Get list of non-ignored files (tracked & untracked) within DEVICE_DIR relative to repo root
       # Use mapfile/readarray for safer filename handling
-      mapfile -t potential_files < <(git -C "$PROJECT_ROOT_DIR" ls-files --cached --others --exclude-standard --full-name "$DEVICE_DIR/")
+       papa she -t potential_files < <(git -C "$PROJECT_ROOT_DIR" ls-files --cached --others --exclude-standard --full-name "$DEVICE_DIR/")
 
       for file_rel_repo in "${potential_files[@]}"; do
           # Construct full path from project root
@@ -176,8 +176,8 @@ if [ "$DRY_RUN" == false ]; then
 
     # Build the upload command arguments for upload.sh
     UPLOAD_CMD_ARGS=("--ip" "$CURRENT_ESP_IP") # Pass current IP
-    if [ "$USE_AMPY" = true ]; then
-      UPLOAD_CMD_ARGS+=("--ampy")
+    if [ "$USE_MPREMOTE" = true ]; then # Renamed from USE_AMPY
+      UPLOAD_CMD_ARGS+=("--mpremote") # Renamed from --ampy
     fi
     if [ "$SKIP_COMPILE_SYNC" = true ]; then # Pass --py if sync was called with --py
       UPLOAD_CMD_ARGS+=("--py")
@@ -204,7 +204,7 @@ if [ "$DRY_RUN" == false ]; then
 
             # Rebuild command args with AP IP
             UPLOAD_CMD_ARGS=("--ip" "$CURRENT_ESP_IP") # Use AP_IP now
-            if [ "$USE_AMPY" = true ]; then UPLOAD_CMD_ARGS+=("--ampy"); fi
+            if [ "$USE_MPREMOTE" = true ]; then UPLOAD_CMD_ARGS+=("--mpremote"); fi # Renamed
             if [ "$SKIP_COMPILE_SYNC" = true ]; then UPLOAD_CMD_ARGS+=("--py"); fi
             UPLOAD_CMD_ARGS+=("$file") # The source file path
             UPLOAD_CMD_ARGS+=("$target_dir") # The target directory on device
@@ -234,7 +234,8 @@ if [ "$DRY_RUN" == false ]; then
     fi
 
     # Add a short delay between uploads if not using ampy (ampy is slower anyway)
-    if [ "$USE_AMPY" = false ] && [ $CURRENT_FILE_NUM -lt $TOTAL_FILES ]; then # Fixed &&
+    # Add a short delay between uploads if not using mpremote (HTTP uploads)
+    if [ "$USE_MPREMOTE" = false ] && [ $CURRENT_FILE_NUM -lt $TOTAL_FILES ]; then # Renamed from USE_AMPY
       echo "Waiting briefly before next file upload..."
       sleep 0.5
     fi
@@ -255,8 +256,8 @@ if [ "$DRY_RUN" == false ]; then
         RESET_CMD_ARGS+=("--ap") # Tell run script to use AP IP
     fi
     RESET_CMD_ARGS+=("reset") # Add the command first
-     if [ "$USE_AMPY" = true ]; then
-        RESET_CMD_ARGS+=("--ampy") # Add the flag after the command
+     if [ "$USE_MPREMOTE" = true ]; then # Renamed from USE_AMPY
+        RESET_CMD_ARGS+=("--mpremote") # Renamed from --ampy
     fi
 
     # Construct path to the root run script

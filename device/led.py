@@ -1,11 +1,15 @@
 import uasyncio as asyncio
+from machine import Pin  # Keep Pin from machine
+from neopixel import NeoPixel  # Import NeoPixel from its own module
 from log import log
 
-LED_PIN = 8
-led_pin_obj = None  # Will be initialized externally by init_io.py
+# Define the NeoPixel pin and number of pixels
+NEOPIXEL_PIN = 48
+NUM_PIXELS = 1
+ON_COLOR = (7, 7, 7)  # Dim white, as per user example
+OFF_COLOR = (0, 0, 0)  # Black
 
-# led = Pin(LED_PIN, Pin.OUT) # Removed: Initialization moved to init_io.py
-# led.on()  # Removed: Initialization moved to init_io.py
+np_obj = None  # Will be initialized externally by init_io.py
 
 _led_mode = "IDLE"  # Possible modes: 'IDLE', 'SEQUENCE', 'CONTINUOUS'
 _sequence_params = None  # Tuple: (count, on_time_ms, off_time_ms)
@@ -70,19 +74,27 @@ async def led_task():
 
 
 def led_turn_on():
-    """Turn the LED on (LED is active low)."""
-    if led_pin_obj:
-        led_pin_obj.value(0)  # Active low means 0 is ON
+    """Turn the NeoPixel LED on."""
+    if np_obj:
+        try:
+            np_obj.fill(ON_COLOR)
+            np_obj.write()
+        except Exception as e:
+            log(f"Error setting NeoPixel ON: {e}")
     else:
-        log("LED Pin not initialized")
+        log("NeoPixel object not initialized")
 
 
 def led_turn_off():
-    """Turn the LED off (LED is active low)."""
-    if led_pin_obj:
-        led_pin_obj.value(1)  # Active low means 1 is OFF
+    """Turn the NeoPixel LED off."""
+    if np_obj:
+        try:
+            np_obj.fill(OFF_COLOR)
+            np_obj.write()
+        except Exception as e:
+            log(f"Error setting NeoPixel OFF: {e}")
     else:
-        log("LED Pin not initialized")
+        log("NeoPixel object not initialized")
 
 
 def blink_sequence(count=3, on_time=0.1, off_time=0.1):

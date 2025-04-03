@@ -9,16 +9,16 @@ SCRIPT_DIR_ROOT="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )" # Fixed &&
 # shellcheck source=./scripts/common.sh
 source "$SCRIPT_DIR_ROOT/scripts/common.sh" || { echo "Error: Unable to source scripts/common.sh" >&2; exit 1; } # Fixed >&2
 
-# --- Argument Parsing for Flags (--ap, --ampy) ---
+# --- Argument Parsing for Flags (--ap, --mpremote) ---
 USE_AP_IP=false
-USE_AMPY=false
+USE_MPREMOTE=false
 declare -a ALL_ARGS=("$@") # Keep original args for passing later
 
 for arg in "$@"; do
     if [ "$arg" == "--ap" ]; then
         USE_AP_IP=true
-    elif [ "$arg" == "--ampy" ]; then
-        USE_AMPY=true
+    elif [ "$arg" == "--mpremote" ]; then # Renamed from --ampy
+        USE_MPREMOTE=true # Renamed from USE_AMPY
     fi
 done
 
@@ -41,11 +41,11 @@ export ESP_IP
 # --- Display Usage Information ---
 show_usage() {
     # Usage info remains largely the same, but reflects the structure
-    echo "Usage: ./run [--ap] [--ampy] <command> [arguments]"
+    echo "Usage: ./run [--ap] [--mpremote] <command> [arguments]"
     echo ""
     echo "Options:"
     echo "  --ap                   - Use AP IP address ($AP_IP) instead of configured IP"
-    echo "  --ampy                 - Use ampy (Port: detected automatically, see logs) for serial communication instead of HTTP API"
+    echo "  --mpremote             - Use mpremote (auto-detects port) for serial communication instead of HTTP API"
     echo ""
     echo "Commands:"
     echo "  reset                  - Reset the ESP32 device"
@@ -73,18 +73,18 @@ show_usage() {
     echo "  ./run rm main.py"
     echo "  ./run rm-visual"
     echo "  ./run upload settings.html"
-    echo "  ./run --ampy upload main.py"
+    echo "  ./run --mpremote upload main.py"
     echo "  ./run sync"
     echo "  ./run sync --force --py"
-    echo "  ./run --ampy sync"
+    echo "  ./run --mpremote sync"
 }
 
 # --- Command Dispatch ---
 
-# Process arguments to filter out --ap and --ampy for command/args extraction
+# Process arguments to filter out --ap and --mpremote for command/args extraction
 declare -a CMD_ARGS=()
 for arg in "${ALL_ARGS[@]}"; do
-    if [ "$arg" != "--ap" ] && [ "$arg" != "--ampy" ]; then
+    if [ "$arg" != "--ap" ] && [ "$arg" != "--mpremote" ]; then # Renamed from --ampy
         CMD_ARGS+=("$arg")
     fi
 done
@@ -109,11 +109,11 @@ fi
 case "$COMMAND" in
   reset)
         check_sync_needed # Sourced from common.sh
-        if [ "$USE_AMPY" = true ]; then
-          echo "Resetting ESP32 using ampy (Port: $AMPY_PORT)..."
-          ampy_cmd="ampy -p \"$AMPY_PORT\" reset"
-          echo "Running ampy command: $ampy_cmd"
-          eval $ampy_cmd
+        if [ "$USE_MPREMOTE" = true ]; then # Renamed from USE_AMPY
+          echo "Resetting ESP32 using mpremote..."
+          mpremote_cmd="mpremote reset"
+          echo "Running mpremote command: $mpremote_cmd"
+          eval $mpremote_cmd
         else
           echo "Resetting ESP32 at $ESP_IP..."
           make_request "http://$ESP_IP/reset" "POST" # make_request sourced
@@ -141,11 +141,12 @@ case "$COMMAND" in
 
   la|ls)
         check_sync_needed
-        if [ "$USE_AMPY" = true ]; then
-          echo "Listing all files on ESP32 using ampy (Port: $AMPY_PORT)..."
-          ampy_cmd="ampy -p \"$AMPY_PORT\" ls"
-          echo "Running ampy command: $ampy_cmd"
-          eval $ampy_cmd
+        if [ "$USE_MPREMOTE" = true ]; then # Renamed from USE_AMPY
+          echo "Listing files on ESP32 using mpremote..."
+          # List root directory by default. Add path arg if needed: mpremote ls ":${ARGS[0]:-/}"
+          mpremote_cmd="mpremote ls :"
+          echo "Running mpremote command: $mpremote_cmd"
+          eval $mpremote_cmd
         else
           echo "Listing all files on ESP32 at $ESP_IP..."
           make_request "http://$ESP_IP/la"
@@ -217,11 +218,15 @@ case "$COMMAND" in
         fi
         FILE_PATH="${ARGS[0]}"
 
-        if [ "$USE_AMPY" = true ]; then
-            echo "Removing file $FILE_PATH from ESP32 using ampy (Port: $AMPY_PORT)..."
-            ampy_cmd="ampy -p \"$AMPY_PORT\" rm \"$FILE_PATH\""
-            echo "Running ampy command: $ampy_cmd"
-            eval $ampy_cmd
+        if [ "$USE_MPREMOTE" = true ]; then # Renamed from USE_AMPY
+            # Ensure the path starts with a colon for mpremote
+            remote_path=":$FILE_PATH"
+            # Remove potential double colon if FILE_PATH already starts with one
+            remote_path="${remote_path//::/:}"
+            echo "Removing file $remote_path from ESP32 using mpremote..."
+            mpremote_cmd="mpremote rm \"$remote_path\""
+            echo "Running mpremote command: $mpremote_cmd"
+            eval $mpremote_cmd
         else
             echo "Removing file $FILE_PATH from ESP32 at $ESP_IP..."
             make_request "http://$ESP_IP/rm/$FILE_PATH" "DELETE"
@@ -279,8 +284,8 @@ case "$COMMAND" in
         echo "Delegating upload to scripts/upload.sh..."
         # Prepare args for upload.sh
         upload_args=("--ip" "$ESP_IP") # Pass the determined IP
-        if [ "$USE_AMPY" = true ]; then
-            upload_args+=("--ampy")
+        if [ "$USE_MPREMOTE" = true ]; then # Renamed from USE_AMPY
+            upload_args+=("--mpremote") # Renamed from --ampy
         fi
         # Pass the specific arguments meant for upload (e.g., --py, files, target)
         upload_args+=("${ARGS[@]}")
@@ -294,8 +299,8 @@ case "$COMMAND" in
         echo "Delegating sync to scripts/sync.sh..."
         # Prepare args for sync.sh
         sync_args=("--ip" "$ESP_IP") # Pass the determined IP
-        if [ "$USE_AMPY" = true ]; then
-            sync_args+=("--ampy")
+        if [ "$USE_MPREMOTE" = true ]; then # Renamed from USE_AMPY
+            sync_args+=("--mpremote") # Renamed from --ampy
         fi
          # Pass the specific arguments meant for sync (e.g., --py, --force, --dry-run)
         sync_args+=("${ARGS[@]}")

@@ -24,6 +24,17 @@ check_jq() {
 }
 check_jq # Run the check immediately
 
+# Check for mpremote
+check_mpremote() {
+    if ! command -v mpremote > /dev/null; then
+        echo "Error: mpremote is not installed or not in PATH." >&2
+        echo "Please install mpremote:" >&2
+        echo "  pip install mpremote" >&2
+        exit 1
+    fi
+}
+check_mpremote # Run the check immediately
+
 # --- Script Setup ---
 
 SCRIPT_DIR_COMMON="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
@@ -35,18 +46,7 @@ TIMESTAMP_FILE="$SCRIPT_DIR_COMMON/.last_sync"
 UPLOAD_CHUNKED_SCRIPT_PATH="$SCRIPT_DIR_COMMON/upload_chunked.sh"
 DEVICE_DIR="$PROJECT_ROOT_DIR/device" # Path to the device source files
 
-# Detect AMPY port dynamically (macOS specific)
-DETECTED_PORT=$(ls /dev/tty.usbmodem* 2>/dev/null | head -n 1)
-
-if [ -n "$DETECTED_PORT" ]; then
-    AMPY_PORT="$DETECTED_PORT"
-    echo "Detected AMPY port: $AMPY_PORT" >&2 # Log to stderr
-else
-    echo "Warning: Could not automatically detect ESP32 serial port (/dev/tty.usbmodem*)." >&2
-    echo "         Please ensure the device is connected and drivers are installed." >&2
-    echo "         Falling back to default: /dev/tty.usbmodem101" >&2
-    AMPY_PORT="/dev/tty.usbmodem101" # Fallback to default if detection fails
-fi
+# AMPY_PORT logic removed, mpremote handles port detection automatically.
 
 # Default AP IP
 AP_IP="192.168.4.1"
@@ -168,7 +168,7 @@ make_request() {
 }
 
 
-export -f check_jq read_ip_from_json write_ip_to_json check_sync_needed make_request
+export -f check_jq check_mpremote read_ip_from_json write_ip_to_json check_sync_needed make_request
 
 # Export variables that might be needed by sub-scripts directly
-export AMPY_PORT AP_IP IP_JSON_FILE TIMESTAMP_FILE UPLOAD_CHUNKED_SCRIPT_PATH DEVICE_DIR PROJECT_ROOT_DIR
+export AP_IP IP_JSON_FILE TIMESTAMP_FILE UPLOAD_CHUNKED_SCRIPT_PATH DEVICE_DIR PROJECT_ROOT_DIR

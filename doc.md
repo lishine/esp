@@ -57,7 +57,8 @@ curl -F "file=@myfile.py" http://192.168.4.1/upload
 curl http://192.168.4.1/reset
 ```
 
-custom micropython build to disable serial on uart
+## custom micropython build to disable serial on uart
+
 gcl micropython
 edit boards/ESP32_GENERIC_C3/mpconfigboard.h:
 
@@ -72,3 +73,19 @@ edit boards/ESP32_GENERIC_C3/mpconfigboard.h:
 // Disable UART REPL to free UART0
 #define MICROPY_HW_UART_REPL (-1)
 #define MICROPY_HW_ENABLE_UART_REPL (0)
+
+## esp32-s3
+
+c6 not enough memory for micropython
+
+### programming
+
+connect both ampy and esptool only to the direct connector
+for esptool hold down boot and preset reset and then run command
+
+esp_port() {
+export ESP_PORT=$(ls /dev/tty.usbmodem\* | head -n 1);echo $ESP_PORT
+}
+
+esptool.py --port $ESP_PORT erase_flash
+esptool.py --baud 460800 --port $ESP_PORT write_flash 0 ./ESP32_GENERIC_S3-20241129-v1.24.1.bin

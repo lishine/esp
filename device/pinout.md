@@ -1,4 +1,4 @@
-# ESP32-C3 SuperMini Pinout Summary (Project IO)
+# ESP32-S3 N16R8 Pinout Summary (Project IO)
 
 This document summarizes the GPIO pin usage for this project based on the current configuration. Please verify against your specific board version.
 
@@ -16,11 +16,12 @@ This document summarizes the GPIO pin usage for this project based on the curren
 | 5    | GPIO5        | I/O, ADC2_CH0 |                              | Free     |                                             |
 | 6    | GPIO6        | I/O           |                              | Free     |                                             |
 | 7    | GPIO7        | I/O           | **ESC Telemetry (UART1 RX)** | **Used** |                                             |
-| 8    | GPIO8, STRAP | I/O           | **LED**                      | **Used** |                                             |
+| 8    | GPIO8, STRAP | I/O           |                              | Free     | Was previously LED                          |
 | 9    | GPIO9, STRAP | I/O, Strap    | **DS18B20 (OneWire)**        | **Used** | boot, pull up 10k on board, add another 10k |
 | 10   | GPIO10       | I/O           | **Buzzer**                   | **Used** |                                             |
 | 20   | GPIO20       | I/O, UART     | **NEO-7M GPS (UART1 RX)**    | **Used** |                                             |
 | 21   | GPIO21       | I/O, UART     | **NEO-7M GPS (UART1 TX)**    | **Used** |                                             |
+| 48   | GPIO48       | I/O           | **NeoPixel LED**             | **Used** |                                             |
 
 ## Power Pins
 

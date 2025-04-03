@@ -4,7 +4,7 @@
 # shellcheck source=./common.sh
 source "$(dirname "$0")/common.sh" || { echo "Error: Unable to source common.sh" >&2; exit 1; }
 
-USE_AMPY=false
+USE_MPREMOTE=false # Renamed from USE_AMPY
 SKIP_COMPILE=false
 ESP_IP=""
 FILES=""
@@ -19,8 +19,8 @@ while [[ $# -gt 0 ]]; do
         shift
         shift
         ;;
-        --ampy)
-        USE_AMPY=true
+        --mpremote) # Renamed from --ampy
+        USE_MPREMOTE=true # Renamed from USE_AMPY
         shift
         ;;
         --py|--no-compile)
@@ -47,7 +47,7 @@ if [ -z "$ESP_IP" ]; then
 fi
 if [ -z "$FILES" ]; then
     echo "Error: Missing file path(s)." >&2
-    echo "Usage: ./upload.sh --ip <address> [--ampy] [--py] <file(s)> [target]" >&2
+    echo "Usage: ./upload.sh --ip <address> [--mpremote] [--py] <file(s)> [target]" >&2
     exit 1
 fi
 export ESP_IP
@@ -64,57 +64,101 @@ cleanup_mpy() {
 }
 trap cleanup_mpy EXIT
 
-if [ "$USE_AMPY" = true ]; then
-    FILE_PATH=$(echo "$FILES" | cut -d',' -f1 | xargs)
+if [ "$USE_MPREMOTE" = true ]; then
+    # Use mpremote for upload (handles multiple files and directory creation)
+    IFS=',' read -r -a FILE_ARRAY <<< "$FILES"
+    TOTAL_FILES=${#FILE_ARRAY[@]}
 
-    if [ ! -f "$FILE_PATH" ]; then
-        echo "Error: File '$FILE_PATH' not found" >&2
-        exit 1
-    fi
+    for ((i=0; i<${#FILE_ARRAY[@]}; i++)); do
+        FILE_PATH=$(echo "${FILE_ARRAY[$i]}" | xargs) # Trim whitespace
 
-    file_to_upload_ampy="$FILE_PATH"
-    base_name=$(basename "$FILE_PATH")
-
-    if [[ "$FILE_PATH" == *.py ]] && [ "$SKIP_COMPILE" == false ] && [ "$base_name" != "main.py" ] && [ "$base_name" != "boot.py" ]; then
-        mpy_file="${FILE_PATH%.py}.mpy"
-        echo "Compiling $FILE_PATH to $mpy_file for ESP32-C3..."
-        mpy_cross_cmd="mpy-cross -march=rv32imc -O2 -s \"$FILE_PATH\" -o \"$mpy_file\" \"$FILE_PATH\""
-        echo "Running: $mpy_cross_cmd"
-        compile_output=$(eval $mpy_cross_cmd 2>&1)
-        compile_status=$?
-        if [ $compile_status -ne 0 ]; then
-            echo "Error: mpy-cross failed for $FILE_PATH. Output:" >&2
-            echo "$compile_output" >&2
+        if [ ! -f "$FILE_PATH" ]; then
+            echo "Error: File '$FILE_PATH' not found" >&2
             exit 1
         fi
-        echo "Compilation successful."
-        file_to_upload_ampy="$mpy_file"
-        GENERATED_MPY_FILES+=("$mpy_file")
-    fi
 
-    # Construct the target path for ampy
-    target_ampy_base_name=$(basename "$file_to_upload_ampy")
-    if [ -n "$TARGET_PATH" ]; then
-        # If target path is provided, ensure it ends with / and append filename
-        if [[ "$TARGET_PATH" != */ ]]; then
-            target_ampy_path="${TARGET_PATH}/$target_ampy_base_name"
-        else
-            target_ampy_path="${TARGET_PATH}$target_ampy_base_name"
+        echo "------ Uploading $((i+1)) of $TOTAL_FILES via mpremote --------- ($FILE_PATH)"
+
+        file_to_upload="$FILE_PATH"
+        base_name=$(basename "$FILE_PATH")
+
+        # Compile if necessary
+        if [[ "$FILE_PATH" == *.py ]] && [ "$SKIP_COMPILE" == false ] && [ "$base_name" != "main.py" ] && [ "$base_name" != "boot.py" ]; then
+            mpy_file="${FILE_PATH%.py}.mpy"
+            echo "Compiling $FILE_PATH to $mpy_file..."
+            # Assuming mpy-cross is in PATH and using default options for simplicity
+            # Adjust march/Olevel if needed: mpy-cross -march=... -O...
+            mpy_cross_cmd="mpy-cross -s \"$FILE_PATH\" -o \"$mpy_file\" \"$FILE_PATH\""
+            echo "Running: $mpy_cross_cmd"
+            compile_output=$(eval $mpy_cross_cmd 2>&1)
+            compile_status=$?
+            if [ $compile_status -ne 0 ]; then
+                echo "Error: mpy-cross failed for $FILE_PATH. Output:" >&2
+                echo "$compile_output" >&2
+                exit 1
+            fi
+            echo "Compilation successful."
+            file_to_upload="$mpy_file"
+            GENERATED_MPY_FILES+=("$mpy_file")
         fi
-    else
-        # If no target path provided, upload to root with original/compiled filename
-        target_ampy_path="/$target_ampy_base_name" # Add leading slash for root
-    fi
 
-    echo "Uploading $file_to_upload_ampy to ESP32 using ampy (Port: $AMPY_PORT) as $target_ampy_path..."
-    ampy_cmd="ampy -p \"$AMPY_PORT\" put \"$file_to_upload_ampy\" \"$target_ampy_path\""
-    echo "Running ampy command: $ampy_cmd"
-    eval $ampy_cmd # Use eval to handle potential spaces in paths correctly
-    ampy_status=$?
-    if [ $ampy_status -ne 0 ]; then
-        echo "Error: ampy upload failed for $file_to_upload_ampy." >&2
-        exit 1
-    fi
+        # Construct the remote path, ensuring it starts with ':'
+        final_target_name=$(basename "$file_to_upload")
+        if [ -n "$TARGET_PATH" ]; then
+            # Ensure target path starts with / and ends with /
+            remote_dir=":$TARGET_PATH"
+            remote_dir="${remote_dir//:\//:}" # Remove double slash after colon if TARGET_PATH starts with /
+            if [[ "$remote_dir" != */ ]]; then
+                 remote_dir="${remote_dir}/"
+            fi
+            remote_file_path="${remote_dir}$final_target_name"
+        else
+            # Upload to root directory
+            remote_file_path=":/$final_target_name"
+        fi
+        # Clean up potential double slashes or colon-slash issues
+        remote_file_path="${remote_file_path//:\/\//:/}"
+        remote_file_path="${remote_file_path//\/\//\/}"
+
+
+        # Ensure the target directory exists using 'mpremote mkdir' (handles nested paths)
+        remote_dir_path=$(dirname "$remote_file_path")
+        if [[ "$remote_dir_path" != ":" && "$remote_dir_path" != ":/" ]]; then
+             echo "Ensuring remote directory exists: $remote_dir_path"
+             mpremote_mkdir_cmd="mpremote mkdir \"$remote_dir_path\""
+             echo "Running mpremote command: $mpremote_mkdir_cmd"
+             eval $mpremote_mkdir_cmd
+             mkdir_status=$?
+             # Exit if mkdir failed for a real reason (not just 'already exists')
+             # We rely on mkdir exiting non-zero for critical errors.
+             # A more robust check might involve 'ls' first, but let's try this.
+             if [ $mkdir_status -ne 0 ]; then
+                 # Attempt ls to see if the failure was because it exists
+                 mpremote_ls_cmd="mpremote ls \"$remote_dir_path\" > /dev/null 2>&1"
+                 eval $mpremote_ls_cmd
+                 ls_status=$?
+                 if [ $ls_status -ne 0 ]; then
+                    # If ls also fails, then the mkdir failure was likely real
+                    echo "Error: mpremote mkdir failed for $remote_dir_path (Status: $mkdir_status) and directory does not seem to exist." >&2
+                    exit 1
+                 else
+                    echo "Warning: mpremote mkdir failed for $remote_dir_path (Status: $mkdir_status), but directory seems to exist. Continuing..." >&2
+                 fi
+             fi
+        fi
+
+        # Copy the file using standard 'mpremote cp'
+        echo "Uploading $file_to_upload to ESP32 using mpremote as $remote_file_path..."
+        mpremote_cp_cmd="mpremote cp \"$file_to_upload\" \"$remote_file_path\""
+        echo "Running mpremote command: $mpremote_cp_cmd"
+        eval $mpremote_cp_cmd
+        cp_status=$?
+        if [ $cp_status -ne 0 ]; then
+            echo "Error: mpremote cp failed for $file_to_upload (Status: $cp_status)." >&2
+            exit 1
+        fi
+        echo "Upload successful: $remote_file_path"
+    done
 
 else
     IFS=',' read -r -a FILE_ARRAY <<< "$FILES"
