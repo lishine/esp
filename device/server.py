@@ -5,6 +5,8 @@ import uasyncio as asyncio
 import machine
 import uos
 import gc
+import esp
+import sys
 from upload import handle_upload
 
 from log import (
@@ -52,7 +54,7 @@ async def reset(request):  # Changed to async def
 
     async def delayed_reset_async():  # Changed to async def
         await asyncio.sleep(0.1)  # Use asyncio.sleep
-        machine.reset()
+        machine.soft_reset()
 
     asyncio.create_task(delayed_reset_async())  # Use asyncio.create_task
     return "Device resetting..."
@@ -152,7 +154,7 @@ def get_settings_data(request):
 # --- GPS Settings Routes ---
 
 
-@app.route("/api/gps-settings", methods=["GET"])
+@app.route("/gps-settings", methods=["GET"])
 def get_gps_settings_page(request):
     """Serves the GPS settings HTML page."""
 
@@ -248,15 +250,27 @@ def get_free_space(request):
         total_kb = (fs_stat[0] * fs_stat[2]) / 1024
         # Calculate used space in KB
         used_kb = total_kb - free_kb
-        # Calculate usage percentage
+        ### Calculate usage percentage
         usage_percent = (used_kb / total_kb) * 100 if total_kb > 0 else 0
+
+        # Get total physical flash size
+        flash_total_bytes = esp.flash_size()
+        flash_total_kb = flash_total_bytes / 1024 if flash_total_bytes else 0
 
         return json.dumps(
             {
-                "free_kb": round(free_kb, 2),
-                "total_kb": round(total_kb, 2),
-                "used_kb": round(used_kb, 2),
-                "usage_percent": round(usage_percent, 2),
+                "fs_free_kb": round(free_kb, 2),  # Renamed for clarity
+                "fs_total_kb": round(total_kb, 2),  # Renamed for clarity
+                "fs_used_kb": round(used_kb, 2),  # Renamed for clarity
+                "fs_usage_percent": round(usage_percent, 2),  # Renamed for clarity
+                "flash_total_kb": round(flash_total_kb, 2),  # Added total flash size
+                "implementation": {  # Added sys.implementation details
+                    "name": sys.implementation.name,
+                    "version": f"{sys.implementation.version[0]}.{sys.implementation.version[1]}.{sys.implementation.version[2]}",
+                    "_machine": getattr(
+                        sys.implementation, "_machine", "N/A"
+                    ),  # Include _machine if available
+                },
             }
         )
     except Exception as e:
