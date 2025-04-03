@@ -45,7 +45,7 @@ show_usage() {
     echo ""
     echo "Options:"
     echo "  --ap                   - Use AP IP address ($AP_IP) instead of configured IP"
-    echo "  --ampy                 - Use ampy (Port: $AMPY_PORT) for serial communication instead of HTTP API"
+    echo "  --ampy                 - Use ampy (Port: detected automatically, see logs) for serial communication instead of HTTP API"
     echo ""
     echo "Commands:"
     echo "  reset                  - Reset the ESP32 device"

@@ -35,8 +35,18 @@ TIMESTAMP_FILE="$SCRIPT_DIR_COMMON/.last_sync"
 UPLOAD_CHUNKED_SCRIPT_PATH="$SCRIPT_DIR_COMMON/upload_chunked.sh"
 DEVICE_DIR="$PROJECT_ROOT_DIR/device" # Path to the device source files
 
-# Default AMPY port for serial communication
-AMPY_PORT="/dev/tty.usbmodem101"
+# Detect AMPY port dynamically (macOS specific)
+DETECTED_PORT=$(ls /dev/tty.usbmodem* 2>/dev/null | head -n 1)
+
+if [ -n "$DETECTED_PORT" ]; then
+    AMPY_PORT="$DETECTED_PORT"
+    echo "Detected AMPY port: $AMPY_PORT" >&2 # Log to stderr
+else
+    echo "Warning: Could not automatically detect ESP32 serial port (/dev/tty.usbmodem*)." >&2
+    echo "         Please ensure the device is connected and drivers are installed." >&2
+    echo "         Falling back to default: /dev/tty.usbmodem101" >&2
+    AMPY_PORT="/dev/tty.usbmodem101" # Fallback to default if detection fails
+fi
 
 # Default AP IP
 AP_IP="192.168.4.1"
