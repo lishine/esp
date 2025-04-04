@@ -8,15 +8,15 @@ from uasyncio import TimeoutError
 LOG_DIR = "logs"
 LOG_FILE_PREFIX = "log_"
 LOG_FILE_SUFFIX = ".txt"
-MAX_LOG_FILE_SIZE = 3000  # Bytes
-MAX_LOG_FILES = 300  # No limit implemented in this version
+MAX_LOG_FILE_SIZE = 30000  # Bytes
+# MAX_LOG_FILES = 300  # No limit implemented in this version
 
 # --- Module State ---
 _current_log_index = -1  # Uninitialized by default, set by writer task
 _log_dir_checked = False  # Flag to check dir only once
 _log_queue = []  # In-memory queue for log messages (bytes)
-_MAX_QUEUE_SIZE = 50  # Max messages before dropping
-_WRITE_THRESHOLD = 5  # Number of messages to trigger a write
+_MAX_QUEUE_SIZE = 1000  # Max messages before dropping
+_WRITE_THRESHOLD = 10  # Number of messages to trigger a write
 _write_event = asyncio.Event()  # Event to signal the writer task
 
 # --- Statistics (Rolling Window) ---

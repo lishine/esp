@@ -6,7 +6,7 @@ from log import log
 # Define the NeoPixel pin and number of pixels
 NEOPIXEL_PIN = 48
 NUM_PIXELS = 1
-ON_COLOR = (7, 7, 7)  # Dim white, as per user example
+ON_COLOR = (0, 1, 2)  # Dim white, as per user example
 OFF_COLOR = (0, 0, 0)  # Black
 
 np_obj = None  # Will be initialized externally by init_io.py
@@ -14,12 +14,19 @@ np_obj = None  # Will be initialized externally by init_io.py
 _led_mode = "IDLE"  # Possible modes: 'IDLE', 'SEQUENCE', 'CONTINUOUS'
 _sequence_params = None  # Tuple: (count, on_time_ms, off_time_ms)
 _continuous_interval_ms = None  # Integer: interval in milliseconds
+_continuous_on_percentage = 0.5  # Float: percentage of interval LED is ON (default 50%)
 
 
 async def led_task():
     """Main asynchronous task to control the LED based on the current mode."""
-    global _led_mode, _sequence_params, _continuous_interval_ms
-
+    global _led_mode, _sequence_params, _continuous_interval_ms, _continuous_on_percentage
+    print(
+        "led_task",
+        _led_mode,
+        _sequence_params,
+        _continuous_interval_ms,
+        _continuous_on_percentage,
+    )
     while True:
         current_mode = _led_mode  # Cache mode for this iteration
 
@@ -50,14 +57,15 @@ async def led_task():
 
         elif current_mode == "CONTINUOUS":
             if _continuous_interval_ms and _continuous_interval_ms > 0:
-                half_interval_ms = _continuous_interval_ms // 2
-                # print(f"LED Continuous: interval={_continuous_interval_ms}")
+                # Calculate on and off times based on the on_percentage
+                on_time_ms = int(_continuous_interval_ms * _continuous_on_percentage)
+                off_time_ms = _continuous_interval_ms - on_time_ms
                 led_turn_on()
-                await asyncio.sleep_ms(half_interval_ms)
+                await asyncio.sleep_ms(on_time_ms)
                 # Check if mode changed during on-time
                 if _led_mode == "CONTINUOUS":
                     led_turn_off()
-                    await asyncio.sleep_ms(half_interval_ms)
+                    await asyncio.sleep_ms(off_time_ms)
             else:
                 # Invalid interval or mode changed, go back to IDLE
                 _led_mode = "IDLE"
@@ -112,16 +120,21 @@ def blink_sequence(count=3, on_time=0.1, off_time=0.1):
     _continuous_interval_ms = None
 
 
-def start_continuous_blink(interval=1.0):
+def start_continuous_blink(interval=1.0, on_percentage=0.5):
     """Start continuous LED blinking. Interrupts any current action.
 
     Args:
         interval (float): Time in seconds for a complete on-off cycle.
+        on_percentage (float): Percentage of the interval the LED is ON (0.0 to 1.0).
     """
-    global _led_mode, _sequence_params, _continuous_interval_ms
-    # print(f"Setting LED Continuous: interval={interval}")
+    print("start_continuous_blink")
+    global _led_mode, _sequence_params, _continuous_interval_ms, _continuous_on_percentage
+    # print(f"Setting LED Continuous: interval={interval}, on_percentage={on_percentage}")
     _led_mode = "CONTINUOUS"
     _continuous_interval_ms = int(interval * 1000)
+    _continuous_on_percentage = max(
+        0.0, min(1.0, on_percentage)
+    )  # Clamp between 0 and 1
     _sequence_params = None
 
 

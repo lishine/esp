@@ -1,9 +1,9 @@
 import json
 import network
 import uasyncio as asyncio
-from machine import Pin  # Keep for potential direct use if needed
+from machine import Pin
 from log import log
-import led  # Import led module for async functions
+import led
 
 MAX_WAIT = 4
 
@@ -140,8 +140,8 @@ async def manage_wifi_connection():
                     count=3, on_time=0.1, off_time=0.1
                 )  # Quick success blink (Sync call)
                 led.start_continuous_blink(
-                    3.0
-                )  # Slow blink for connected state (Sync call)
+                    3.0, on_percentage=0.01
+                )  # Slow blink for connected state (10% on, 90% off)
                 # Wait longer after successful connection before checking again
                 await asyncio.sleep(5)
             else:
