@@ -48,9 +48,7 @@ def _calculate_ubx_checksum(payload: bytes) -> bytes:
     return bytes([ck_a, ck_b])
 
 
-async def _send_ubx_command(
-    uart: UART, class_id: int, msg_id: int, payload: bytes = b""
-):
+def _send_ubx_command(uart: UART, class_id: int, msg_id: int, payload: bytes = b""):
     """Constructs and sends a UBX command message."""
     msg_len = len(payload)
     # <H is unsigned short (2 bytes), little-endian
@@ -83,13 +81,13 @@ async def _read_ubx_response(
     return None  # Placeholder
 
 
-async def set_nav_rate(uart, lock: asyncio.Lock, rate_hz: int):
+def set_nav_rate(uart, lock: asyncio.Lock, rate_hz: int):
     """Sets the navigation measurement and solution rate."""
     if not uart or not lock:
         log("GPS CFG Error: UART or Lock not available for set_nav_rate")
         return False
 
-    await lock.acquire()
+    lock.acquire()
     result = False  # Default result
     try:
         log(f"GPS CFG: Attempting to set nav rate to {rate_hz} Hz")
@@ -105,9 +103,7 @@ async def set_nav_rate(uart, lock: asyncio.Lock, rate_hz: int):
             # <HHH is 3x unsigned short (2 bytes each), little-endian
             payload = struct.pack("<HHH", meas_rate_ms, nav_rate_cycles, time_ref)
 
-            success = await _send_ubx_command(
-                uart, UBX_CLASS_CFG, UBX_CFG_RATE, payload
-            )
+            success = _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_RATE, payload)
             if success:
                 # Optional: Wait for ACK/NAK (Implementation needed in _read_ubx_response)
                 # ... ACK/NAK logic would go here ...
@@ -120,7 +116,7 @@ async def set_nav_rate(uart, lock: asyncio.Lock, rate_hz: int):
     return result
 
 
-async def handle_gps_settings_data(request):
+def handle_gps_settings_data(request):
     """Handles getting and setting GPS configuration via UBX commands."""
     if not request.json:
         return Response(
@@ -151,7 +147,7 @@ async def handle_gps_settings_data(request):
         if action == "get_rate":
             log("GPS Settings API: Received get_rate request")
             # Call local function directly
-            rate_data = await get_nav_rate(uart, lock)
+            rate_data = get_nav_rate(uart, lock)
             if rate_data:
                 log(f"GPS Settings API: get_rate successful - {rate_data}")
                 return Response(
@@ -176,7 +172,7 @@ async def handle_gps_settings_data(request):
             log(f"GPS Settings API: Received set_rate request for {rate_hz} Hz")
             if isinstance(rate_hz, int) and 1 <= rate_hz <= 10:  # Basic validation
                 # Call local function directly
-                success = await set_nav_rate(uart, lock, rate_hz)
+                success = set_nav_rate(uart, lock, rate_hz)
                 if success:
                     log(f"GPS Settings API: set_nav_rate for {rate_hz} Hz successful")
                     return Response(
@@ -235,18 +231,18 @@ async def handle_gps_settings_data(request):
         )
 
 
-async def get_nav_rate(uart: UART, lock: asyncio.Lock):
+def get_nav_rate(uart: UART, lock: asyncio.Lock):
     """Polls the current navigation measurement and solution rate."""
     if not uart or not lock:
         log("GPS CFG Error: UART or Lock not available for get_nav_rate")
         return None
 
-    await lock.acquire()
+    lock.acquire()
     result = None  # Default result
     try:
         log("GPS CFG: Attempting to poll nav rate")
         # Send poll request (empty payload)
-        success = await _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_RATE)
+        success = _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_RATE)
         if success:
             # Read the CFG-RATE response (Implementation needed in _read_ubx_response)
             # response_payload = await _read_ubx_response(uart, UBX_CLASS_CFG, UBX_CFG_RATE, timeout_ms=1000)
@@ -296,7 +292,7 @@ async def factory_reset(uart, lock: asyncio.Lock):
         # <IIIB = 3x unsigned int (4 bytes), 1x unsigned char (1 byte), little-endian
         payload = struct.pack("<IIIB", clear_mask, save_mask, load_mask, device_mask)
 
-        success = await _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_CFG, payload)
+        success = _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_CFG, payload)
         if success:
             # Factory reset takes time, module might restart. No ACK expected.
             log("GPS CFG: Factory reset command sent. Module may restart.")
