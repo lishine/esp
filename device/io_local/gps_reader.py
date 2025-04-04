@@ -23,6 +23,8 @@ gps_date = (0, 0, 0)  # (day, month, year)
 _reader_task = None
 _uart_lock = asyncio.Lock()  # Lock for coordinating UART access
 _last_valid_data_time = 0  # Timestamp of the last valid NMEA sentence
+_gps_processing_time_us_sum = 0
+_gps_processed_sentence_count = 0
 
 
 # --- NMEA Parsing Helper ---
@@ -193,7 +195,7 @@ def init_gps_reader():
             baudrate=GPS_BAUDRATE,
             tx=Pin(GPS_TX_PIN),
             rx=Pin(GPS_RX_PIN),
-            rxbuf=4096,
+            rxbuf=10000,  # Reduced buffer size for 1Hz/9600baud
             timeout=10,
         )  # Short timeout
         log(f"GPS UART({GPS_UART_ID}) initialized.")
@@ -227,15 +229,17 @@ async def _read_gps_task():
             # Using readline() on StreamReader handles buffering and line endings
             line_bytes = await reader.readline()  # type: ignore # Pylance false positive
 
-            # if line_bytes: # DEBUG: Log raw bytes received
-            #     log(
-            #         f"GPS RAW RX ({len(line_bytes)} bytes): {line_bytes}"
-            #     )
+            # if line_bytes:  # DEBUG: Log raw bytes received
+            # log(f"GPS RAW RX ({len(line_bytes)} bytes): {line_bytes}")
             if not line_bytes:
                 # log("GPS Read timeout or empty line") # Debug
-                await asyncio.sleep_ms(100)  # Avoid busy-looping on empty reads
+                # Wait slightly longer than 1Hz update cycle when buffer is empty
+                print(1)
+                await asyncio.sleep_ms(1050)
+                print(2)
                 continue
             # If we reach here, line_bytes is not empty
+            start_time_us = time.ticks_us()  # Start timing processing
 
             try:
                 line = line_bytes.decode("ascii").strip()
@@ -285,14 +289,22 @@ async def _read_gps_task():
             # Update last valid data time if parsing was successful
             if parsed_successfully:
                 global _last_valid_data_time
-                _last_valid_data_time = time.ticks_ms()
+                _last_valid_data_time = time.ticks_ms()  # Mark time of valid data
+
+            # --- End Timing and Update Stats ---
+            end_time_us = time.ticks_us()
+            duration_us = time.ticks_diff(end_time_us, start_time_us)
+            global _gps_processing_time_us_sum, _gps_processed_sentence_count
+            _gps_processing_time_us_sum += duration_us
+            _gps_processed_sentence_count += 1
 
         except Exception as e:
             log(f"Error in GPS reader task loop: {e}")
             await asyncio.sleep_ms(500)  # Avoid tight loop on error
 
         # Yield control briefly
-        await asyncio.sleep_ms(10)
+        # Minimal sleep after processing a line to yield control
+        await asyncio.sleep_ms(50)
 
 
 def start_gps_reader():
@@ -381,3 +393,9 @@ def get_uart():
 def get_uart_lock():
     """Returns the asyncio Lock used for UART access."""
     return _uart_lock
+
+
+def get_gps_processing_stats():
+    """Returns the accumulated GPS sentence processing time (us) and count."""
+    # Return copies to avoid race conditions if accessed elsewhere, though unlikely here
+    return _gps_processing_time_us_sum, _gps_processed_sentence_count

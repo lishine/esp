@@ -4,6 +4,7 @@ import time
 import json
 from lib.microdot import Response  # Needed for the handler
 from log import log
+from machine import UART
 from . import gps_reader  # Relative import for reader module
 
 # UBX Protocol constants
@@ -47,7 +48,9 @@ def _calculate_ubx_checksum(payload: bytes) -> bytes:
     return bytes([ck_a, ck_b])
 
 
-async def _send_ubx_command(uart, class_id: int, msg_id: int, payload: bytes = b""):
+async def _send_ubx_command(
+    uart: UART, class_id: int, msg_id: int, payload: bytes = b""
+):
     """Constructs and sends a UBX command message."""
     msg_len = len(payload)
     # <H is unsigned short (2 bytes), little-endian
@@ -58,7 +61,7 @@ async def _send_ubx_command(uart, class_id: int, msg_id: int, payload: bytes = b
     full_message = message + checksum
     log(f"GPS CFG TX: {full_message.hex()}")  # Log hex representation
     if uart:
-        written = await uart.write(full_message)  # type: ignore # Pylance false positive on UART write
+        written = uart.write(full_message)
         if written != len(full_message):
             log(f"GPS CFG TX Error: Wrote {written}/{len(full_message)} bytes")
             return False
@@ -232,7 +235,7 @@ async def handle_gps_settings_data(request):
         )
 
 
-async def get_nav_rate(uart, lock: asyncio.Lock):
+async def get_nav_rate(uart: UART, lock: asyncio.Lock):
     """Polls the current navigation measurement and solution rate."""
     if not uart or not lock:
         log("GPS CFG Error: UART or Lock not available for get_nav_rate")
