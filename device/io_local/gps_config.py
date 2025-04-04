@@ -86,10 +86,15 @@ def _send_ubx_command(uart: UART, class_id: int, msg_id: int, payload: bytes = b
 
 
 def _read_ubx_response(
-    uart, expected_class_id: int, expected_msg_id: int, timeout_ms: int = 1000
+    uart,
+    expected_class_id: int,
+    expected_msg_id: int,
+    timeout_ms: int = 1000,
+    expect_payload: bool = False,  # New parameter
 ):
-    """Reads and validates a specific UBX response message (ACK/NAK) with full protocol handling.
-    Increased default timeout to 1000ms."""
+    """Reads and validates a specific UBX response message with full protocol handling.
+    Can return ACK/NAK status (True/False) or the message payload (bytes).
+    Returns None on timeout or checksum error."""
     start_time = time.ticks_ms()
     state = "SYNC1"
     message_length = 0
@@ -105,96 +110,110 @@ def _read_ubx_response(
             if not byte:
                 continue
 
-            # log(f"State: {state}, Byte: {byte.hex()}") # Debugging
-
+            # --- State Machine Logic ---
             if state == "SYNC1":
                 if byte[0] == UBX_SYNC_1:
                     state = "SYNC2"
             elif state == "SYNC2":
                 if byte[0] == UBX_SYNC_2:
                     state = "HEADER"
-                    header_bytes = bytearray()  # Reassign instead of clear()
+                    header_bytes = bytearray()
                 else:
-                    state = "SYNC1"  # Reset if second sync byte is wrong
+                    state = "SYNC1"
             elif state == "HEADER":
                 header_bytes.extend(byte)
-                if len(header_bytes) == 4:  # Class(1) + ID(1) + Length(2)
+                if len(header_bytes) == 4:
                     class_id, msg_id, message_length = struct.unpack(
                         "<BBH", header_bytes
                     )
-                    # log(f"Header parsed: Class={class_id:02X}, ID={msg_id:02X}, Len={message_length}") # Debugging
-                    if message_length == 0:  # ACK/NAK has 2 byte payload, not 0
-                        if class_id == UBX_CLASS_ACK:
-                            state = "PAYLOAD"
-                            payload = bytearray()  # Reassign instead of clear()
-                        else:  # Unexpected message type with 0 payload length
-                            log(
-                                f"GPS CFG RX: Unexpected message {class_id:02X}/{msg_id:02X} with 0 length"
-                            )
-                            state = "SYNC1"  # Reset parser
-                    else:
+                    # If expecting payload, check if this header matches
+                    if (
+                        expect_payload
+                        and class_id == expected_class_id
+                        and msg_id == expected_msg_id
+                    ):
                         state = "PAYLOAD"
-                        payload = bytearray()  # Reassign instead of clear()
+                        payload = bytearray()
+                    # If expecting ACK/NAK, check if this is an ACK message
+                    elif not expect_payload and class_id == UBX_CLASS_ACK:
+                        state = "PAYLOAD"
+                        payload = bytearray()
+                    # Otherwise, it's not the message we're looking for right now
+                    else:
+                        # If message_length is 0, skip payload state
+                        if message_length == 0:
+                            state = "CHECKSUM"
+                            checksum_bytes = bytearray()
+                            payload = bytearray()  # Ensure payload is empty
+                        else:
+                            state = "PAYLOAD"  # Need to read payload to discard it
+                            payload = bytearray()
             elif state == "PAYLOAD":
                 payload.extend(byte)
                 if len(payload) == message_length:
                     state = "CHECKSUM"
-                    checksum_bytes = bytearray()  # Reassign instead of clear()
+                    checksum_bytes = bytearray()
             elif state == "CHECKSUM":
                 checksum_bytes.extend(byte)
                 if len(checksum_bytes) == 2:
-                    # Checksum is calculated over: Class + ID + Length + Payload
+                    # --- Checksum Verification ---
                     calculated = _calculate_ubx_checksum(header_bytes + payload)
                     received_checksum = bytes(checksum_bytes)
 
-                    # log(f"Checksum: Recv={received_checksum.hex()}, Calc={calculated.hex()}") # Debugging
-
                     if received_checksum == calculated:
-                        # log(f"GPS CFG RX: Valid message received: Class={class_id:02X}, ID={msg_id:02X}") # Debugging
-                        # Check if it's the ACK/NAK we are expecting
-                        if class_id == UBX_CLASS_ACK:
-                            if (
-                                len(payload) == 2
-                            ):  # ACK/NAK payload is Class/ID of ack'd msg
+                        # --- Message Handling ---
+                        # Case 1: Expecting a specific payload message
+                        if (
+                            expect_payload
+                            and class_id == expected_class_id
+                            and msg_id == expected_msg_id
+                        ):
+                            log(
+                                f"GPS CFG RX: Received expected payload message {class_id:02X}/{msg_id:02X}"
+                            )
+                            return bytes(payload)  # Return the payload
+
+                        # Case 2: Expecting ACK/NAK for a sent command
+                        elif not expect_payload and class_id == UBX_CLASS_ACK:
+                            if len(payload) == 2:
                                 ack_class, ack_id = struct.unpack("<BB", payload)
+                                # Check if ACK/NAK corresponds to the command we *sent*
+                                # Note: expected_class_id/msg_id here refer to the *sent* command
                                 if (
                                     ack_class == expected_class_id
                                     and ack_id == expected_msg_id
                                 ):
                                     if msg_id == UBX_ACK_ACK:
-                                        # log(f"GPS CFG RX: ACK received for {expected_class_id:02X}/{expected_msg_id:02X}")
-                                        return True  # Correct ACK received
+                                        return True  # ACK received for our command
                                     elif msg_id == UBX_ACK_NAK:
                                         log(
                                             f"GPS CFG RX: NAK received for {expected_class_id:02X}/{expected_msg_id:02X}"
                                         )
-                                        return False  # NAK received
-                                else:
-                                    log(
-                                        f"GPS CFG RX: ACK/NAK received for unexpected msg {ack_class:02X}/{ack_id:02X}"
-                                    )
-                            else:
-                                log(
-                                    f"GPS CFG RX: ACK/NAK received with incorrect payload length {len(payload)}"
-                                )
-                        # else: # Ignore other valid messages while waiting for ACK/NAK
-                        #    log(f"GPS CFG RX: Ignoring valid message {class_id:02X}/{msg_id:02X} while waiting for ACK")
-                        #    pass
-                    else:
+                                        return False  # NAK received for our command
+                                # else: log ACK/NAK for unexpected command
+                            # else: log incorrect ACK/NAK payload length
+
+                        # Case 3: Received some other valid message - ignore it
+                        # else:
+                        #    log(f"GPS CFG RX: Ignoring valid message {class_id:02X}/{msg_id:02X}")
+
+                    else:  # Checksum failed
                         log(
                             f"GPS CFG RX: Checksum error for {class_id:02X}/{msg_id:02X}. Recv={received_checksum.hex()}, Calc={calculated.hex()}"
                         )
+                        # Do not return, just reset and keep listening
 
-                    # Reset parser state machine whether checksum was good or bad
+                    # Reset parser state machine after processing a complete message (good or bad checksum)
                     state = "SYNC1"
         else:
             # No data available, yield control briefly
-            time.sleep_ms(5)  # Short sleep when buffer is empty
+            time.sleep_ms(5)
 
+    # --- Timeout ---
     log(
-        f"GPS CFG RX: Timeout waiting for ACK/NAK for {expected_class_id:02X}/{expected_msg_id:02X}"
+        f"GPS CFG RX: Timeout waiting for {expected_class_id:02X}/{expected_msg_id:02X} (expect_payload={expect_payload})"
     )
-    return None  # Timeout
+    return None
 
 
 def _save_configuration(uart):
@@ -216,14 +235,19 @@ def _save_configuration(uart):
 
     # Wait for ACK
     response = _read_ubx_response(
-        uart, UBX_CLASS_CFG, UBX_CFG_CFG, timeout_ms=1500
+        uart,
+        UBX_CLASS_CFG,
+        UBX_CFG_CFG,
+        timeout_ms=1500,
+        expect_payload=False,  # Expect ACK/NAK
     )  # Allow more time for save
     if response is None:
         log("GPS CFG Error: Timeout waiting for CFG-CFG save ACK")
         return False
-    elif not response:
+    elif not response:  # False means NAK received
         log("GPS CFG Error: No ACK received for CFG-CFG save command (NAK received)")
         return False
+    # True means ACK received
 
     log("GPS CFG: Configuration save command acknowledged")
     return True
@@ -271,20 +295,25 @@ def set_nav_rate(uart, lock, rate_hz: int, max_retries: int = 3):
 
             # Wait for ACK with longer timeout on retries
             response = _read_ubx_response(
-                uart, UBX_CLASS_CFG, UBX_CFG_RATE, timeout_ms=1000 * (retry_count + 1)
+                uart,
+                UBX_CLASS_CFG,
+                UBX_CFG_RATE,
+                timeout_ms=1000 * (retry_count + 1),
+                expect_payload=False,  # Expect ACK/NAK
             )
             if response is None:
                 log("GPS CFG Error: Timeout waiting for CFG-RATE response")
                 retry_count += 1
                 time.sleep_ms(200 * (retry_count + 1))  # Incremental backoff
                 continue
-            elif not response:
+            elif not response:  # False means NAK received
                 log(
                     "GPS CFG Error: No ACK received for CFG-RATE command (NAK received)"
                 )
                 retry_count += 1
                 time.sleep_ms(200 * (retry_count + 1))  # Incremental backoff
                 continue
+            # True means ACK received
 
             log("GPS CFG: CFG-RATE command acknowledged")
 
@@ -426,40 +455,65 @@ def handle_gps_settings_data(request: Request):
         )
 
 
-def get_nav_rate(uart: UART, lock):  # Lock type hint removed
-    """Polls the current navigation measurement and solution rate."""
+def get_nav_rate(uart: UART, lock):
+    """Polls and parses the current navigation measurement and solution rate (CFG-RATE)."""
     if not uart or not lock:
         log("GPS CFG Error: UART or Lock not available for get_nav_rate")
         return None
 
     lock_acquired = False
-    result = None  # Default result
+    result_data = None
     try:
-        lock_acquired = lock.acquire(True, 1.0)  # Blocking acquire with timeout
+        lock_acquired = lock.acquire(True, 1.0)
         if not lock_acquired:
             log("GPS CFG Error: Could not acquire UART lock for get_nav_rate")
-            return None  # Exit if lock not acquired
-        log("GPS CFG: Attempting to poll nav rate")
+            return None
+
+        log("GPS CFG: Polling current nav rate (CFG-RATE)")
         # Send poll request (empty payload)
-        success = _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_RATE)
-        if success:
-            # Read the CFG-RATE response (Implementation needed in _read_ubx_response)
-            # For now, return placeholder as response reading isn't implemented
-            # TODO: Implement reading the actual CFG-RATE response payload
-            log("GPS CFG: get_nav_rate poll sent (response reading not implemented)")
-            result = {
-                "rate_hz": 1.0,  # Placeholder - Needs actual implementation
-                "meas_rate_ms": 1000,  # Placeholder
-                "nav_rate_cycles": 1,  # Placeholder
-                "time_ref": 1,  # Placeholder
+        if not _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_RATE):
+            log("GPS CFG Error: Failed to send poll request for CFG-RATE")
+            return None  # Exit if send fails
+
+        # Expect the CFG-RATE message itself as the response (with payload)
+        response_payload = _read_ubx_response(
+            uart,
+            expected_class_id=UBX_CLASS_CFG,
+            expected_msg_id=UBX_CFG_RATE,
+            timeout_ms=1500,  # Allow reasonable time for response
+            expect_payload=True,
+        )
+
+        if response_payload is None:
+            log("GPS CFG Error: Timeout or error reading CFG-RATE response")
+            # result_data remains None
+        elif isinstance(response_payload, bytes) and len(response_payload) == 6:
+            # Payload: measRate (ms, u2), navRate (cycles, u2), timeRef (u2)
+            meas_rate_ms, nav_rate_cycles, time_ref = struct.unpack(
+                "<HHH", response_payload
+            )
+            rate_hz = 1000.0 / meas_rate_ms if meas_rate_ms > 0 else 0
+
+            log(
+                f"GPS CFG RX: Parsed CFG-RATE - measRate={meas_rate_ms}ms ({rate_hz:.2f} Hz), navRate={nav_rate_cycles}, timeRef={time_ref}"
+            )
+            result_data = {
+                "rate_hz": round(rate_hz, 2),
+                "meas_rate_ms": meas_rate_ms,
+                "nav_rate_cycles": nav_rate_cycles,
+                "time_ref": time_ref,
             }
         else:
-            log("GPS CFG Error: Failed to send poll request for CFG-RATE")
-            result = None
+            # Received something unexpected (e.g., ACK/NAK bool, or wrong payload)
+            log(
+                f"GPS CFG Error: Received unexpected response type or length for CFG-RATE poll. Type: {type(response_payload)}"
+            )
+            # result_data remains None
+
     finally:
         if lock_acquired:
-            lock.release()  # Release only if acquired
-    return result
+            lock.release()
+    return result_data  # Return the dictionary or None
 
 
 def factory_reset(uart, lock):  # No longer async, lock type hint removed
