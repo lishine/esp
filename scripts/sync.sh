@@ -124,7 +124,7 @@ else
       last_sync_time=$(cat "$TIMESTAMP_FILE")
       # Get list of non-ignored files (tracked & untracked) within DEVICE_DIR relative to repo root
       # Use mapfile/readarray for safer filename handling
-       papa she -t potential_files < <(git -C "$PROJECT_ROOT_DIR" ls-files --cached --others --exclude-standard --full-name "$DEVICE_DIR/")
+       mapfile -t potential_files < <(git -C "$PROJECT_ROOT_DIR" ls-files --cached --others --exclude-standard --full-name "$DEVICE_DIR/")
 
       for file_rel_repo in "${potential_files[@]}"; do
           # Construct full path from project root
@@ -171,6 +171,25 @@ if [ "$DRY_RUN" == false ]; then
     CURRENT_FILE_NUM=$((CURRENT_FILE_NUM + 1))
     relative_path="${file#$DEVICE_DIR/}" # Get path relative to device/, e.g., "ap.py" or "subdir/foo.py"
     target_dir=$(dirname "/$relative_path") # Get target directory, e.g., "/" or "/subdir"
+
+    # --- Check to skip redundant .mpy upload if .py exists and compilation is on ---
+    if [[ "$file" == *.mpy ]] && [ "$SKIP_COMPILE_SYNC" == false ]; then
+        py_file="${file%.mpy}.py"
+        # Check if the corresponding .py file is also in the list of files to process
+        py_file_found=false
+        for item in "${FILES_TO_PROCESS[@]}"; do
+            if [[ "$item" == "$py_file" ]]; then
+                py_file_found=true
+                break
+            fi
+        done
+
+        if [ "$py_file_found" = true ]; then
+            echo "Skipping direct processing of $file, corresponding .py file will handle compilation/upload."
+            continue # Skip to the next file in FILES_TO_PROCESS
+        fi
+    fi
+    # --- End of redundancy check ---
 
     echo "------- Processing file $CURRENT_FILE_NUM of $TOTAL_FILES: $file -------"
 

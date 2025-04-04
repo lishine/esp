@@ -116,7 +116,8 @@ make_request() {
     local method="${2:-GET}"
     local output_file="${3:-}"
     local timeout=10
-    local curl_opts="-s -m $timeout" # Original: String concatenation
+    # Use an array for curl options for better handling of spaces/special chars
+    local curl_opts_array=("-s" "-m" "$timeout") # -s: silent, -m: max time
 
     if [ -z "$ESP_IP" ]; then
         echo "Error: ESP_IP variable is not set for make_request." >&2
@@ -127,44 +128,59 @@ make_request() {
     local headers=()
     local data_options=()
 
+    # Parse remaining arguments for headers or data options
     while [ $# -gt 0 ]; do
         if [[ "$1" == "--data-binary" ]]; then
             if [ -z "$2" ]; then echo "Error: --data-binary requires an argument." >&2; return 1; fi
-            data_options+=("$1" "$2") # Added to array
+            data_options+=("$1" "$2")
             shift 2
         elif [[ "$1" == *":"* ]]; then
-             headers+=("-H" "$1") # Added to array
+             headers+=("-H" "$1")
              shift
         else
-            # Handle other options (assumed to be data options in original)
-            data_options+=("$1") # Added to array
+            # Assume other args are data options
+            data_options+=("$1")
             shift
         fi
     done
 
+    # Add -o option if output file is specified
     if [ -n "$output_file" ]; then
-        curl_opts="$curl_opts -o \"$output_file\"" # Add quotes for safety, though original didn't have them explicitly here
+        curl_opts_array+=("-o" "$output_file")
     fi
 
+    # Add -X option if method is not GET
     if [ "$method" != "GET" ]; then
-        curl_opts="$curl_opts -X $method"
+        curl_opts_array+=("-X" "$method")
     fi
 
-    # Try with the current ESP_IP
-    local response
-    local full_curl_cmd="curl $curl_opts ${headers[@]} ${data_options[@]} \"$url\""
-    echo "Running curl command: $full_curl_cmd" >&2 # Print to stderr to avoid interfering with stdout capture
-    response=$(curl $curl_opts "${headers[@]}" "${data_options[@]}" "$url" 2>/dev/null)
-    local status=$?
+    # Construct the full command array for robust execution
+    local full_curl_cmd_array=("curl" "${curl_opts_array[@]}" "${headers[@]}" "${data_options[@]}" "$url")
 
-    if [ $status -eq 0 ]; then
-        echo "$response"
-        return 0
-    else
-        # If curl failed (e.g., timeout, connection refused)
-        echo "Connection to $ESP_IP failed (curl status: $status)." >&2
-        return 1
+    # Print the command for debugging (to stderr)
+    # Use printf for safer expansion than echo
+    printf "Running curl command: %s\n" "${full_curl_cmd_array[*]}" >&2
+
+    # Execute the command.
+    # If -o is present, output goes to file. Otherwise, it goes to stdout.
+    "${full_curl_cmd_array[@]}"
+    local status=$? # Capture exit status immediately
+
+    # Check if curl command failed
+    if [ $status -ne 0 ]; then
+        # Curl might print its own errors to stderr depending on the error type.
+        # Add a generic failure message to stderr as well.
+        echo "Connection to $ESP_IP failed or curl command failed (status: $status)." >&2
+        # Optionally remove partial output file if one was specified and curl failed
+        # This prevents leaving incomplete files around.
+        if [ -n "$output_file" ] && [ -f "$output_file" ]; then
+            # Check if file exists before trying to remove, avoid error if -o failed early
+             rm -f "$output_file"
+        fi
     fi
+
+    # Return the actual curl exit status (0 for success, non-zero for failure)
+    return $status
 }
 
 

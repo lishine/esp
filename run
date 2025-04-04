@@ -60,7 +60,7 @@ show_usage() {
     echo "  rm <path>              - Remove a file from the device"
     echo "  rm-visual              - Interactive visual file removal (uses scripts/rm-visual)"
     echo "  download <path>        - Download a file from the device"
-    echo "  view <path>            - View the contents of a file on the device"
+    echo "  view <path> [out_path] - View file contents (optionally save to out_path)" # Updated usage
     echo "  upload [...]           - Upload files (delegated to scripts/upload.sh)"
     echo "                           Args: [--py | --no-compile] <file(s)> [target]"
     echo "  sync [...]             - Sync modified files (delegated to scripts/sync.sh)"
@@ -72,6 +72,8 @@ show_usage() {
     echo "  ./run status"
     echo "  ./run rm main.py"
     echo "  ./run rm-visual"
+    echo "  ./run view main.py"
+    echo "  ./run view main.py main_copy.py" # Added example
     echo "  ./run upload settings.html"
     echo "  ./run --mpremote upload main.py"
     echo "  ./run sync"
@@ -180,7 +182,8 @@ case "$COMMAND" in
 
         # Update IP file logic (uses sourced functions/variables)
         # Only attempt to update the IP file if we are NOT using the AP IP
-        if [ "$ESP_IP" != "$AP_IP" ]; then
+        # Update IP file logic only if --ap flag was used
+        if [ "$USE_AP_IP" = true ]; then
             if [ $status_code -eq 0 ] && printf '%s' "$response" | jq -e '.ip' >/dev/null 2>&1; then # Check for .ip
                 device_ip=$(echo "$response" | jq -r '.ip') # Extract .ip
                 need_update=false
@@ -256,7 +259,7 @@ case "$COMMAND" in
         FILE_PATH="${ARGS[0]}"
         DOWNLOAD_TARGET="$(basename "$FILE_PATH")"
         echo "Downloading $FILE_PATH from ESP32 at $ESP_IP to $DOWNLOAD_TARGET..."
-        make_request "http://$ESP_IP/fs/get/$FILE_PATH" "GET" "$DOWNLOAD_TARGET"
+        make_request "http://$ESP_IP/download/$FILE_PATH" "GET" "$DOWNLOAD_TARGET"
         if [ $? -eq 0 ]; then
             echo "Downloaded to $DOWNLOAD_TARGET"
         else
@@ -269,14 +272,23 @@ case "$COMMAND" in
 
   view)
         check_sync_needed
-        if [ ${#ARGS[@]} -lt 1 ]; then
-            echo "Error: Missing file path" >&2 # Fixed >&2
-            echo "Usage: ./run view <path>" >&2 # Fixed >&2
+        if [ ${#ARGS[@]} -lt 1 ] || [ ${#ARGS[@]} -gt 2 ]; then
+            echo "Error: Incorrect number of arguments for view" >&2
+            echo "Usage: ./run view <remote_path> [local_output_path]" >&2
             exit 1
         fi
         FILE_PATH="${ARGS[0]}"
-        echo "Viewing file $FILE_PATH from ESP32 at $ESP_IP..."
-        make_request "http://$ESP_IP/view/$FILE_PATH"
+        OUTPUT_PATH="${ARGS[1]:-}" # Empty if not provided
+
+        if [ -n "$OUTPUT_PATH" ]; then
+            # Output path provided
+            echo "Viewing file $FILE_PATH from ESP32 at $ESP_IP, saving to $OUTPUT_PATH..." >&2
+            make_request "http://$ESP_IP/view/$FILE_PATH" "GET" "$OUTPUT_PATH"
+        else
+            # No output path, print to stdout
+            echo "Viewing file $FILE_PATH from ESP32 at $ESP_IP..." >&2
+            make_request "http://$ESP_IP/view/$FILE_PATH" "GET" # Pass GET explicitly, no output file
+        fi
         ;;
 
   upload)
@@ -316,4 +328,4 @@ case "$COMMAND" in
     ;;
 esac
 
-exit 0 # Default exit code for successful command execution
+exit 0 # Default exit code for successful command execution]]>
