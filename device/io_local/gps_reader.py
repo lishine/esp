@@ -1,6 +1,7 @@
 from machine import UART, Pin
 import uasyncio as asyncio
 import time
+from _thread import allocate_lock  # Import the thread-safe lock
 from log import log
 
 
@@ -21,7 +22,7 @@ gps_satellites = 0
 gps_time_utc = (0, 0, 0)  # (hour, minute, second)
 gps_date = (0, 0, 0)  # (day, month, year)
 _reader_task = None
-_uart_lock = asyncio.Lock()  # Lock for coordinating UART access
+_uart_lock = allocate_lock()  # Use a thread-safe lock for UART access
 _last_valid_data_time = 0  # Timestamp of the last valid NMEA sentence
 _gps_processing_time_us_sum = 0
 _gps_processed_sentence_count = 0
@@ -391,7 +392,7 @@ def get_uart():
 
 
 def get_uart_lock():
-    """Returns the asyncio Lock used for UART access."""
+    """Returns the thread-safe Lock used for UART access."""
     return _uart_lock
 
 

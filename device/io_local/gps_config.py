@@ -69,27 +69,32 @@ def _send_ubx_command(uart: UART, class_id: int, msg_id: int, payload: bytes = b
         return False
 
 
-async def _read_ubx_response(
+def _read_ubx_response(
     uart, expected_class_id: int, expected_msg_id: int, timeout_ms: int = 500
 ):
     """Reads and validates a specific UBX response message."""
     # TODO: Implement UBX response reading and parsing logic
     # This needs to handle reading bytes, finding sync chars, checking class/id,
     # reading payload based on length, and verifying checksum.
-    log("GPS CFG RX: _read_ubx_response not implemented yet")
-    await asyncio.sleep_ms(10)  # Placeholder
+    log("GPS CFG RX: _read_ubx_response not implemented yet (using blocking lock)")
+    # Placeholder sleep, replace with actual blocking read logic
+    time.sleep_ms(10)  # Use time.sleep_ms
     return None  # Placeholder
 
 
-def set_nav_rate(uart, lock: asyncio.Lock, rate_hz: int):
+def set_nav_rate(uart, lock, rate_hz: int):
     """Sets the navigation measurement and solution rate."""
     if not uart or not lock:
         log("GPS CFG Error: UART or Lock not available for set_nav_rate")
         return False
 
-    lock.acquire()
+    lock_acquired = False
     result = False  # Default result
     try:
+        lock_acquired = lock.acquire(True, 1.0)  # Blocking acquire with timeout
+        if not lock_acquired:
+            log("GPS CFG Error: Could not acquire UART lock for set_nav_rate")
+            return False  # Exit if lock not acquired
         log(f"GPS CFG: Attempting to set nav rate to {rate_hz} Hz")
         if rate_hz <= 0:
             log("GPS CFG Error: Invalid rate_hz")
@@ -112,7 +117,8 @@ def set_nav_rate(uart, lock: asyncio.Lock, rate_hz: int):
                 result = True
             # else: result remains False
     finally:
-        lock.release()
+        if lock_acquired:
+            lock.release()  # Release only if acquired
     return result
 
 
@@ -226,15 +232,19 @@ def handle_gps_settings_data(request: Request):
         )
 
 
-def get_nav_rate(uart: UART, lock: asyncio.Lock):
+def get_nav_rate(uart: UART, lock):  # Lock type hint removed
     """Polls the current navigation measurement and solution rate."""
     if not uart or not lock:
         log("GPS CFG Error: UART or Lock not available for get_nav_rate")
         return None
 
-    lock.acquire()
+    lock_acquired = False
     result = None  # Default result
     try:
+        lock_acquired = lock.acquire(True, 1.0)  # Blocking acquire with timeout
+        if not lock_acquired:
+            log("GPS CFG Error: Could not acquire UART lock for get_nav_rate")
+            return None  # Exit if lock not acquired
         log("GPS CFG: Attempting to poll nav rate")
         # Send poll request (empty payload)
         success = _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_RATE)
@@ -260,19 +270,24 @@ def get_nav_rate(uart: UART, lock: asyncio.Lock):
             }
         # else: result remains None
     finally:
-        lock.release()
+        if lock_acquired:
+            lock.release()  # Release only if acquired
     return result
 
 
-async def factory_reset(uart, lock: asyncio.Lock):
+def factory_reset(uart, lock):  # No longer async, lock type hint removed
     """Sends a factory reset command to the GPS module."""
     if not uart or not lock:
         log("GPS CFG Error: UART or Lock not available for factory_reset")
         return False
 
-    await lock.acquire()
+    lock_acquired = False
     result = False  # Default result
     try:
+        lock_acquired = lock.acquire(True, 1.0)  # Blocking acquire with timeout
+        if not lock_acquired:
+            log("GPS CFG Error: Could not acquire UART lock for factory_reset")
+            return False  # Exit if lock not acquired
         log("GPS CFG: Attempting factory reset")
         # Payload for CFG-CFG: clearMask (u4), saveMask (u4), loadMask (u4), deviceMask (u1)
         # Masks specify which memory sections to affect (IO, MSG, INF, NAV, RXM, etc.)
@@ -292,9 +307,10 @@ async def factory_reset(uart, lock: asyncio.Lock):
             # Factory reset takes time, module might restart. No ACK expected.
             log("GPS CFG: Factory reset command sent. Module may restart.")
             # Wait a bit for module to potentially reset
-            await asyncio.sleep_ms(1000)
+            time.sleep_ms(1000)  # Use time.sleep_ms
             result = True
         # else: result remains False
     finally:
-        lock.release()
+        if lock_acquired:
+            lock.release()  # Release only if acquired
     return result
