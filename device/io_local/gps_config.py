@@ -2,10 +2,10 @@ import uasyncio as asyncio
 import struct
 import time
 import json
-from lib.microdot import Response  # Needed for the handler
 from log import log
 from machine import UART
 from . import gps_reader  # Relative import for reader module
+from server_framework import Response, Request
 
 # UBX Protocol constants
 UBX_SYNC_1 = 0xB5
@@ -116,16 +116,11 @@ def set_nav_rate(uart, lock: asyncio.Lock, rate_hz: int):
     return result
 
 
-def handle_gps_settings_data(request):
+def handle_gps_settings_data(request: Request):
     """Handles getting and setting GPS configuration via UBX commands."""
-    if not request.json:
-        return Response(
-            body=json.dumps({"success": False, "message": "Bad Request: No JSON body"}),
-            status_code=400,
-            headers={"Content-Type": "application/json"},
-        )
+    config = json.loads(request.body)
 
-    action = request.json.get("action")
+    action = config.get("action")
     # Use the relative import for gps_reader
     uart = gps_reader.get_uart()
     lock = gps_reader.get_uart_lock()
@@ -139,7 +134,7 @@ def handle_gps_settings_data(request):
                     "message": "Internal Server Error: GPS UART/Lock unavailable",
                 }
             ),
-            status_code=500,
+            status=500,
             headers={"Content-Type": "application/json"},
         )
 
@@ -163,12 +158,12 @@ def handle_gps_settings_data(request):
                             "message": "Failed to retrieve rate from GPS",
                         }
                     ),
-                    status_code=500,
+                    status=500,
                     headers={"Content-Type": "application/json"},
                 )
 
         elif action == "set_rate":
-            rate_hz = request.json.get("rate")
+            rate_hz = config.get("rate")
             log(f"GPS Settings API: Received set_rate request for {rate_hz} Hz")
             if isinstance(rate_hz, int) and 1 <= rate_hz <= 10:  # Basic validation
                 # Call local function directly
@@ -193,7 +188,7 @@ def handle_gps_settings_data(request):
                                 "message": "Failed to send set rate command to GPS",
                             }
                         ),
-                        status_code=500,
+                        status=500,
                         headers={"Content-Type": "application/json"},
                     )
             else:
@@ -205,7 +200,7 @@ def handle_gps_settings_data(request):
                             "message": "Invalid rate value (must be integer 1-10)",
                         }
                     ),
-                    status_code=400,
+                    status=400,
                     headers={"Content-Type": "application/json"},
                 )
 
@@ -215,7 +210,7 @@ def handle_gps_settings_data(request):
                 body=json.dumps(
                     {"success": False, "message": f"Unknown action: {action}"}
                 ),
-                status_code=400,
+                status=400,
                 headers={"Content-Type": "application/json"},
             )
 
@@ -226,7 +221,7 @@ def handle_gps_settings_data(request):
             body=json.dumps(
                 {"success": False, "message": f"Internal Server Error: {e}"}
             ),
-            status_code=500,
+            status=500,
             headers={"Content-Type": "application/json"},
         )
 

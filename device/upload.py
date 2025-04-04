@@ -1,4 +1,3 @@
-from lib.microdot import Response
 import os
 from log import log
 from server_framework import error_response, success_response

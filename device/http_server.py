@@ -160,13 +160,6 @@ def get_settings(request):
 @app.route("/settings/save", methods=["POST"])
 def save_settings(request: Request):
     """Saves WiFi configuration received as JSON."""
-    if not request.body:
-        return Response(
-            body=json.dumps({"success": False, "error": "Missing request body"}),
-            status=HTTP_BAD_REQUEST,
-            headers={"Content-Type": "application/json"},
-        )
-
     try:
         config = json.loads(request.body)
         if not isinstance(config, dict):
@@ -350,15 +343,8 @@ def get_gps_settings_page(request):
 
 @app.route("/api/gps-settings/data", methods=["POST"])
 def handle_gps_settings_data_route(request: Request):
-    if not request.body:
-        return Response(
-            body=json.dumps({"success": False, "error": "Missing request body"}),
-            status=HTTP_BAD_REQUEST,
-            headers={"Content-Type": "application/json"},
-        )
     try:
-        result_body, status_code, headers = gps_config.handle_gps_settings_data(request)  # type: ignore
-        return Response(body=result_body, status=status_code, headers=headers)
+        return gps_config.handle_gps_settings_data(request)
     except Exception as e:
         log(f"Error processing GPS settings data: {e}")
         try:

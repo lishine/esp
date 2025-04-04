@@ -182,10 +182,6 @@ async def main():
         start_server()  # Use the new module and function name
         log("HTTP server thread started.")  # Updated log message
         # app = server3.get_app()
-        log("Microdot app retrieved.")  # Changed log.log to log
-
-        # Start the Microdot server as a background task
-        log("Creating Microdot server task...")  # Changed log.log to log
         # asyncio.create_task(app.start_server(port=80, debug=True))
         # Start CPU load measurement tasks
         # Start CPU load measurement tasks
