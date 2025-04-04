@@ -30,7 +30,8 @@ from fs import (
     remove_if_empty_or_file,
     remove_empty_parents,
 )
-from captive import register_captive_portal_routes
+
+# from captive import register_captive_portal_routes
 import io_local.gps_config as gps_config
 
 # Import network utilities
@@ -40,7 +41,7 @@ from netutils import get_client_ip, get_device_info
 app = Microdot()
 
 # Register captive portal routes
-register_captive_portal_routes(app)
+# register_captive_portal_routes(app)
 
 
 # Upload routes - only support path-based uploads

@@ -2,6 +2,7 @@ import machine
 import uos  # Import uos for dupterm
 from log import log
 import rtc  # Import the new rtc module
+import time  # Import the new rtc module
 
 # --- Disable REPL on UART0 ---
 # This ensures UART0 is free for other uses (like GPS), especially if

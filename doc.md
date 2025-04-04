@@ -88,4 +88,6 @@ export ESP_PORT=$(ls /dev/tty.usbmodem\* | head -n 1);echo $ESP_PORT
 }
 
 esptool.py --port $ESP_PORT erase_flash
-esptool.py --baud 460800 --port $ESP_PORT write_flash 0 ./ESP32_GENERIC_S3-20241129-v1.24.1.bin
+esptool.py --baud 460800 write_flash 0 ./ESP32_GENERIC_S3-SPIRAM_OCT-20241129-v1.24.1.bin
+
+using mpremote

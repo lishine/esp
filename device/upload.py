@@ -1,19 +1,7 @@
 from lib.microdot import Response
-import json
 import os
 from log import log
-
-
-def error_response(message, status=400):
-    return json.dumps({"success": False, "error": message}), status
-
-
-def success_response(data=None):
-    if data is None:
-        data = {}
-    result = {"success": True}
-    result.update(data)
-    return json.dumps(result), 200
+from server_framework import error_response, success_response
 
 
 def save_file(path: str, content: bytes) -> int:
@@ -70,9 +58,9 @@ def combine_chunks(target_path: str, total_chunks: int) -> tuple[str, int]:
 
                     if bytes_processed % 1024 == 0 or bytes_processed == part_size:
                         percent = (bytes_processed / part_size) * 100
-                        log(
-                            f"Combining chunk {i+1}/{total_chunks}: {percent:.1f}% ({bytes_processed}/{part_size} bytes)"
-                        )
+                        # log(
+                        #     f"Combining chunk {i+1}/{total_chunks}: {percent:.1f}% ({bytes_processed}/{part_size} bytes)"
+                        # )
             try:
                 os.remove(part_path)
             except:
@@ -124,7 +112,7 @@ def handle_chunked_upload(
     )
 
 
-async def handle_upload(request, target_path: str | None = None) -> tuple[str, int]:
+def handle_upload(request, target_path: str | None = None) -> tuple[str, int]:
     try:
         if target_path is None:
             return error_response("Missing target path")
