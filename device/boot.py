@@ -16,7 +16,7 @@ import time  # Import the new rtc module
 #     log(f"Could not disable REPL on UART0: {e}")
 
 # Adjust time using the dedicated function
-rtc.adjust_time_forward_one_day()
+rtc.set_time_from_last_log()  # Set time based on last log entry
 
 log("\n" + "=" * 40)
 log("ESP32 Boot Sequence Starting...")
