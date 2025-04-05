@@ -182,8 +182,7 @@ async def _read_gps_task():
             line_bytes = await reader.readline()  # type: ignore
 
             if not line_bytes:
-                await asyncio.sleep_ms(1050)  # Sleep if timeout/empty line
-                continue
+                pass
             else:
                 # --- Parsing Logic ---
                 start_time_us = time.ticks_us()
@@ -247,6 +246,10 @@ async def _read_gps_task():
             log(f"Error in GPS reader task loop: {e}")
             _reader_enabled_event.set()  # Ensure enabled on error exit
             await asyncio.sleep_ms(500)
+
+        # DONOT DELETE
+        # This is essential in order not to get high CPU in a async reader
+        await asyncio.sleep_ms(25)
 
 
 def start_gps_reader():

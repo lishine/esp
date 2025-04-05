@@ -9,7 +9,7 @@ LOG_DIR = "logs"
 LOG_FILE_PREFIX = "log_"
 LOG_FILE_SUFFIX = ".txt"
 MAX_LOG_FILE_SIZE = 10000  # Bytes
-# MAX_LOG_FILES = 300  # No limit implemented in this version
+MAX_LOG_FILES = 100  # Limit the number of log files
 
 # --- Module State ---
 _current_log_index = -1  # Uninitialized by default, set by writer task
@@ -186,6 +186,27 @@ async def _log_writer_task():
                         and (current_size + len(message_bytes)) > MAX_LOG_FILE_SIZE
                     ):
                         _current_log_index += 1
+
+                        # --- START: Log File Limit Logic ---
+                        # Check if we need to delete old log files to maintain the limit
+                        if _current_log_index >= MAX_LOG_FILES:
+                            # Calculate the oldest log file index that should be removed
+                            # For example, if MAX_LOG_FILES=2 and _current_log_index=2,
+                            # we should remove log_000.txt (index = 2 - 2 = 0)
+                            oldest_index = (
+                                _current_log_index - MAX_LOG_FILES
+                            )  # CORRECTED LINE
+                            oldest_filepath = _get_log_filepath(oldest_index)
+                            try:
+                                uos.remove(oldest_filepath)
+                                print(f"Removed oldest log file: {oldest_filepath}")
+                            except OSError as e:
+                                # Use print directly to avoid recursion if logging fails
+                                print(
+                                    f"Error removing oldest log file '{oldest_filepath}': {e}"
+                                )
+                        # --- END: Log File Limit Logic ---
+
                         current_filepath = _get_log_filepath(_current_log_index)
                         current_size = 0  # Reset size for the new file
                         print(f"Rotating log to new file: {current_filepath}")

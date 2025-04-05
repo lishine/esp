@@ -51,7 +51,7 @@ show_usage() {
     echo "  reset                  - Reset the ESP32 device"
     echo "  repl                   - Start mpremote REPL (retries on error)"
     echo "  log                    - View device logs"
-    echo "  log-clear              - Clear the log file on the device"
+    echo "  clear-log              - Clear the log file on the device"
     echo "  log-add-test           - Add 1000 test log entries"
     echo "  la/ls                  - List all files on the device"
     echo "  fs-list                - Get JSON file listing for visual tools"
@@ -128,7 +128,7 @@ case "$COMMAND" in
   repl)
         check_sync_needed
         echo "Starting mpremote REPL..."
-        max_tries=10
+        max_tries=10000
         tries=1
         success=false
         
@@ -164,7 +164,7 @@ case "$COMMAND" in
         make_request "http://$ESP_IP/api/log/chunk"
         ;;
 
-  log-clear)
+  clear-log)
         check_sync_needed
         echo "Clearing logs on ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/log/clear" "POST"
