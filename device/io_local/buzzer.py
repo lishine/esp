@@ -22,54 +22,87 @@ from fs import exists
 
 
 # --- Configuration ---
-BUZZER_PIN = 1
+# WARNING: Driving GPIO pins directly in parallel can be risky due to potential
+# current imbalance and timing issues. Using a transistor driver is generally safer
+# for loads requiring more current than a single pin can provide.
+BUZZER_PINS = [1, 2]  # Use pins 1 and 2 in parallel
 
 # --- State ---
-buzzer_pin_obj = None  # Changed from buzzer_pwm
+buzzer_pin_objs = []  # List to hold Pin objects for parallel driving
 _beep_task = None
 
 
 # --- Initialization ---
 def init_buzzer():
-    """Initializes the buzzer pin as a simple output."""
-    global buzzer_pin_obj
+    """Initializes the buzzer pins for parallel driving."""
+    global buzzer_pin_objs
+    buzzer_pin_objs.clear()  # Clear any previous objects
+    initialized_pins = []
+    success = True
     try:
-        # Initialize the pin as output
-        buzzer_pin_obj = Pin(BUZZER_PIN, Pin.OUT)
-        buzzer_pin_obj.value(0)  # Ensure it's off initially
-        log(f"Active Buzzer initialized on Pin {BUZZER_PIN}")
-        return True
-    except Exception as e:
-        log(f"Error initializing Active Buzzer on Pin {BUZZER_PIN}: {e}")
-        buzzer_pin_obj = None
+        for pin_num in BUZZER_PINS:
+            try:
+                # Initialize the pin as output, initially off
+                pin_obj = Pin(pin_num, Pin.OUT, value=0)
+                initialized_pins.append(pin_obj)
+                log(f"Initialized buzzer Pin {pin_num}")
+            except Exception as e:
+                log(f"Error initializing buzzer Pin {pin_num}: {e}")
+                success = False
+                break  # Stop initialization if one pin fails
+
+        if success:
+            buzzer_pin_objs = initialized_pins  # Assign only if all succeeded
+            log(f"Active Buzzer initialized on Pins: {BUZZER_PINS}")
+            return True
+        else:
+            # Clean up any pins that were successfully initialized before the failure
+            for pin_obj in initialized_pins:
+                try:
+                    # Attempt to deinit or set to input to be safe, though Pin object might lack deinit
+                    # Setting value to 0 is a minimal cleanup
+                    pin_obj.value(0)
+                except Exception as cleanup_e:
+                    log(
+                        f"Error during cleanup for pin {pin_obj}: {cleanup_e}"
+                    )  # Log cleanup error but continue
+            buzzer_pin_objs.clear()  # Ensure list is empty on failure
+            return False
+
+    except Exception as e:  # Catch unexpected errors during the process
+        log(f"Unexpected error during multi-pin buzzer initialization: {e}")
+        buzzer_pin_objs.clear()
         return False
 
 
 # --- Control Functions ---
 
 
-def set_buzzer(state):
+def set_buzzer(state: bool):
     """
-    Sets the active buzzer state immediately.
+    Sets the state of all configured buzzer pins immediately.
 
     Args:
         state (bool): True (or 1) to turn on, False (or 0) to turn off.
     """
-    if buzzer_pin_obj is None:
-        log("Buzzer not initialized.")
+    if not buzzer_pin_objs:  # Check if the list is empty (initialization failed)
+        log("Buzzer pins not initialized.")
         return
 
-    try:
-        value = 1 if state else 0
-        buzzer_pin_obj.value(value)
-        # log(f"Buzzer {'ON' if value else 'OFF'}")
-    except Exception as e:
-        log(f"Error setting buzzer state: {e}")
+    value_to_set = 1 if state else 0
+    for pin_obj in buzzer_pin_objs:
+        try:
+            pin_obj.value(value_to_set)
+        except Exception as e:
+            # Log error for the specific pin but continue trying others
+            log(f"Error setting buzzer pin {pin_obj}: {e}")
+    # Optional: Log the collective state change once
+    # log(f"Buzzer pins set to {'ON' if value_to_set else 'OFF'}")
 
 
-async def beep_async(duration_ms=100):
-    """Plays a short beep asynchronously (active buzzer)."""
-    if buzzer_pin_obj is None:
+async def beep_async(duration_ms: int = 100):
+    """Plays a short beep asynchronously using configured pins."""
+    if not buzzer_pin_objs:  # Check if list is empty
         log("Buzzer not initialized.")
         return
     try:
@@ -83,9 +116,9 @@ async def beep_async(duration_ms=100):
         set_buzzer(False)
 
 
-def beep_sync(duration_ms=100):
-    """Plays a short beep synchronously (active buzzer, blocks)."""
-    if buzzer_pin_obj is None:
+def beep_sync(duration_ms: int = 100):
+    """Plays a short beep synchronously using configured pins (blocks)."""
+    if not buzzer_pin_objs:  # Check if list is empty
         log("Buzzer not initialized.")
         return
     try:
@@ -98,14 +131,14 @@ def beep_sync(duration_ms=100):
         set_buzzer(False)
 
 
-async def play_sequence_async(sequence):
+async def play_sequence_async(sequence: list):
     """
-    Plays a sequence of beeps/silences asynchronously (active buzzer).
+    Plays a sequence of beeps/silences asynchronously using configured pins.
     Sequence is a list of tuples: [(duration_ms1, state1), (duration_ms2, state2), ...]
     Where state is True/1 for ON, False/0 for OFF.
     """
     global _beep_task
-    if buzzer_pin_obj is None:
+    if not buzzer_pin_objs:  # Check if list is empty
         log("Buzzer not initialized.")
         return
 
