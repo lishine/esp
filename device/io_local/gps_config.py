@@ -58,7 +58,7 @@ def _send_ubx_command(uart: UART, class_id: int, msg_id: int, payload: bytes = b
         flushed_bytes = uart.read(uart.any())
         if flushed_bytes:
             log(
-                f"GPS CFG: Flushed {len(flushed_bytes)} bytes from UART RX buffer before sending"
+                f"GPS CFG: Flushed {len(flushed_bytes)} bytes from UART RX buf yeah Manager lunchfer before sending"
             )
 
     # Build message header: Class + ID + Length
@@ -216,8 +216,11 @@ def _read_ubx_response(
     return None
 
 
-def _save_configuration(uart):
+def _save_configuration(uart, lock):  # Add lock parameter
     """Helper function to save configuration to non-volatile memory."""
+    # Note: This function assumes the caller handles pausing/resuming the reader
+    # and acquiring/releasing the lock. It only performs the UART operations.
+    # It does NOT handle the pause/resume or lock itself.
     log("GPS CFG: Attempting to save configuration to non-volatile memory")
     # Send CFG-CFG command to save configuration
     clear_mask = 0x0000  # Clear nothing
@@ -259,16 +262,35 @@ def set_nav_rate(uart, lock, rate_hz: int, max_retries: int = 3):
         log("GPS CFG Error: UART or Lock not available for set_nav_rate")
         return False
 
-    lock_acquired = False
+    lock_acquired_by_config = False
     result = False  # Default result
     retry_count = 0
+    config_request_event = gps_reader.get_config_request_event()
+    config_done_event = gps_reader.get_config_done_event()
+
+    if not config_request_event or not config_done_event:
+        log("GPS CFG Error: Could not get sync events for set_nav_rate.")
+        return False
 
     try:
-        lock_acquired = lock.acquire(True, 1.0)  # Blocking acquire with timeout
-        if not lock_acquired:
-            log("GPS CFG Error: Could not acquire UART lock for set_nav_rate")
-            return False  # Exit if lock not acquired
+        # --- Signal Reader ---
+        log("GPS CFG: Signaling reader task for set_nav_rate...")
+        config_request_event.set()
 
+        # --- Acquire Lock (Wait for reader to see event and release lock) ---
+        log(
+            "GPS CFG: Acquiring UART lock for set_nav_rate (waiting for reader release)..."
+        )
+        lock_acquired_by_config = lock.acquire(True, 1.5)  # Wait up to 1.5 sec
+        if not lock_acquired_by_config:
+            log(
+                "GPS CFG Error: Could not acquire UART lock for set_nav_rate (timeout waiting for reader release)."
+            )
+            config_request_event.clear()  # Clear request if we timed out
+            return False
+        log("GPS CFG: UART lock acquired.")
+
+        # --- Perform UART Operations (Lock Held) ---
         while retry_count < max_retries:
             log(
                 f"GPS CFG: Attempting to set nav rate to {rate_hz} Hz (try {retry_count+1}/{max_retries})"
@@ -276,24 +298,19 @@ def set_nav_rate(uart, lock, rate_hz: int, max_retries: int = 3):
 
             if rate_hz <= 0:
                 log("GPS CFG Error: Invalid rate_hz")
-                break  # Exit loop if rate is invalid
+                break  # Exit retry loop
 
-            # Calculate parameters
             meas_rate_ms = int(1000 / rate_hz)
-            nav_rate_cycles = 1  # Output a solution for every measurement
-            time_ref = 1  # 0=UTC, 1=GPS time (use GPS time for NAV-RATE)
-
-            # Payload: measRate (ms, u2), navRate (cycles, u2), timeRef (0=UTC, 1=GPS, u2)
+            nav_rate_cycles = 1
+            time_ref = 1
             payload = struct.pack("<HHH", meas_rate_ms, nav_rate_cycles, time_ref)
 
-            # Send CFG-RATE command
             if not _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_RATE, payload):
                 log("GPS CFG Error: Failed to send CFG-RATE command")
                 retry_count += 1
-                time.sleep_ms(100 * (retry_count + 1))  # Incremental backoff
+                time.sleep_ms(100 * (retry_count + 1))
                 continue
 
-            # Wait for ACK with longer timeout on retries
             response = _read_ubx_response(
                 uart,
                 UBX_CLASS_CFG,
@@ -304,28 +321,26 @@ def set_nav_rate(uart, lock, rate_hz: int, max_retries: int = 3):
             if response is None:
                 log("GPS CFG Error: Timeout waiting for CFG-RATE response")
                 retry_count += 1
-                time.sleep_ms(200 * (retry_count + 1))  # Incremental backoff
+                time.sleep_ms(200 * (retry_count + 1))
                 continue
-            elif not response:  # False means NAK received
-                log(
-                    "GPS CFG Error: No ACK received for CFG-RATE command (NAK received)"
-                )
+            elif not response:  # False means NAK
+                log("GPS CFG Error: NAK received for CFG-RATE command")
                 retry_count += 1
-                time.sleep_ms(200 * (retry_count + 1))  # Incremental backoff
+                time.sleep_ms(200 * (retry_count + 1))
                 continue
-            # True means ACK received
+            # True means ACK
 
             log("GPS CFG: CFG-RATE command acknowledged")
 
-            # Try to save configuration to non-volatile memory
-            save_success = _save_configuration(uart)
+            # Try to save configuration
+            # _save_configuration is called within the lock
+            save_success = _save_configuration(uart, lock)
             if not save_success:
                 log(
-                    "GPS CFG Warning: Failed to save configuration to non-volatile memory. Rate change might be temporary."
+                    "GPS CFG Warning: Failed to save configuration. Rate change might be temporary."
                 )
-                # Continue anyway, rate change might still work until power cycle
+                # Continue anyway
 
-            # Configuration successfully changed (and hopefully saved)
             result = True
             break  # Exit retry loop on success
 
@@ -333,8 +348,17 @@ def set_nav_rate(uart, lock, rate_hz: int, max_retries: int = 3):
             log(f"GPS CFG Error: Failed to set nav rate after {max_retries} attempts")
 
     finally:
-        if lock_acquired:
-            lock.release()  # Release only if acquired
+        # --- Signal Reader Done (BEFORE releasing lock) ---
+        log("GPS CFG: Signaling reader task done.")
+        config_done_event.set()
+
+        # --- Release Lock ---
+        if lock_acquired_by_config:
+            log("GPS CFG: Releasing UART lock.")
+            lock.release()
+        # --- Ensure request event is clear (in case of errors before reader saw it) ---
+        if config_request_event.is_set():
+            config_request_event.clear()
 
     return result
 
@@ -461,58 +485,82 @@ def get_nav_rate(uart: UART, lock):
         log("GPS CFG Error: UART or Lock not available for get_nav_rate")
         return None
 
-    lock_acquired = False
+    lock_acquired_by_config = False
     result_data = None
+    config_request_event = gps_reader.get_config_request_event()
+    config_done_event = gps_reader.get_config_done_event()
+
+    if not config_request_event or not config_done_event:
+        log("GPS CFG Error: Could not get sync events.")
+        return None
+
     try:
-        lock_acquired = lock.acquire(True, 1.0)
-        if not lock_acquired:
-            log("GPS CFG Error: Could not acquire UART lock for get_nav_rate")
-            return None
+        # --- Signal Reader ---
+        log("GPS CFG: Signaling reader task for get_nav_rate...")
+        config_request_event.set()
 
-        log("GPS CFG: Polling current nav rate (CFG-RATE)")
-        # Send poll request (empty payload)
-        if not _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_RATE):
-            log("GPS CFG Error: Failed to send poll request for CFG-RATE")
-            return None  # Exit if send fails
-
-        # Expect the CFG-RATE message itself as the response (with payload)
-        response_payload = _read_ubx_response(
-            uart,
-            expected_class_id=UBX_CLASS_CFG,
-            expected_msg_id=UBX_CFG_RATE,
-            timeout_ms=1500,  # Allow reasonable time for response
-            expect_payload=True,
+        # --- Acquire Lock (Wait for reader to see event and release lock) ---
+        log(
+            "GPS CFG: Acquiring UART lock for get_nav_rate (waiting for reader release)..."
         )
-
-        if response_payload is None:
-            log("GPS CFG Error: Timeout or error reading CFG-RATE response")
-            # result_data remains None
-        elif isinstance(response_payload, bytes) and len(response_payload) == 6:
-            # Payload: measRate (ms, u2), navRate (cycles, u2), timeRef (u2)
-            meas_rate_ms, nav_rate_cycles, time_ref = struct.unpack(
-                "<HHH", response_payload
-            )
-            rate_hz = 1000.0 / meas_rate_ms if meas_rate_ms > 0 else 0
-
+        lock_acquired_by_config = lock.acquire(True, 1.5)  # Wait up to 1.5 sec
+        if not lock_acquired_by_config:
             log(
-                f"GPS CFG RX: Parsed CFG-RATE - measRate={meas_rate_ms}ms ({rate_hz:.2f} Hz), navRate={nav_rate_cycles}, timeRef={time_ref}"
+                "GPS CFG Error: Could not acquire UART lock for get_nav_rate (timeout waiting for reader release)."
             )
-            result_data = {
-                "rate_hz": round(rate_hz, 2),
-                "meas_rate_ms": meas_rate_ms,
-                "nav_rate_cycles": nav_rate_cycles,
-                "time_ref": time_ref,
-            }
+            config_request_event.clear()  # Clear request if we timed out
+            return None
+        log("GPS CFG: UART lock acquired.")
+
+        # --- Perform UART Operations (Lock Held) ---
+        log("GPS CFG: Polling current nav rate (CFG-RATE)")
+        send_ok = _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_RATE)
+        if not send_ok:
+            log("GPS CFG Error: Failed to send poll request for CFG-RATE")
+            # result_data remains None
         else:
-            # Received something unexpected (e.g., ACK/NAK bool, or wrong payload)
-            log(
-                f"GPS CFG Error: Received unexpected response type or length for CFG-RATE poll. Type: {type(response_payload)}"
+            # Reader is waiting, now read response
+            response_payload = _read_ubx_response(
+                uart,
+                expected_class_id=UBX_CLASS_CFG,
+                expected_msg_id=UBX_CFG_RATE,
+                timeout_ms=1500,
+                expect_payload=True,
             )
-            # result_data remains None
+            # ... (parsing logic) ...
+            if response_payload is None:
+                log("GPS CFG Error: Timeout or error reading CFG-RATE response")
+            elif isinstance(response_payload, bytes) and len(response_payload) == 6:
+                meas_rate_ms, nav_rate_cycles, time_ref = struct.unpack(
+                    "<HHH", response_payload
+                )
+                rate_hz = 1000.0 / meas_rate_ms if meas_rate_ms > 0 else 0
+                log(
+                    f"GPS CFG RX: Parsed CFG-RATE - measRate={meas_rate_ms}ms ({rate_hz:.2f} Hz), navRate={nav_rate_cycles}, timeRef={time_ref}"
+                )
+                result_data = {  # Populate result
+                    "rate_hz": round(rate_hz, 2),
+                    "meas_rate_ms": meas_rate_ms,
+                    "nav_rate_cycles": nav_rate_cycles,
+                    "time_ref": time_ref,
+                }
+            else:
+                log(
+                    f"GPS CFG Error: Received unexpected response type or length for CFG-RATE poll. Type: {type(response_payload)}"
+                )
 
     finally:
-        if lock_acquired:
+        # --- Signal Reader Done (BEFORE releasing lock) ---
+        log("GPS CFG: Signaling reader task done.")
+        config_done_event.set()
+
+        # --- Release Lock ---
+        if lock_acquired_by_config:
+            log("GPS CFG: Releasing UART lock.")
             lock.release()
+        # --- Ensure request event is clear (in case of errors before reader saw it) ---
+        if config_request_event.is_set():
+            config_request_event.clear()
     return result_data  # Return the dictionary or None
 
 
@@ -524,39 +572,56 @@ def factory_reset(uart, lock):  # No longer async, lock type hint removed
 
     lock_acquired = False
     result = False  # Default result
-    try:
-        lock_acquired = lock.acquire(True, 1.0)  # Blocking acquire with timeout
-        if not lock_acquired:
-            log("GPS CFG Error: Could not acquire UART lock for factory_reset")
-            return False  # Exit if lock not acquired
-        log("GPS CFG: Attempting factory reset")
-        # Payload for CFG-CFG: clearMask (u4), saveMask (u4), loadMask (u4), deviceMask (u1)
-        # Masks specify which memory sections to affect (IO, MSG, INF, NAV, RXM, etc.)
-        # To reset everything to defaults: clear BBR+Flash, save nothing, load defaults.
-        # See u-blox protocol spec for CFG-CFG mask details.
-        # Example: Clear all, save nothing, load defaults for BBR and Flash
-        clear_mask = 0xFFFF  # Clear everything possible
-        save_mask = 0x0000  # Save nothing
-        load_mask = 0xFFFF  # Load defaults for everything possible
-        device_mask = 0b00000111  # Affects BBR, Flash, EEPROM (if present)
+    reader_stopped = False
 
-        # <IIIB = 3x unsigned int (4 bytes), 1x unsigned char (1 byte), little-endian
+    try:
+        # --- Stop Reader ---
+        log("GPS CFG: Stopping reader task for factory_reset...")
+        if not gps_reader.stop_gps_reader():
+            log("GPS CFG Warning: Failed to request reader task stop.")
+            # Continue cautiously
+
+        # --- Acquire Lock (Wait for reader to release it after cancellation) ---
+        log(
+            "GPS CFG: Acquiring UART lock for factory_reset (waiting for reader release)..."
+        )
+        lock_acquired = lock.acquire(True, 1.5)  # Wait up to 1.5 sec
+        if not lock_acquired:
+            log(
+                "GPS CFG Error: Could not acquire UART lock for factory_reset (timeout waiting for reader release)."
+            )
+            # Reader might still be running or stuck, attempt restart in finally
+            return False
+        log("GPS CFG: UART lock acquired.")
+        reader_stopped = True  # Assume reader stopped
+
+        # --- Perform UART Operations ---
+        log("GPS CFG: Attempting factory reset")
+        clear_mask = 0xFFFF
+        save_mask = 0x0000
+        load_mask = 0xFFFF
+        device_mask = 0b00000111
         payload = struct.pack("<IIIB", clear_mask, save_mask, load_mask, device_mask)
 
         success = _send_ubx_command(uart, UBX_CLASS_CFG, UBX_CFG_CFG, payload)
         if success:
-            # Factory reset takes time, module might restart. No ACK expected.
-            # Some modules might send an ACK, but it's not guaranteed after a reset.
             log("GPS CFG: Factory reset command sent. Module may restart. Waiting...")
-            # Wait a bit for module to potentially reset and start up
-            time.sleep_ms(1500)  # Increased wait time
+            # Wait for module to potentially reset and start up
+            # Note: No ACK check here as reset behavior varies.
+            time.sleep_ms(1500)
             result = True
         else:
             log("GPS CFG Error: Failed to send factory reset command")
             result = False
+
     finally:
+        # --- Release Lock ---
         if lock_acquired:
-            lock.release()  # Release only if acquired
+            log("GPS CFG: Releasing UART lock.")
+            lock.release()
+        # --- Restart Reader ---
+        log("GPS CFG: Restarting reader task after factory_reset.")
+        gps_reader.start_gps_reader()
     return result
 
 
@@ -570,6 +635,10 @@ def verify_nav_rate(uart, lock, expected_rate_hz: int, timeout_ms: int = 5000):
 
     lock_acquired = False
     result = False
+    # This function might also need the stop/start logic if the reader is running
+    # For simplicity, assuming it's called when reader is already stopped or
+    # doesn't interfere significantly over the measurement period.
+    # If issues arise, apply the same stop/start/lock pattern here.
 
     try:
         lock_acquired = lock.acquire(True, 1.0)

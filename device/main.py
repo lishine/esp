@@ -165,7 +165,7 @@ async def main():
         log("Starting sensor reader tasks...")  # Changed log.log to log
         # esc_telemetry.start_esc_reader()  # Starts the async task internally
         # ds18b20.start_ds18b20_reader()  # Starts the async task internally
-        # gps_reader.start_gps_reader()  # Starts the async task internally
+        gps_reader.start_gps_reader()  # Starts the async task internally
         log(
             "Sensor reader tasks started (if sensors initialized correctly)."
         )  # Changed log.log to log
