@@ -19,6 +19,132 @@ _MAX_QUEUE_SIZE = 200  # Max messages before dropping
 _WRITE_THRESHOLD = 10  # Number of messages to trigger a write
 _write_event = asyncio.Event()  # Event to signal the writer task
 
+# --- Reset Counter ---
+# --- Reset Counter ---
+
+_current_reset_count = None
+
+
+def _get_next_reset_counter():
+    """
+    Determines the next reset counter value by reading the last line
+    of the most recent log file.
+    Returns 1 if no logs are found, or if errors occur during reading/parsing.
+    """
+    global _current_reset_count
+    if _current_reset_count:
+        return _current_reset_count
+    latest_index = get_latest_log_index()
+    if latest_index < 0:
+        # get_latest_log_index handles printing errors if listing fails.
+        # It returns 0 if the directory exists but is empty.
+        # If it returns < 0, it means there was an error listing the directory.
+        # In either case (error or empty dir), we start with 1.
+        print(
+            "Log: No previous log files found or error listing logs. Starting reset count at 1."
+        )
+        _current_reset_count = 1
+        return 1
+
+    latest_filepath = _get_log_filepath(latest_index)
+    last_line_bytes = None
+    file_size = 0
+
+    try:
+        # Check file size first to handle empty files efficiently
+        try:
+            stat_info = uos.stat(latest_filepath)
+            file_size = stat_info[6]
+        except OSError as e:
+            if (
+                e.args[0] == 2
+            ):  # ENOENT - File not found (shouldn't happen if index >= 0, but check)
+                print(
+                    f"Log: Latest log file '{latest_filepath}' not found unexpectedly. Starting reset count at 1."
+                )
+                _current_reset_count = 1
+                return 1
+            else:
+                print(
+                    f"Log: Error stating latest log file '{latest_filepath}': {e}. Starting reset count at 1."
+                )
+                _current_reset_count = 1
+                return 1
+
+        if file_size == 0:
+            print(
+                f"Log: Latest log file '{latest_filepath}' is empty. Starting reset count at 1."
+            )
+            _current_reset_count = 1
+            return 1
+
+        # Read the last line (simple approach for MicroPython)
+        # Read chunks from the end might be complex without tell/seek guarantees
+        # Reading line by line is feasible given MAX_LOG_FILE_SIZE
+        with open(latest_filepath, "rb") as f:
+            # Read lines, keeping the last non-empty one
+            current_line = f.readline()
+            while current_line:
+                stripped_line = current_line.strip()
+                if stripped_line:  # Keep track of the last line with content
+                    last_line_bytes = (
+                        current_line  # Store the full line including newline if present
+                    )
+                current_line = f.readline()
+
+        if last_line_bytes is None:
+            print(
+                f"Log: Latest log file '{latest_filepath}' contained no valid lines. Starting reset count at 1."
+            )
+            _current_reset_count = 1
+            return 1
+
+        # Decode and parse the last line
+        try:
+            last_line_str = last_line_bytes.decode(
+                "utf-8"
+            ).strip()  # Strip leading/trailing whitespace
+            parts = last_line_str.split(" ", 1)  # Split only on the first space
+            if not parts:
+                raise ValueError(
+                    "Line is empty after stripping"
+                )  # Should not happen if last_line_bytes was not None
+
+            previous_count_str = parts[0]
+            previous_count = int(previous_count_str)
+            print(
+                f"Log: Found previous reset count {previous_count} in '{latest_filepath}'. Next count is {previous_count + 1}."
+            )
+            _current_reset_count = previous_count + 1
+            return _current_reset_count
+
+        except (ValueError, IndexError, UnicodeError) as e:
+            print(
+                f"Log: Error parsing reset count from last line of '{latest_filepath}': '{last_line_bytes}'. Error: {e}. Starting reset count at 1."
+            )
+            _current_reset_count = 1
+            return _current_reset_count
+        except Exception as e:
+            print(
+                f"Log: Unexpected error parsing last line of '{latest_filepath}': {e}. Starting reset count at 1."
+            )
+            _current_reset_count = 1
+            return _current_reset_count
+
+    except OSError as e:
+        print(
+            f"Log: Error reading latest log file '{latest_filepath}': {e}. Starting reset count at 1."
+        )
+        _current_reset_count = 1
+        return _current_reset_count
+    except Exception as e:
+        print(
+            f"Log: Unexpected error processing log file '{latest_filepath}': {e}. Starting reset count at 1."
+        )
+        _current_reset_count = 1
+        return _current_reset_count
+
+
 # --- Statistics (Rolling Window) ---
 _ROLLING_WINDOW_SIZE = 5
 _last_write_times_us = []  # Stores the last N write durations in microseconds
@@ -116,7 +242,8 @@ def log(*args, **kwargs):
         now[2], _MONTH_ABBR[now[1] - 1], now[0], now[3], now[4], now[5], ms
     )
     message = " ".join(str(arg) for arg in args)
-    output = f"{timestamp} {message}\n"
+    # Prepend the current reset count to the log message
+    output = f"{_get_next_reset_counter()} {timestamp} {message}\n"
 
     # 2. Always print to console
     print(output, end="", **kwargs)
