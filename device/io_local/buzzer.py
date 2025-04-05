@@ -1,10 +1,28 @@
+import json
+import gc
+import os
 from machine import Pin
 import uasyncio as asyncio
 from log import log
 import time
 
+# Use absolute imports from device root (since device/ maps to /)
+from server_framework import (
+    Response,
+    Request,
+    HTTP_OK,
+    HTTP_BAD_REQUEST,
+    HTTP_NOT_FOUND,
+    HTTP_INTERNAL_ERROR,
+    success_response,
+    error_response,
+    HTTPServer,
+)
+from fs import exists
+
+
 # --- Configuration ---
-BUZZER_PIN = 10  # GPIO10 (Pinout Table)
+BUZZER_PIN = 1
 
 # --- State ---
 buzzer_pin_obj = None  # Changed from buzzer_pwm
@@ -129,7 +147,164 @@ def stop_beep():
     set_buzzer(False)  # Ensure it's off
 
 
-# Example Usage (can be called from elsewhere)
-# init_buzzer()
-# asyncio.run(beep_async(200))
-# asyncio.run(play_sequence_async([(100, True), (50, False), (150, True)]))
+# --- HTTP Route Registration ---
+
+
+def register_buzzer_routes(app: HTTPServer):
+    """Registers the buzzer HTML and API routes using decorators."""
+    log("Registering buzzer routes...")
+
+    @app.route("/buzzer", methods=["GET"])
+    def serve_buzzer_page(request: Request):
+        """Serves the buzzer control HTML page."""
+        # Correct path for the device's root filesystem
+        html_file = "/io_local/buzzer.html"
+        # We need 'exists' here. Ensure it's imported or passed if necessary.
+        # For now, assume 'exists' is available in this scope via http_server.
+        # If not, the check needs adjustment or removal.
+        # Let's try importing it directly here as well for robustness.
+
+        if not exists(html_file):
+            log(f"Error: Buzzer HTML file not found at {html_file}")
+            body, status = error_response(
+                "Buzzer control page not found.", HTTP_NOT_FOUND
+            )
+            return Response(
+                body=body, status=status, headers={"Content-Type": "application/json"}
+            )
+
+        try:
+            with open(html_file, "r") as f:
+                content = f.read()
+            gc.collect()
+            return Response(
+                body=content,
+                status=HTTP_OK,
+                headers={"Content-Type": "text/html; charset=utf-8"},
+            )
+        except Exception as e:
+            log(f"Error reading {html_file}: {e}")
+            body, status = error_response(
+                f"Server error reading buzzer page: {str(e)}", HTTP_INTERNAL_ERROR
+            )
+            return Response(
+                body=body, status=status, headers={"Content-Type": "application/json"}
+            )
+
+    @app.route("/api/buzzer", methods=["POST"])
+    def handle_buzzer_api(request: Request):  # Changed from async def to def
+        """Handles API commands for the buzzer."""
+        try:
+            # Check if body is bytes and decode if necessary
+            if isinstance(request.body, bytes):
+                try:
+                    body_str = request.body.decode("utf-8")
+                except UnicodeDecodeError:
+                    body, status = error_response(
+                        "Invalid UTF-8 data in request body", HTTP_BAD_REQUEST
+                    )
+                    return Response(
+                        body=body,
+                        status=status,
+                        headers={"Content-Type": "application/json"},
+                    )
+            elif isinstance(request.body, str):
+                body_str = request.body
+            elif request.body is None:
+                body_str = "{}"  # Default to empty JSON object if body is None
+            else:
+                log(f"Warning: Unexpected request body type: {type(request.body)}")
+                body_str = str(request.body)  # Attempt conversion
+
+            data = json.loads(body_str)  # Use ujson's loads
+            command = data.get("command")
+
+            log(f"Buzzer API command: {command}, Data: {data}")
+
+            if command == "set":
+                state = data.get("state", False)
+                set_buzzer(bool(state))
+                body, status = success_response({"message": f"Buzzer set to {state}"})
+
+            elif command == "beep":
+                duration = data.get("duration_ms", 100)
+                try:
+                    duration_int = int(duration)
+                    if duration_int <= 0:
+                        raise ValueError("Duration must be positive")
+                    # Don't block the server, run beep asynchronously
+                    asyncio.create_task(beep_async(duration_int))
+                    body, status = success_response(
+                        {"message": f"Beep async ({duration_int}ms) started"}
+                    )
+                except ValueError as e:
+                    body, status = error_response(
+                        f"Invalid duration_ms value: {e}", HTTP_BAD_REQUEST
+                    )
+
+            elif command == "sequence":
+                sequence_str = data.get("data", "")
+                sequence_list = []
+                try:
+                    parts = sequence_str.split(",")
+                    for part in parts:
+                        part = part.strip()
+                        if not part:
+                            continue
+                        duration_str, state_str = part.split(":")
+                        duration_ms = int(duration_str.strip())
+                        state_val = int(state_str.strip())
+                        if state_val not in [0, 1]:
+                            raise ValueError("State must be 0 or 1")
+                        if duration_ms <= 0:
+                            raise ValueError("Duration must be positive")
+                        state = bool(state_val)
+                        sequence_list.append((duration_ms, state))
+
+                    if not sequence_list:
+                        raise ValueError("Empty sequence data")
+
+                    # Don't block the server, run sequence asynchronously
+                    asyncio.create_task(play_sequence_async(sequence_list))
+                    body, status = success_response(
+                        {"message": "Sequence async started"}
+                    )
+                except Exception as e:
+                    log(f"Error parsing sequence string '{sequence_str}': {e}")
+                    body, status = error_response(
+                        f"Invalid sequence format: {e}", HTTP_BAD_REQUEST
+                    )
+
+            elif command == "stop":
+                stop_beep()
+                body, status = success_response({"message": "Buzzer stopped"})
+
+            else:
+                body, status = error_response(
+                    f"Unknown command: {command}", HTTP_BAD_REQUEST
+                )
+
+            # Ensure body is a string or bytes before passing to Response
+            if not isinstance(body, (str, bytes)):
+                body = str(body)
+
+            return Response(
+                body=body, status=status, headers={"Content-Type": "application/json"}
+            )
+
+        except ValueError as e:  # MicroPython ujson raises ValueError for decode errors
+            log(f"Error: Invalid JSON received in buzzer API: {e}")
+            body, status = error_response(f"Invalid JSON data: {e}", HTTP_BAD_REQUEST)
+            return Response(
+                body=body, status=status, headers={"Content-Type": "application/json"}
+            )
+        except Exception as e:
+            log(f"Error in buzzer API: {e}")
+            body, status = error_response(
+                f"Server error: {str(e)}", HTTP_INTERNAL_ERROR
+            )
+            return Response(
+                body=body, status=status, headers={"Content-Type": "application/json"}
+            )
+
+    log("Buzzer routes registered using decorators.")

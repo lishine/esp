@@ -40,6 +40,6 @@ def init_io():
     # ds18b20.init_ds18b20()
     # ina226.init_ina226() # Commented out as requested
     gps_reader.init_gps_reader()
-    # buzzer.init_buzzer()
+    buzzer.init_buzzer()
 
     log("IO initialization complete.")  # Changed log.log to log

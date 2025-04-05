@@ -33,6 +33,8 @@ from netutils import get_client_ip, get_device_info
 from upload import handle_upload
 
 import io_local.gps_config as gps_config
+from io_local.buzzer import register_buzzer_routes
+
 
 HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
@@ -547,9 +549,11 @@ def index(request: Request):
     return Response.redirect("/settings")
 
 
+# --- Register component routes ---
 from captive import register_captive_portal_routes
 
 register_captive_portal_routes(app)
+register_buzzer_routes(app)
 
 
 # --- End Added Routes ---
