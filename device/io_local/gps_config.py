@@ -454,6 +454,35 @@ def handle_gps_settings_data(request: Request):
                     headers={"Content-Type": "application/json"},
                 )
 
+        # --- Add Factory Reset Handling ---
+        elif action == "factory_reset":
+            log("GPS Settings API: Received factory_reset request")
+            success = factory_reset(uart, lock)  # Call existing function
+            if success:
+                log("GPS Settings API: factory_reset successful")
+                return Response(
+                    body=json.dumps(
+                        {
+                            "success": True,
+                            "message": "Factory reset command sent successfully.",
+                        }
+                    ),
+                    headers={"Content-Type": "application/json"},
+                )
+            else:
+                log("GPS Settings API Error: factory_reset failed")
+                return Response(
+                    body=json.dumps(
+                        {
+                            "success": False,
+                            "message": "Failed to send factory reset command to GPS.",
+                        }
+                    ),
+                    status=500,
+                    headers={"Content-Type": "application/json"},
+                )
+        # --- End Factory Reset Handling ---
+
         else:
             log(f"GPS Settings API Error: Unknown action received: {action}")
             return Response(
@@ -570,32 +599,34 @@ def factory_reset(uart, lock):  # No longer async, lock type hint removed
         log("GPS CFG Error: UART or Lock not available for factory_reset")
         return False
 
-    lock_acquired = False
+    lock_acquired_by_config = False
     result = False  # Default result
-    reader_stopped = False
+    config_request_event = gps_reader.get_config_request_event()
+    config_done_event = gps_reader.get_config_done_event()
+
+    if not config_request_event or not config_done_event:
+        log("GPS CFG Error: Could not get sync events for factory_reset.")
+        return False
 
     try:
-        # --- Stop Reader ---
-        log("GPS CFG: Stopping reader task for factory_reset...")
-        if not gps_reader.stop_gps_reader():
-            log("GPS CFG Warning: Failed to request reader task stop.")
-            # Continue cautiously
+        # --- Signal Reader ---
+        log("GPS CFG: Signaling reader task for factory_reset...")
+        config_request_event.set()
 
-        # --- Acquire Lock (Wait for reader to release it after cancellation) ---
+        # --- Acquire Lock (Wait for reader to see event and release lock) ---
         log(
             "GPS CFG: Acquiring UART lock for factory_reset (waiting for reader release)..."
         )
-        lock_acquired = lock.acquire(True, 1.5)  # Wait up to 1.5 sec
-        if not lock_acquired:
+        lock_acquired_by_config = lock.acquire(True, 1.5)  # Wait up to 1.5 sec
+        if not lock_acquired_by_config:
             log(
                 "GPS CFG Error: Could not acquire UART lock for factory_reset (timeout waiting for reader release)."
             )
-            # Reader might still be running or stuck, attempt restart in finally
+            config_request_event.clear()  # Clear request if we timed out
             return False
         log("GPS CFG: UART lock acquired.")
-        reader_stopped = True  # Assume reader stopped
 
-        # --- Perform UART Operations ---
+        # --- Perform UART Operations (Lock Held) ---
         log("GPS CFG: Attempting factory reset")
         clear_mask = 0xFFFF
         save_mask = 0x0000
@@ -615,13 +646,17 @@ def factory_reset(uart, lock):  # No longer async, lock type hint removed
             result = False
 
     finally:
+        # --- Signal Reader Done (BEFORE releasing lock) ---
+        log("GPS CFG: Signaling reader task done.")
+        config_done_event.set()
+
         # --- Release Lock ---
-        if lock_acquired:
+        if lock_acquired_by_config:
             log("GPS CFG: Releasing UART lock.")
             lock.release()
-        # --- Restart Reader ---
-        log("GPS CFG: Restarting reader task after factory_reset.")
-        gps_reader.start_gps_reader()
+        # --- Ensure request event is clear (in case of errors before reader saw it) ---
+        if config_request_event.is_set():
+            config_request_event.clear()
     return result
 
 
@@ -635,10 +670,10 @@ def verify_nav_rate(uart, lock, expected_rate_hz: int, timeout_ms: int = 5000):
 
     lock_acquired = False
     result = False
-    # This function might also need the stop/start logic if the reader is running
+    # This function might also need the event/lock logic if the reader is running
     # For simplicity, assuming it's called when reader is already stopped or
     # doesn't interfere significantly over the measurement period.
-    # If issues arise, apply the same stop/start/lock pattern here.
+    # If issues arise, apply the same pattern here.
 
     try:
         lock_acquired = lock.acquire(True, 1.0)

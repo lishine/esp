@@ -271,7 +271,7 @@ async def _read_gps_task():
                     lock_acquired_by_reader = False
 
             # This is essential in order not to get high CPU in a async reader
-            await asyncio.sleep_ms(5)  # Yield/short delay if lock held
+            await asyncio.sleep_ms(25)
 
     except asyncio.CancelledError:
         log("GPS Reader: Task cancelled.")

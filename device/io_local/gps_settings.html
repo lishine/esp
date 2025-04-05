@@ -51,6 +51,14 @@
         <button id="setRateBtn">Set Rate</button>
     </div>
 
+    <!-- Factory Reset Section -->
+    <div class="setting" style="border-color: #ffcccc;">
+        <label>Factory Reset:</label>
+        <button id="factoryResetBtn" style="background-color: #ffdddd; color: #a00;">Reset GPS to Defaults</button>
+        <p style="font-size: 0.8em; color: #666;">Warning: This will erase all custom configurations on the GPS module.
+        </p>
+    </div>
+
     <div id="status"></div>
 
     <script>
@@ -58,6 +66,7 @@
         const setRateBtn = document.getElementById('setRateBtn');
         const currentRateSpan = document.getElementById('currentRate');
         const newRateInput = document.getElementById('newRate');
+        const factoryResetBtn = document.getElementById('factoryResetBtn'); // Get reset button
         const statusDiv = document.getElementById('status');
 
         function showStatus(message, isError = false) {
@@ -114,6 +123,36 @@
                 }
             } catch (error) {
                 console.error('Error setting rate:', error);
+                showStatus(`Error: ${error.message}`, true);
+            }
+        });
+
+        // --- Factory Reset Button Event Listener ---
+        factoryResetBtn.addEventListener('click', async () => {
+            // Confirmation Dialog
+            if (!confirm('Are you sure you want to reset the GPS module to factory defaults? All custom settings will be lost.')) {
+                showStatus('Factory reset cancelled.', false);
+                return;
+            }
+
+            statusDiv.textContent = 'Sending factory reset command...';
+            statusDiv.style.color = 'orange';
+            try {
+                const response = await fetch('/api/gps-settings/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'factory_reset' })
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    showStatus('Factory reset command sent successfully. Module may restart.', false);
+                    // Clear current rate display as it's likely reset
+                    currentRateSpan.textContent = '--';
+                } else {
+                    throw new Error(data.message || 'Failed to send factory reset command.');
+                }
+            } catch (error) {
+                console.error('Error sending factory reset:', error);
                 showStatus(`Error: ${error.message}`, true);
             }
         });
