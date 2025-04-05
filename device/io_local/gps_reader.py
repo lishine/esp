@@ -1,9 +1,12 @@
-from machine import UART, Pin
+from machine import UART, Pin, RTC  # Added RTC
 import uasyncio as asyncio
 import time
+import machine  # Added machine
 
 # from _thread import allocate_lock # REMOVED
 from log import log
+
+_JERUSALEM_TZ_OFFSET_HOURS = 3  # Jerusalem Timezone Offset (UTC+3 for IDT)
 
 
 # --- Configuration ---
@@ -29,6 +32,8 @@ _reader_enabled_event.set()  # Start enabled
 _last_valid_data_time = 0  # Timestamp of the last valid NMEA sentence
 _gps_processing_time_us_sum = 0
 _gps_processed_sentence_count = 0
+_rtc_needs_initial_sync = True  # Flag to track if RTC needs first sync before fix
+_rtc_synced_by_fix = False  # Flag to track if RTC has been synced by a fix
 
 
 # --- Getter Functions ---
@@ -95,39 +100,131 @@ def _parse_gpgga(parts):
 
 def _parse_gprmc(parts):
     """Parses the GPRMC sentence for fix status, time, date, lat, lon."""
-    global gps_fix, gps_latitude, gps_longitude, gps_time_utc, gps_date
-    try:
-        status = parts[2] if len(parts) > 2 else "V"
-        gps_fix = status == "A"
+    global gps_fix, gps_latitude, gps_longitude, gps_time_utc, gps_date, _rtc_needs_initial_sync, _rtc_synced_by_fix
+    gps_epoch = None  # Initialize gps_epoch for this scope
 
+    try:
+        # --- Basic Fix Status ---
+        status = parts[2] if len(parts) > 2 else "V"
+        current_fix_status = status == "A"
+        gps_fix = current_fix_status  # Update global fix status immediately
+
+        # --- Early Exit if RTC is already synced by a fix ---
+        if _rtc_synced_by_fix:
+            # Only update location if we have a fix, then return
+            if gps_fix:
+                try:
+                    lat = _parse_nmea_degrees(parts[3])
+                    if parts[4] == "S":
+                        lat = -lat
+                    gps_latitude = lat
+                    lon = _parse_nmea_degrees(parts[5])
+                    if parts[6] == "W":
+                        lon = -lon
+                    gps_longitude = lon
+                except (ValueError, IndexError) as e:
+                    log(f"Error parsing Lat/Lon in GPRMC (post-sync): {e}")
+            return  # Skip all time processing
+
+        # --- Time Processing (Only if RTC not yet synced by fix) ---
+        time_str = parts[1]
+        date_str = parts[9]
+        parsed_epoch_this_run = False  # Track if we parsed time in this specific call
+
+        # Only parse time if date/time strings are valid AND we still need an initial sync
+        # OR if we have a fix (to perform the fix-based sync)
+        if (
+            len(time_str) >= 6
+            and len(date_str) == 6
+            and (_rtc_needs_initial_sync or gps_fix)
+        ):
+            # Raw time log removed as requested
+            # if _rtc_needs_initial_sync:
+            #      log(f"GPS Raw UTC: {date_str} {time_str}")
+
+            try:
+                # Parse to Epoch
+                hh = int(time_str[0:2])
+                mm = int(time_str[2:4])
+                ss = int(float(time_str[4:]))
+                dd = int(date_str[0:2])
+                mo = int(date_str[2:4])
+                yy = int(date_str[4:6]) + 2000
+                utc_tuple = (yy, mo, dd, hh, mm, ss, 0, 0)
+                gps_epoch = time.mktime(utc_tuple)  # type: ignore
+                parsed_epoch_this_run = True
+
+                # Update global time/date representations (only if needed pre-sync)
+                if _rtc_needs_initial_sync:
+                    gps_time_utc = (hh, mm, ss)
+                    gps_date = (dd, mo, yy)
+
+                # (c) Attempt Initial Sync (if needed and epoch is valid)
+                if _rtc_needs_initial_sync and gps_epoch > time.time():
+                    try:
+                        rtc = machine.RTC()
+                        rtc_tuple = time.gmtime(gps_epoch)
+                        rtc.datetime(rtc_tuple)
+                        _rtc_needs_initial_sync = (
+                            False  # Mark initial sync attempt done
+                        )
+                        log_time_str = f"{rtc_tuple[0]}-{rtc_tuple[1]:02d}-{rtc_tuple[2]:02d} {rtc_tuple[4]:02d}:{rtc_tuple[5]:02d}:{rtc_tuple[6]:02d}"
+                        log(f"RTC updated (initial sync): {log_time_str} UTC")
+                        # NOTE: We don't set _rtc_synced_by_fix here
+                    except Exception as e:
+                        log(f"Error setting RTC during initial sync: {e}")
+
+                # (e) Calculate Jerusalem Time (only if needed pre-sync, logging removed)
+                if _rtc_needs_initial_sync:
+                    # Calculation might still be needed if the value were used elsewhere,
+                    # but logging is removed.
+                    # jerusalem_epoch = gps_epoch + (_JERUSALEM_TZ_OFFSET_HOURS * 3600)
+                    # jerusalem_time_tuple = time.gmtime(jerusalem_epoch)
+                    # log(f"Calculated Jerusalem Time: {jerusalem_time_tuple}")
+                    pass  # Calculation and logging removed
+
+            except (ValueError, IndexError, TypeError) as e:
+                log(
+                    f"Error parsing GPS date/time: {e}, Date: '{date_str}', Time: '{time_str}'"
+                )
+                gps_epoch = None  # Ensure gps_epoch is None if parsing failed
+
+        # --- Update RTC on Fix (The definitive sync) ---
+        if gps_fix and parsed_epoch_this_run and gps_epoch is not None:
+            try:
+                rtc = machine.RTC()
+                rtc_tuple = time.gmtime(gps_epoch)
+                rtc.datetime(rtc_tuple)
+                # --- This is the crucial part ---
+                if not _rtc_synced_by_fix:  # Log only the first time we sync via fix
+                    log_time_str = f"{rtc_tuple[0]}-{rtc_tuple[1]:02d}-{rtc_tuple[2]:02d} {rtc_tuple[4]:02d}:{rtc_tuple[5]:02d}:{rtc_tuple[6]:02d}"
+                    log(f"RTC updated (fix acquired): {log_time_str} UTC")
+                _rtc_needs_initial_sync = False  # Ensure this is false
+                _rtc_synced_by_fix = True  # Mark RTC as definitively synced
+                # --- Stop further time processing ---
+
+            except Exception as e:
+                log(f"Error setting RTC on fix: {e}")
+                # Should we retry? For now, we don't set _rtc_synced_by_fix on error
+
+        # --- Update Location (only if fix is current) ---
         if gps_fix:
-            time_str = parts[1]
-            if len(time_str) >= 6:
-                gps_time_utc = (
-                    int(time_str[0:2]),
-                    int(time_str[2:4]),
-                    int(float(time_str[4:])),
-                )
-            lat = _parse_nmea_degrees(parts[3])
-            if parts[4] == "S":
-                lat = -lat
-            gps_latitude = lat
-            lon = _parse_nmea_degrees(parts[5])
-            if parts[6] == "W":
-                lon = -lon
-            gps_longitude = lon
-            date_str = parts[9]
-            if len(date_str) == 6:
-                gps_date = (
-                    int(date_str[0:2]),
-                    int(date_str[2:4]),
-                    int(date_str[4:6]) + 2000,
-                )
-        # else: Keep last known good values if fix lost temporarily
+            try:
+                lat = _parse_nmea_degrees(parts[3])
+                if parts[4] == "S":
+                    lat = -lat
+                gps_latitude = lat
+                lon = _parse_nmea_degrees(parts[5])
+                if parts[6] == "W":
+                    lon = -lon
+                gps_longitude = lon
+            except (ValueError, IndexError) as e:
+                log(f"Error parsing Lat/Lon in GPRMC: {e}")
+        # else: If no fix, don't update lat/lon
 
     except (ValueError, IndexError) as e:
-        log(f"Error parsing GPRMC: {e}, parts: {parts}")
-        gps_fix = False
+        log(f"Critical Error parsing GPRMC: {e}, parts: {parts}")
+        gps_fix = False  # Ensure fix is false on major parsing error
 
 
 # --- Initialization ---
