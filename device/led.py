@@ -20,20 +20,12 @@ _continuous_on_percentage = 0.5  # Float: percentage of interval LED is ON (defa
 async def led_task():
     """Main asynchronous task to control the LED based on the current mode."""
     global _led_mode, _sequence_params, _continuous_interval_ms, _continuous_on_percentage
-    print(
-        "led_task",
-        _led_mode,
-        _sequence_params,
-        _continuous_interval_ms,
-        _continuous_on_percentage,
-    )
     while True:
         current_mode = _led_mode  # Cache mode for this iteration
 
         if current_mode == "SEQUENCE":
             if _sequence_params:
                 count, on_time_ms, off_time_ms = _sequence_params
-                # print(f"LED Sequence: count={count}, on={on_time_ms}, off={off_time_ms}")
                 for _ in range(count):
                     # Check if mode changed mid-sequence
                     if _led_mode != "SEQUENCE":
@@ -114,7 +106,6 @@ def blink_sequence(count=3, on_time=0.1, off_time=0.1):
         off_time (float): Time LED stays off in seconds.
     """
     global _led_mode, _sequence_params, _continuous_interval_ms
-    # print(f"Setting LED Sequence: count={count}, on={on_time}, off={off_time}")
     _led_mode = "SEQUENCE"
     _sequence_params = (count, int(on_time * 1000), int(off_time * 1000))
     _continuous_interval_ms = None
@@ -127,9 +118,7 @@ def start_continuous_blink(interval=1.0, on_percentage=0.5):
         interval (float): Time in seconds for a complete on-off cycle.
         on_percentage (float): Percentage of the interval the LED is ON (0.0 to 1.0).
     """
-    print("start_continuous_blink")
     global _led_mode, _sequence_params, _continuous_interval_ms, _continuous_on_percentage
-    # print(f"Setting LED Continuous: interval={interval}, on_percentage={on_percentage}")
     _led_mode = "CONTINUOUS"
     _continuous_interval_ms = int(interval * 1000)
     _continuous_on_percentage = max(
@@ -141,7 +130,6 @@ def start_continuous_blink(interval=1.0, on_percentage=0.5):
 def stop_continuous_blink():
     """Stop any LED blinking (sequence or continuous) and turn LED off."""
     global _led_mode, _sequence_params, _continuous_interval_ms
-    # print("Setting LED IDLE")
     _led_mode = "IDLE"
     _sequence_params = None
     _continuous_interval_ms = None

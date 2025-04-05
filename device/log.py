@@ -9,7 +9,7 @@ LOG_DIR = "logs"
 LOG_FILE_PREFIX = "log_"
 LOG_FILE_SUFFIX = ".txt"
 MAX_LOG_FILE_SIZE = 10000  # Bytes
-MAX_LOG_FILES = 100  # Limit the number of log files
+MAX_LOG_FILES = 200  # Limit the number of log files
 
 # --- Module State ---
 _current_log_index = -1  # Uninitialized by default, set by writer task

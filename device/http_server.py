@@ -18,7 +18,7 @@ from wifi import (
     is_connected,
     get_ip,
     save_wifi_config,
-    wifi_config,
+    load_wifi_config,  # Import the function instead of the variable
     get_current_network,
 )
 
@@ -296,11 +296,13 @@ def list_files_json(request):
 def get_settings_data(request):
     try:
         current_network = get_current_network()
+        # Load the config directly when the API is called
+        loaded_config = load_wifi_config()
         data = {
             "is_connected": is_connected(),
             "ip_address": get_ip(),
             "current_ssid": current_network["ssid"] if current_network else "",
-            "networks": wifi_config.get(
+            "networks": loaded_config.get(
                 "networks",
                 [{"ssid": "", "password": ""}, {"ssid": "", "password": ""}],
             ),

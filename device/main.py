@@ -3,8 +3,7 @@ import sys
 import esp32  # Import esp32 module for heap info
 import gc  # Import garbage collector module for mem_free
 import time  # For ticks_ms, ticks_diff, sleep
-
-# import _thread # No longer using threads for server
+import _thread  # Import the thread module
 
 
 # Core project modules
@@ -13,7 +12,8 @@ from log import log, _log_writer_task
 # import server # Using server1 now
 # from server_minimal import app as minimal_app # No longer using minimal server
 import led
-import wifi
+import wifi  # Imports module with thread manager and wifi_state
+from wifi import wifi_state, wifi_state_lock  # Import shared state and lock
 import ap
 
 # IO related modules
@@ -47,15 +47,6 @@ prev_gps_count = 0
 # to find the maximum increments possible when fully idle.
 # Adjust this value based on your observation.
 MAX_IDLE_INCREMENTS_PER_SEC = 4829  # Example value, needs calibration!
-
-# time.sleep(3)
-# print(1)
-# time.sleep(3)
-# print(1)
-# time.sleep(3)
-# print(1)
-# time.sleep(3)
-# print(1)
 
 
 async def idle_task():
@@ -126,6 +117,49 @@ async def measure_cpu():  # Note: This task now depends on gps_reader being init
         prev_gps_count = current_gps_count
 
 
+# --- WiFi LED Status Task ---
+async def manage_wifi_led_status():
+    """Monitors wifi_state and updates LED accordingly."""
+    log("Starting WiFi LED Status Monitor task...")
+    last_led_state = None
+    while True:
+        try:
+            with wifi_state_lock:
+                current_led_state = wifi_state.get("led_state", "disconnected")
+
+            if current_led_state != last_led_state:
+                log(f"WiFi LED state changed: {last_led_state} -> {current_led_state}")
+                if current_led_state == "connected":
+                    # Slow blink for connected state
+                    led.start_continuous_blink(interval=3.0, on_percentage=0.01)
+                elif current_led_state == "connecting":
+                    # Faster blink for connecting state
+                    led.start_continuous_blink(interval=0.5, on_percentage=0.5)
+                elif current_led_state == "error":
+                    # Specific error blink sequence
+                    led.blink_sequence(count=5, on_time=0.5, off_time=0.5)
+                    # After sequence, maybe go back to disconnected state visually?
+                    # Or keep error blink? For now, sequence runs once.
+                    # Consider stopping continuous if it was running.
+                    led.stop_continuous_blink()  # Stop any previous continuous blink
+                elif current_led_state == "disconnected":
+                    # Ensure LED is off (or default state)
+                    led.stop_continuous_blink()
+                else:
+                    # Unknown state, default to off
+                    led.stop_continuous_blink()
+
+                last_led_state = current_led_state
+
+        except Exception as e:
+            log(f"Error in manage_wifi_led_status: {e}")
+            # Avoid fast loop on error
+            await asyncio.sleep(5)
+
+        # Check state relatively frequently but yield control
+        await asyncio.sleep_ms(200)
+
+
 # --- Removed thread logic ---
 
 
@@ -156,10 +190,9 @@ async def main():
         asyncio.create_task(led.led_task())
         log("LED task created.")  # Changed log.log to log
 
-        log("Creating WiFi management task...")  # Changed log.log to log
-        asyncio.create_task(wifi.manage_wifi_connection())
-        log("WiFi management task created.")  # Changed log.log to log
-        # Removed duplicate log message
+        log("Starting WiFi management thread...")
+        _thread.start_new_thread(wifi.wifi_thread_manager, ())
+        log("WiFi management thread started.")
 
         # Start sensor reader tasks (if they have one)
         log("Starting sensor reader tasks...")  # Changed log.log to log
@@ -189,6 +222,10 @@ async def main():
         asyncio.create_task(idle_task())
         asyncio.create_task(measure_cpu())
         log("CPU load measurement tasks created.")
+
+        log("Creating WiFi LED Status Monitor task...")
+        asyncio.create_task(manage_wifi_led_status())
+        log("WiFi LED Status Monitor task created.")
 
         # Keep the main task running indefinitely so background tasks continue
         # This is primarily needed to keep the logger_task alive
