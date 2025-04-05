@@ -49,6 +49,7 @@ show_usage() {
     echo ""
     echo "Commands:"
     echo "  reset                  - Reset the ESP32 device"
+    echo "  repl                   - Start mpremote REPL (retries on error)"
     echo "  log                    - View device logs"
     echo "  log-clear              - Clear the log file on the device"
     echo "  log-add-test           - Add 1000 test log entries"
@@ -79,6 +80,7 @@ show_usage() {
     echo "  ./run sync"
     echo "  ./run sync --force --py"
     echo "  ./run --mpremote sync"
+    echo "  ./run repl"
 }
 
 # --- Command Dispatch ---
@@ -120,6 +122,39 @@ case "$COMMAND" in
           echo "Resetting ESP32 at $ESP_IP..."
           make_request "http://$ESP_IP/reset" "POST" # make_request sourced
           echo "Reset command sent."
+        fi
+        ;;
+
+  repl)
+        check_sync_needed
+        echo "Starting mpremote REPL..."
+        max_tries=10
+        tries=1
+        success=false
+        
+        while [ $tries -le $max_tries ] && [ "$success" = false ]; do
+            echo "Attempt $tries of $max_tries"
+            mpremote repl
+            exit_code=$?
+            
+            if [ $exit_code -eq 0 ]; then
+                success=true
+                echo "REPL session ended successfully."
+            else
+                echo "REPL connection failed (exit code: $exit_code)"
+                if [ $tries -lt $max_tries ]; then
+                    echo "Retrying in 1 second..."
+                    sleep 1
+                else
+                    echo "Maximum retry attempts reached."
+                fi
+                tries=$((tries + 1))
+            fi
+        done
+        
+        if [ "$success" = false ]; then
+            echo "Failed to establish REPL connection after $max_tries attempts." >&2
+            exit 1
         fi
         ;;
 
@@ -328,4 +363,4 @@ case "$COMMAND" in
     ;;
 esac
 
-exit 0 # Default exit code for successful command execution]]>
+exit 0 # Default exit code for successful command execution
