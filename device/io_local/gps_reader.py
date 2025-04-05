@@ -22,10 +22,12 @@ gps_fix = False
 gps_latitude = 0.0  # Decimal degrees
 gps_longitude = 0.0  # Decimal degrees
 gps_altitude = 0.0  # Meters
-gps_satellites = 0
-gps_time_utc = (0, 0, 0)  # (hour, minute, second)
-gps_date = (0, 0, 0)  # (day, month, year)
+gps_satellites = 0  # Active satellites used in fix (from GPGGA)
+gps_speed_knots = 0.0  # Speed over ground in knots (from GPRMC)
+gps_satellites_seen = 0  # Satellites in view (from GPGSV)
+# gps_time_utc and gps_date are no longer primary state, managed internally for RTC sync
 _reader_task = None
+_logger_task = None  # Task handle for the logger coroutine
 # _uart_lock = allocate_lock() # REMOVED
 _reader_enabled_event = asyncio.Event()  # New: Controls reader activity
 _reader_enabled_event.set()  # Start enabled
@@ -34,6 +36,10 @@ _gps_processing_time_us_sum = 0
 _gps_processed_sentence_count = 0
 _rtc_needs_initial_sync = True  # Flag to track if RTC needs first sync before fix
 _rtc_synced_by_fix = False  # Flag to track if RTC has been synced by a fix
+_seen_satellite_prns = set()  # Internal set to track unique PRNs seen in a GSV cycle
+
+
+# --- Getter Functions ---
 
 
 # --- Getter Functions ---
@@ -68,46 +74,51 @@ def _parse_nmea_degrees(term):
 # --- NMEA Sentence Parsers ---
 def _parse_gpgga(parts):
     """Parses the GPGGA sentence for fix, position, altitude, and satellite count."""
-    global gps_fix, gps_latitude, gps_longitude, gps_altitude, gps_satellites, gps_time_utc
+    # Parses GPGGA for Altitude and Active Satellite count.
+    # Also resets the seen satellite set.
+    global gps_fix, gps_altitude, gps_satellites, _seen_satellite_prns  # Removed lat/lon globals
     try:
+        # Reset seen satellites at the start of a potential new cycle
+        _seen_satellite_prns.clear()
+
         fix_quality = int(parts[6]) if parts[6] else 0
-        gps_fix = fix_quality > 0
-        gps_satellites = int(parts[7]) if len(parts) > 7 and parts[7] else 0
+        current_fix_status = fix_quality > 0
+        gps_satellites = (
+            int(parts[7]) if len(parts) > 7 and parts[7] else 0
+        )  # Active satellites
+
+        # Update global fix status based on GGA as well
+        gps_fix = current_fix_status
 
         if gps_fix:
-            time_str = parts[1]
-            if len(time_str) >= 6:
-                gps_time_utc = (
-                    int(time_str[0:2]),
-                    int(time_str[2:4]),
-                    int(float(time_str[4:])),
-                )
-            lat = _parse_nmea_degrees(parts[2])
-            if parts[3] == "S":
-                lat = -lat
-            gps_latitude = lat
-            lon = _parse_nmea_degrees(parts[4])
-            if parts[5] == "W":
-                lon = -lon
-            gps_longitude = lon
+            # Update altitude here
             gps_altitude = float(parts[9]) if len(parts) > 9 and parts[9] else 0.0
-        # else: Keep last known good values if fix lost temporarily
+        # else: Keep last known good altitude
 
     except (ValueError, IndexError) as e:
         log(f"Error parsing GPGGA: {e}, parts: {parts}")
-        gps_fix = False
+        # Don't set global gps_fix to False here
 
 
 def _parse_gprmc(parts):
-    """Parses the GPRMC sentence for fix status, time, date, lat, lon."""
-    global gps_fix, gps_latitude, gps_longitude, gps_time_utc, gps_date, _rtc_needs_initial_sync, _rtc_synced_by_fix
-    gps_epoch = None  # Initialize gps_epoch for this scope
+    """Parses GPRMC for Lat, Lon, Speed, Status, and performs RTC sync logic."""
+    global gps_fix, gps_latitude, gps_longitude, gps_speed_knots, _rtc_needs_initial_sync, _rtc_synced_by_fix, _seen_satellite_prns
+    gps_epoch = None  # Initialize for this scope
 
     try:
-        # --- Basic Fix Status ---
+        # Reset seen satellites at the start of a potential new cycle
+        _seen_satellite_prns.clear()
+
+        # --- Basic Fix Status & Speed ---
         status = parts[2] if len(parts) > 2 else "V"
         current_fix_status = status == "A"
-        gps_fix = current_fix_status  # Update global fix status immediately
+        gps_fix = current_fix_status  # Update global fix status
+
+        # Update Speed
+        try:
+            gps_speed_knots = float(parts[7]) if parts[7] else 0.0
+        except (ValueError, IndexError):
+            gps_speed_knots = 0.0  # Default to 0 on error
 
         # --- Early Exit if RTC is already synced by a fix ---
         if _rtc_synced_by_fix:
@@ -129,19 +140,14 @@ def _parse_gprmc(parts):
         # --- Time Processing (Only if RTC not yet synced by fix) ---
         time_str = parts[1]
         date_str = parts[9]
-        parsed_epoch_this_run = False  # Track if we parsed time in this specific call
+        parsed_epoch_this_run = False
 
-        # Only parse time if date/time strings are valid AND we still need an initial sync
-        # OR if we have a fix (to perform the fix-based sync)
+        # Only parse time if date/time strings are valid AND we still need an initial sync OR if we have a fix
         if (
             len(time_str) >= 6
             and len(date_str) == 6
             and (_rtc_needs_initial_sync or gps_fix)
         ):
-            # Raw time log removed as requested
-            # if _rtc_needs_initial_sync:
-            #      log(f"GPS Raw UTC: {date_str} {time_str}")
-
             try:
                 # Parse to Epoch
                 hh = int(time_str[0:2])
@@ -154,11 +160,6 @@ def _parse_gprmc(parts):
                 gps_epoch = time.mktime(utc_tuple)  # type: ignore
                 parsed_epoch_this_run = True
 
-                # Update global time/date representations (only if needed pre-sync)
-                if _rtc_needs_initial_sync:
-                    gps_time_utc = (hh, mm, ss)
-                    gps_date = (dd, mo, yy)
-
                 # (c) Attempt Initial Sync (if needed and epoch is valid)
                 if _rtc_needs_initial_sync and gps_epoch > time.time():
                     try:
@@ -170,18 +171,8 @@ def _parse_gprmc(parts):
                         )
                         log_time_str = f"{rtc_tuple[0]}-{rtc_tuple[1]:02d}-{rtc_tuple[2]:02d} {rtc_tuple[4]:02d}:{rtc_tuple[5]:02d}:{rtc_tuple[6]:02d}"
                         log(f"RTC updated (initial sync): {log_time_str} UTC")
-                        # NOTE: We don't set _rtc_synced_by_fix here
                     except Exception as e:
                         log(f"Error setting RTC during initial sync: {e}")
-
-                # (e) Calculate Jerusalem Time (only if needed pre-sync, logging removed)
-                if _rtc_needs_initial_sync:
-                    # Calculation might still be needed if the value were used elsewhere,
-                    # but logging is removed.
-                    # jerusalem_epoch = gps_epoch + (_JERUSALEM_TZ_OFFSET_HOURS * 3600)
-                    # jerusalem_time_tuple = time.gmtime(jerusalem_epoch)
-                    # log(f"Calculated Jerusalem Time: {jerusalem_time_tuple}")
-                    pass  # Calculation and logging removed
 
             except (ValueError, IndexError, TypeError) as e:
                 log(
@@ -195,19 +186,16 @@ def _parse_gprmc(parts):
                 rtc = machine.RTC()
                 rtc_tuple = time.gmtime(gps_epoch)
                 rtc.datetime(rtc_tuple)
-                # --- This is the crucial part ---
-                if not _rtc_synced_by_fix:  # Log only the first time we sync via fix
+                if not _rtc_synced_by_fix:  # Log only the first time
                     log_time_str = f"{rtc_tuple[0]}-{rtc_tuple[1]:02d}-{rtc_tuple[2]:02d} {rtc_tuple[4]:02d}:{rtc_tuple[5]:02d}:{rtc_tuple[6]:02d}"
                     log(f"RTC updated (fix acquired): {log_time_str} UTC")
                 _rtc_needs_initial_sync = False  # Ensure this is false
                 _rtc_synced_by_fix = True  # Mark RTC as definitively synced
-                # --- Stop further time processing ---
-
             except Exception as e:
                 log(f"Error setting RTC on fix: {e}")
-                # Should we retry? For now, we don't set _rtc_synced_by_fix on error
 
         # --- Update Location (only if fix is current) ---
+        # This happens regardless of RTC sync status, as long as fix is valid
         if gps_fix:
             try:
                 lat = _parse_nmea_degrees(parts[3])
@@ -220,11 +208,42 @@ def _parse_gprmc(parts):
                 gps_longitude = lon
             except (ValueError, IndexError) as e:
                 log(f"Error parsing Lat/Lon in GPRMC: {e}")
-        # else: If no fix, don't update lat/lon
 
     except (ValueError, IndexError) as e:
         log(f"Critical Error parsing GPRMC: {e}, parts: {parts}")
         gps_fix = False  # Ensure fix is false on major parsing error
+
+
+def _parse_gpgsv(parts):
+    """
+    Parses GPGSV sentences to collect the PRNs of satellites in view.
+    Expected format: $GPGSV,num_msgs,msg_num,sats_in_view,prn1,elev1,azim1,snr1,prn2,...*cs
+    """
+    global _seen_satellite_prns
+    try:
+        num_msgs = int(parts[1])
+        msg_num = int(parts[2])
+        # sats_in_view = int(parts[3]) # Total sats in view (can be used for validation)
+
+        # If this is the first message of a potential sequence, clear the set?
+        # RMC/GGA already clear it, so maybe not needed here unless GSV arrives first.
+        # Let's rely on RMC/GGA clearing for now.
+
+        # Sat info starts at index 4, in groups of 4 (prn, elev, azim, snr)
+        sat_info_start_index = 4
+        num_sats_in_this_msg = (
+            len(parts) - sat_info_start_index - 1
+        ) // 4  # -1 for checksum part split later
+
+        for i in range(num_sats_in_this_msg):
+            prn_index = sat_info_start_index + (i * 4)
+            if parts[prn_index]:  # Check if PRN field is not empty
+                prn = int(parts[prn_index])
+                _seen_satellite_prns.add(prn)
+            # We don't currently need elevation, azimuth, or SNR
+
+    except (ValueError, IndexError) as e:
+        log(f"Error parsing GPGSV: {e}, parts: {parts}")
 
 
 # --- Initialization ---
@@ -323,43 +342,92 @@ async def _read_gps_task():
                 elif sentence_type == "$GPRMC" and len(parts) >= 10:
                     _parse_gprmc(parts)
                     parsed_successfully = True
-
-                if parsed_successfully:
-                    global _last_valid_data_time
+                elif sentence_type == "$GPGSV":  # Handle GPGSV
+                    _parse_gpgsv(parts)
+                    # Don't mark parsed_successfully=True for GSV alone,
+                    # as it doesn't guarantee core fix/time data.
+                    # But DO update last valid data time if checksum was okay.
+                    global _last_valid_data_time  # Make sure global is declared if needed here
                     _last_valid_data_time = time.ticks_ms()
 
-                # Update Stats
+                if parsed_successfully:
+                    # Update last valid time only if GGA or RMC parsed okay
+                    _last_valid_data_time = time.ticks_ms()
+
+                # Update Stats (GSV contributes to count but not necessarily 'successful parse')
                 end_time_us = time.ticks_us()
                 duration_us = time.ticks_diff(end_time_us, start_time_us)
-                global _gps_processing_time_us_sum, _gps_processed_sentence_count
+                global _gps_processing_time_us_sum, _gps_processed_sentence_count  # Make sure global is declared
                 _gps_processing_time_us_sum += duration_us
                 _gps_processed_sentence_count += 1
 
         except asyncio.CancelledError:
             log("GPS Reader: Task cancelled.")
-            _reader_enabled_event.set()  # Ensure enabled on exit? Or leave as is? Let's set it.
+            _reader_enabled_event.set()
             raise
         except Exception as e:
             log(f"Error in GPS reader task loop: {e}")
             _reader_enabled_event.set()  # Ensure enabled on error exit
             await asyncio.sleep_ms(500)
 
-        # DONOT DELETE
-        # This is essential in order not to get high CPU in a async reader
+        # Yield control
         await asyncio.sleep_ms(25)
 
 
+# --- Logging Task ---
+async def _log_gps_status_task():
+    """Asynchronous task to log GPS status periodically."""
+    global gps_satellites_seen  # We need to update this global based on the set
+    log("Starting GPS Status Logger task (10s interval)...")
+    while True:
+        try:
+            await asyncio.sleep_ms(10000)  # Log every 10 seconds
+
+            # Check communication status
+            is_com_ok = False
+            if _last_valid_data_time != 0:
+                time_since_last_data = time.ticks_diff(
+                    time.ticks_ms(), _last_valid_data_time
+                )
+                is_com_ok = time_since_last_data < COMM_TIMEOUT_MS
+
+            if not is_com_ok:
+                continue  # Log nothing if no communication
+
+            # Update seen satellite count from the collected set
+            gps_satellites_seen = len(_seen_satellite_prns)
+
+            # Log based on fix status
+            if gps_fix:
+                log_msg = f"GPS: Fix(Lat: {gps_latitude:.4f}, Lon: {gps_longitude:.4f}, Alt: {gps_altitude:.1f}, Spd: {gps_speed_knots:.1f}, Seen: {gps_satellites_seen}, Active: {gps_satellites})"
+                log(log_msg)
+            else:
+                log_msg = (
+                    f"GPS: NoFix(Seen: {gps_satellites_seen}, Active: {gps_satellites})"
+                )
+                log(log_msg)
+
+        except asyncio.CancelledError:
+            log("GPS Logger: Task cancelled.")
+            raise
+        except Exception as e:
+            log(f"Error in GPS logger task loop: {e}")
+            await asyncio.sleep_ms(1000)  # Wait a bit before retrying on error
+
+
 def start_gps_reader():
-    """Starts the asynchronous GPS NMEA reader task if not already running."""
-    global _reader_task
+    """Starts the GPS reader and logger tasks if not already running."""
+    global _reader_task, _logger_task
     if uart is None:
         log("Cannot start GPS reader: UART not initialized.")
         return False
+
+    reader_started = False
     if _reader_task is None or _reader_task.done():  # type: ignore
         _reader_enabled_event.set()  # Ensure reader starts enabled
         _reader_task = asyncio.create_task(_read_gps_task())
         log("GPS NMEA reader task created/restarted.")
-        return True
+        reader_started = True
     else:
         # If already running, ensure it's enabled
         if not _reader_enabled_event.is_set():
@@ -367,7 +435,18 @@ def start_gps_reader():
             log("GPS NMEA reader task was paused, re-enabling.")
         else:
             log("GPS NMEA reader task already running.")
-        return True  # Consider it success if already running
+        reader_started = True  # Consider it success if already running
+
+    logger_started = False
+    if _logger_task is None or _logger_task.done():  # type: ignore
+        _logger_task = asyncio.create_task(_log_gps_status_task())
+        log("GPS Status logger task created/restarted.")
+        logger_started = True
+    else:
+        log("GPS Status logger task already running.")
+        logger_started = True
+
+    return reader_started and logger_started
 
 
 # Removed stop_gps_reader function
@@ -394,45 +473,27 @@ def get_gps_satellites():
     return gps_satellites
 
 
-def get_gps_time_utc():
-    """Returns the latest UTC time from GPS as (hour, minute, second)."""
-    return gps_time_utc
-
-
-def get_gps_date():
-    """Returns the latest date from GPS as (day, month, year)."""
-    return gps_date
-
-
-def get_gps_data():
-    """Returns a dictionary containing all current GPS data, including communication status and formatted date/time."""
-    com_ok = False
-    if _last_valid_data_time != 0:
-        time_since_last_data = time.ticks_diff(time.ticks_ms(), _last_valid_data_time)
-        com_ok = time_since_last_data < COMM_TIMEOUT_MS
-    com_status = "COM" if com_ok else "NOCOM"
-
-    d, m, y = gps_date
-    h, mn, s = gps_time_utc
-    formatted_date = f"{d:02d}/{m:02d}/{y}" if y > 0 else "00/00/0000"
-    formatted_time = (
-        f"{h:02d}:{mn:02d}:{s:02d}" if h > 0 or mn > 0 or s > 0 else "00:00:00"
-    )
-
-    return {
-        "fix": gps_fix,
-        "latitude": gps_latitude,
-        "longitude": gps_longitude,
-        "altitude": gps_altitude,
-        "satellites": gps_satellites,
-        "time_utc": gps_time_utc,
-        "date": gps_date,
-        "formatted_time": formatted_time,
-        "formatted_date": formatted_date,
-        "com_status": com_status,
-    }
+# Removed get_gps_time_utc()
+# Removed get_gps_date()
+# Removed get_gps_data() - Logging is now handled by _log_gps_status_task
 
 
 def get_gps_processing_stats():
     """Returns the accumulated GPS sentence processing time (us) and count."""
     return _gps_processing_time_us_sum, _gps_processed_sentence_count
+
+
+# --- Public Data Access ---
+# Provide getters for the data used in the new log format
+def get_gps_speed_knots():
+    """Returns the latest speed over ground in knots."""
+    return gps_speed_knots
+
+
+def get_gps_satellites_seen():
+    """Returns the count of unique satellites seen in the last cycle."""
+    # Note: This value is updated periodically by the logger task based on _seen_satellite_prns
+    return gps_satellites_seen
+    """Returns the count of unique satellites seen in the last cycle."""
+    # Note: This value is updated periodically by the logger task based on _seen_satellite_prns
+    return gps_satellites_seen

@@ -47,16 +47,6 @@ def _log_ds18b20():
 #         return "INA:N/A"
 
 
-def _log_gps():
-    gps_data = gps_reader.get_gps_data()
-    fix_str = "Fix" if gps_data["fix"] else "NoFix"
-    location_str = ""
-    if gps_data["fix"]:
-        location_str = f",{gps_data['latitude']:.5f},{gps_data['longitude']:.5f},{gps_data['altitude']:.1f}m"
-
-    return f"GPS:{gps_data['com_status']}|{gps_data['formatted_date']} {gps_data['formatted_time']}|{fix_str}(Sat:{gps_data['satellites']}){location_str}"
-
-
 # --- Data Logging Task ---
 async def data_log_task():
     """Periodically reads sensor data and logs it."""
@@ -68,11 +58,12 @@ async def data_log_task():
             # esc_str = _log_esc_telemetry() # Commented out
             # ds_str = _log_ds18b20() # Commented out
             # ina_str = _log_ina226() # Commented out
-            gps_str = _log_gps()  # Only log GPS for now
+            # gps_str = _log_gps()  # REMOVED - Logging now handled within gps_reader.py
 
             # Format log message (concise)
-            # log(f"DATA | {mc_str} | {esc_str} | {ds_str} | {ina_str} | {gps_str}") # Changed log.log to log
-            log(f"DATA | {gps_str}")  # Log only GPS # Changed log.log to log
+            # log(f"DATA | {mc_str} | {esc_str} | {ds_str} | {ina_str} | {gps_str}")
+            # log(f"DATA | {gps_str}") # REMOVED - Logging now handled within gps_reader.py
+            pass  # No logging from here for now, other components are commented out
 
         except Exception as e:
             log(f"Error in data_log_task: {e}")  # Changed log.log to log
