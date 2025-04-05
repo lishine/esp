@@ -1,7 +1,8 @@
 from machine import UART, Pin
 import uasyncio as asyncio
 import time
-from _thread import allocate_lock
+
+# from _thread import allocate_lock # REMOVED
 from log import log
 
 
@@ -22,9 +23,9 @@ gps_satellites = 0
 gps_time_utc = (0, 0, 0)  # (hour, minute, second)
 gps_date = (0, 0, 0)  # (day, month, year)
 _reader_task = None
-_uart_lock = allocate_lock()  # Keep thread lock
-_config_request_event = asyncio.Event()  # New: Signal from config to reader
-_config_done_event = asyncio.Event()  # New: Signal from config to reader
+# _uart_lock = allocate_lock() # REMOVED
+_reader_enabled_event = asyncio.Event()  # New: Controls reader activity
+_reader_enabled_event.set()  # Start enabled
 _last_valid_data_time = 0  # Timestamp of the last valid NMEA sentence
 _gps_processing_time_us_sum = 0
 _gps_processed_sentence_count = 0
@@ -36,19 +37,13 @@ def get_uart():
     return uart
 
 
-def get_uart_lock():
-    """Returns the thread-safe Lock used for UART access between config functions."""
-    return _uart_lock
+# def get_uart_lock(): # REMOVED
+#     return _uart_lock
 
 
-def get_config_request_event():
-    """Returns the event used by config functions to signal the reader."""
-    return _config_request_event
-
-
-def get_config_done_event():
-    """Returns the event used by config functions to signal completion."""
-    return _config_done_event
+def get_reader_enabled_event():
+    """Returns the event controlling the reader task's active state."""
+    return _reader_enabled_event
 
 
 # --- NMEA Parsing Helper ---
@@ -169,120 +164,89 @@ async def _read_gps_task():
 
     log("Starting GPS NMEA reader task...")
     reader = asyncio.StreamReader(uart)
-    lock_acquired_by_reader = False
+    _reader_enabled_event.set()  # Ensure reader starts enabled
 
-    try:
-        while True:
-            # --- Try to Acquire Lock ---
-            lock_acquired_by_reader = _uart_lock.acquire(0)
-            if not lock_acquired_by_reader:
-                await asyncio.sleep_ms(15)  # Yield/short delay if lock held
+    while True:
+        try:
+            # --- Check if Enabled ---
+            if not _reader_enabled_event.is_set():
+                log("GPS Reader: Disabled by user. Waiting...")
+                await _reader_enabled_event.wait()  # type: ignore # Wait until enabled
+                log("GPS Reader: Re-enabled by user.")
+                # Optional: Flush buffer after re-enabling?
+                if uart.any():
+                    flushed = uart.read(uart.any())
+                    log(f"GPS Reader: Flushed {len(flushed)} bytes after re-enable.")
+
+            # --- Normal Read Operation (No Lock Needed) ---
+            line_bytes = await reader.readline()  # type: ignore
+
+            if not line_bytes:
+                await asyncio.sleep_ms(1050)  # Sleep if timeout/empty line
                 continue
+            else:
+                # --- Parsing Logic ---
+                start_time_us = time.ticks_us()
+                try:
+                    line = line_bytes.decode("ascii").strip()
+                except UnicodeError:
+                    log("GPS RX: Invalid ASCII data received")
+                    continue
 
-            # --- Lock Acquired by Reader ---
-            try:
-                # --- Check if Config Function Wants Lock ---
-                if _config_request_event.is_set():
-                    log("GPS Reader: Config request detected.")
-                    if uart.any():
-                        flushed = uart.read(uart.any())
-                        log(
-                            f"GPS Reader: Flushed {len(flushed)} bytes before releasing lock."
-                        )
-                    _config_request_event.clear()
-                    _uart_lock.release()  # Release lock for config function
-                    lock_acquired_by_reader = False
-                    log("GPS Reader: Lock released for config.")
+                if not line.startswith("$") or "*" not in line:
+                    continue
 
-                    # --- Wait for Config Function to Finish ---
-                    log("GPS Reader: Waiting for config done signal...")
-                    await _config_done_event.wait()  # type: ignore # Wait until config sets this
-                    _config_done_event.clear()  # Clear ready for next time
-                    log("GPS Reader: Config done signal received. Resuming loop.")
-                    continue  # Go back to start of loop to re-acquire lock
-
-                # --- Normal Read Operation (Lock Held) ---
+                # Checksum Verification
+                parts_checksum = line.split("*")
+                if len(parts_checksum) == 2:
+                    sentence = parts_checksum[0]
+                    try:
+                        received_checksum = int(parts_checksum[1], 16)
+                        calculated_checksum = 0
+                        for char in sentence[1:]:
+                            calculated_checksum ^= ord(char)
+                        if calculated_checksum != received_checksum:
+                            log(
+                                f"GPS Checksum error! Line: {line}, Calc: {hex(calculated_checksum)}, Recv: {hex(received_checksum)}"
+                            )
+                            continue
+                    except ValueError:
+                        log(f"GPS Invalid checksum format: {parts_checksum[1]}")
+                        continue
                 else:
-                    line_bytes = await reader.readline()  # type: ignore
+                    log(f"GPS Malformed NMEA (no checksum?): {line}")
+                    continue
 
-                    if not line_bytes:
-                        pass
-                        # await asyncio.sleep_ms(1050)
-                        # Continue to finally block to release lock before next iteration
-                    else:
-                        # --- Parsing Logic (Lock Held) ---
-                        start_time_us = time.ticks_us()
-                        try:
-                            line = line_bytes.decode("ascii").strip()
-                        except UnicodeError:
-                            log("GPS RX: Invalid ASCII data received")
-                            continue  # Skip rest, finally releases lock
+                # Parse Specific Sentences
+                parts = sentence.split(",")
+                sentence_type = parts[0]
+                parsed_successfully = False
+                if sentence_type == "$GPGGA" and len(parts) >= 10:
+                    _parse_gpgga(parts)
+                    parsed_successfully = True
+                elif sentence_type == "$GPRMC" and len(parts) >= 10:
+                    _parse_gprmc(parts)
+                    parsed_successfully = True
 
-                        if not line.startswith("$") or "*" not in line:
-                            continue  # Skip rest, finally releases lock
+                if parsed_successfully:
+                    global _last_valid_data_time
+                    _last_valid_data_time = time.ticks_ms()
 
-                        # Checksum Verification
-                        parts_checksum = line.split("*")
-                        if len(parts_checksum) == 2:
-                            sentence = parts_checksum[0]
-                            try:
-                                received_checksum = int(parts_checksum[1], 16)
-                                calculated_checksum = 0
-                                for char in sentence[1:]:
-                                    calculated_checksum ^= ord(char)
-                                if calculated_checksum != received_checksum:
-                                    log(
-                                        f"GPS Checksum error! Line: {line}, Calc: {hex(calculated_checksum)}, Recv: {hex(received_checksum)}"
-                                    )
-                                    continue  # Skip rest, finally releases lock
-                            except ValueError:
-                                log(f"GPS Invalid checksum format: {parts_checksum[1]}")
-                                continue  # Skip rest, finally releases lock
-                        else:
-                            log(f"GPS Malformed NMEA (no checksum?): {line}")
-                            continue  # Skip rest, finally releases lock
+                # Update Stats
+                end_time_us = time.ticks_us()
+                duration_us = time.ticks_diff(end_time_us, start_time_us)
+                global _gps_processing_time_us_sum, _gps_processed_sentence_count
+                _gps_processing_time_us_sum += duration_us
+                _gps_processed_sentence_count += 1
 
-                        # Parse Specific Sentences
-                        parts = sentence.split(",")
-                        sentence_type = parts[0]
-                        parsed_successfully = False
-                        if sentence_type == "$GPGGA" and len(parts) >= 10:
-                            _parse_gpgga(parts)
-                            parsed_successfully = True
-                        elif sentence_type == "$GPRMC" and len(parts) >= 10:
-                            _parse_gprmc(parts)
-                            parsed_successfully = True
-
-                        if parsed_successfully:
-                            global _last_valid_data_time
-                            _last_valid_data_time = time.ticks_ms()
-
-                        # Update Stats
-                        end_time_us = time.ticks_us()
-                        duration_us = time.ticks_diff(end_time_us, start_time_us)
-                        global _gps_processing_time_us_sum, _gps_processed_sentence_count
-                        _gps_processing_time_us_sum += duration_us
-                        _gps_processed_sentence_count += 1
-
-            finally:
-                # --- Release Lock (if held by this iteration) ---
-                if lock_acquired_by_reader:
-                    _uart_lock.release()
-                    lock_acquired_by_reader = False
-
-            # This is essential in order not to get high CPU in a async reader
-            await asyncio.sleep_ms(25)
-
-    except asyncio.CancelledError:
-        log("GPS Reader: Task cancelled.")
-        if lock_acquired_by_reader:
-            _uart_lock.release()  # Ensure release on cancel
-        raise
-    except Exception as e:
-        log(f"Error in GPS reader task loop: {e}")
-        if lock_acquired_by_reader:
-            _uart_lock.release()  # Ensure release on error
-        await asyncio.sleep_ms(500)
+        except asyncio.CancelledError:
+            log("GPS Reader: Task cancelled.")
+            _reader_enabled_event.set()  # Ensure enabled on exit? Or leave as is? Let's set it.
+            raise
+        except Exception as e:
+            log(f"Error in GPS reader task loop: {e}")
+            _reader_enabled_event.set()  # Ensure enabled on error exit
+            await asyncio.sleep_ms(500)
 
 
 def start_gps_reader():
@@ -292,18 +256,21 @@ def start_gps_reader():
         log("Cannot start GPS reader: UART not initialized.")
         return False
     if _reader_task is None or _reader_task.done():  # type: ignore
-        # Clear events before starting
-        _config_request_event.clear()
-        _config_done_event.clear()
+        _reader_enabled_event.set()  # Ensure reader starts enabled
         _reader_task = asyncio.create_task(_read_gps_task())
         log("GPS NMEA reader task created/restarted.")
         return True
     else:
-        log("GPS NMEA reader task already running.")
-        return False
+        # If already running, ensure it's enabled
+        if not _reader_enabled_event.is_set():
+            _reader_enabled_event.set()
+            log("GPS NMEA reader task was paused, re-enabling.")
+        else:
+            log("GPS NMEA reader task already running.")
+        return True  # Consider it success if already running
 
 
-# Remove stop_gps_reader function
+# Removed stop_gps_reader function
 
 
 # --- Data Access Functions ---

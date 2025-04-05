@@ -1,3 +1,4 @@
+thumb
 <!DOCTYPE html>
 <html>
 <head>
@@ -39,6 +40,15 @@
 <body>
     <h1>GPS Settings</h1>
 
+    <!-- Reader Control Section -->
+    <div class="setting" style="background-color: #f0f8ff;">
+        <label>GPS Reader Task:</label>
+        <button id="startReaderBtn" style="background-color: #ddffdd;">Enable Reader</button>
+        <button id="stopReaderBtn" style="background-color: #ffdddd;">Disable Reader</button>
+        <span id="readerStatus" style="margin-left: 10px;">(Unknown)</span>
+        <p style="font-size: 0.8em; color: #666;">Disable the reader before using Set Rate or Factory Reset.</p>
+    </div>
+
     <div class="setting">
         <label>Navigation Rate:</label>
         <span id="currentRate">--</span> Hz
@@ -66,7 +76,10 @@
         const setRateBtn = document.getElementById('setRateBtn');
         const currentRateSpan = document.getElementById('currentRate');
         const newRateInput = document.getElementById('newRate');
-        const factoryResetBtn = document.getElementById('factoryResetBtn'); // Get reset button
+        const factoryResetBtn = document.getElementById('factoryResetBtn');
+        const startReaderBtn = document.getElementById('startReaderBtn'); // Get reader buttons
+        const stopReaderBtn = document.getElementById('stopReaderBtn');
+        const readerStatusSpan = document.getElementById('readerStatus'); // Get reader status span
         const statusDiv = document.getElementById('status');
 
         function showStatus(message, isError = false) {
@@ -76,7 +89,38 @@
             setTimeout(() => { statusDiv.textContent = ''; }, 5000);
         }
 
+        // --- Reader Control Button Event Listeners ---
+        async function controlReader(action) {
+            const actionText = action === 'start_reader' ? 'Enabling' : 'Disabling';
+            statusDiv.textContent = `${actionText} reader...`;
+            statusDiv.style.color = 'black';
+            readerStatusSpan.textContent = '(Processing...)';
+            try {
+                const response = await fetch('/api/gps-settings/data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: action })
+                });
+                const data = await response.json();
+                if (response.ok && data.success) {
+                    showStatus(data.message || `${actionText} successful.`);
+                    readerStatusSpan.textContent = action === 'start_reader' ? '(Enabled)' : '(Disabled)';
+                } else {
+                    throw new Error(data.message || `Failed to ${actionText.toLowerCase()} reader.`);
+                }
+            } catch (error) {
+                console.error(`Error ${actionText.toLowerCase()} reader:`, error);
+                showStatus(`Error: ${error.message}`, true);
+                readerStatusSpan.textContent = '(Error)';
+            }
+        }
+
+        startReaderBtn.addEventListener('click', () => controlReader('start_reader'));
+        stopReaderBtn.addEventListener('click', () => controlReader('stop_reader'));
+
+        // --- Existing Listeners ---
         getRateBtn.addEventListener('click', async () => {
+            // Optional: Add check for readerStatusSpan.textContent !== '(Disabled)' and show warning?
             statusDiv.textContent = 'Retrieving rate...';
             statusDiv.style.color = 'black';
             currentRateSpan.textContent = '--';
@@ -100,6 +144,7 @@
         });
 
         setRateBtn.addEventListener('click', async () => {
+            // Optional: Add check for readerStatusSpan.textContent !== '(Disabled)' and show warning?
             const rate = parseInt(newRateInput.value, 10);
             if (isNaN(rate) || rate < 1 || rate > 10) {
                 showStatus('Please enter a valid rate between 1 and 10 Hz.', true);
@@ -116,8 +161,6 @@
                 const data = await response.json();
                 if (response.ok && data.success) {
                     showStatus(`Rate set to ${rate} Hz successfully. Retrieve again to confirm.`);
-                    // Optionally update current rate display immediately, though retrieving is safer
-                    // currentRateSpan.textContent = rate;
                 } else {
                     throw new Error(data.message || 'Failed to set rate.');
                 }
@@ -127,14 +170,12 @@
             }
         });
 
-        // --- Factory Reset Button Event Listener ---
         factoryResetBtn.addEventListener('click', async () => {
-            // Confirmation Dialog
+            // Optional: Add check for readerStatusSpan.textContent !== '(Disabled)' and show warning?
             if (!confirm('Are you sure you want to reset the GPS module to factory defaults? All custom settings will be lost.')) {
                 showStatus('Factory reset cancelled.', false);
                 return;
             }
-
             statusDiv.textContent = 'Sending factory reset command...';
             statusDiv.style.color = 'orange';
             try {
@@ -146,7 +187,6 @@
                 const data = await response.json();
                 if (response.ok && data.success) {
                     showStatus('Factory reset command sent successfully. Module may restart.', false);
-                    // Clear current rate display as it's likely reset
                     currentRateSpan.textContent = '--';
                 } else {
                     throw new Error(data.message || 'Failed to send factory reset command.');
@@ -156,6 +196,10 @@
                 showStatus(`Error: ${error.message}`, true);
             }
         });
+
+        // TODO: Optionally add a way to query initial reader status on page load
+        // e.g., fetch('/api/gps-settings/data', { method: 'POST', body: JSON.stringify({ action: 'get_reader_status' }) })
+        // Requires adding a 'get_reader_status' action in the Python handler.
     </script>
 </body>
 </html>
