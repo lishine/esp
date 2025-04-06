@@ -35,6 +35,7 @@ from upload import handle_upload
 import io_local.gps_config as gps_config
 from io_local.buzzer import register_buzzer_routes
 
+from io_local import adc as adc_module  # Import the ADC module (device/ is root)
 
 HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
@@ -381,6 +382,74 @@ def status(request):
         log(f"Error getting device status: {e}")
         return Response(
             body=f"Error getting status: {str(e)}", status=HTTP_INTERNAL_ERROR
+        )
+
+
+# --- Live Data Routes ---
+
+
+@app.route("/live-data", methods=["GET"])
+def get_live_data_page(request: Request):
+    """Serves the static HTML page for live data status."""
+    live_data_html_path = "/io_local/live_data.html"  # Path on ESP32 filesystem
+    try:
+        # Check if file exists first
+        os.stat(live_data_html_path)
+        # Read the entire file content (buffered)
+        with open(live_data_html_path, "r") as f:  # Read as text
+            content = f.read()
+        gc.collect()
+        return Response(
+            body=content,
+            status=HTTP_OK,
+            headers={"Content-Type": "text/html; charset=utf-8"},
+        )
+    except OSError as e:
+        if e.args[0] == 2:  # ENOENT - File not found
+            log(f"Live data HTML file not found: {live_data_html_path}")
+            return Response(body="Live Data page not found.", status=HTTP_NOT_FOUND)
+        else:
+            log(f"Error accessing {live_data_html_path}: {e}")
+            return Response(
+                body=f"Error accessing Live Data page: {str(e)}",
+                status=HTTP_INTERNAL_ERROR,
+            )
+    except Exception as e:
+        log(f"Error reading {live_data_html_path}: {e}")
+        return Response(
+            body=f"Error reading Live Data page: {str(e)}", status=HTTP_INTERNAL_ERROR
+        )
+
+
+@app.route("/api/live-data", methods=["POST"])
+def post_read_live_data(request: Request):
+    """Reads the latest ADC voltages (uv and u16 based) and returns them as JSON."""
+    try:
+        # Get the pre-calculated voltages directly from the adc module
+        voltage_uv = adc_module.get_latest_voltage_uv()
+        voltage_u16 = adc_module.get_latest_voltage_u16()
+
+        # Prepare JSON response
+        response_data = {
+            "adc_voltage_uv_2pt": voltage_uv,  # From read_uv with 2-point factor
+            "adc_voltage_u16_linear": voltage_u16,  # From read_u16 with linear factor
+        }
+        # Could add other live data sources here in the future
+
+        gc.collect()  # Optional GC before creating JSON string
+        return Response(
+            body=json.dumps(response_data),
+            status=HTTP_OK,
+            headers={"Content-Type": "application/json"},
+        )
+    except Exception as e:
+        log(f"Error getting live data for API: {e}")
+        # Use the framework's error response helper if available, otherwise construct manually
+        body, status = error_response(
+            f"Error getting live data: {str(e)}", HTTP_INTERNAL_ERROR
+        )
+        return Response(
+            body=body, status=status, headers={"Content-Type": "application/json"}
         )
 
 

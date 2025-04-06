@@ -31,3 +31,14 @@ This document summarizes the GPIO pin usage for this project based on the curren
 | 3V3 me6211 500ma | NEO-7M 67ma, DS18B20, Motor Current Sensor, Buzzer 25ma      | Output from onboard regulator. |
 | GND              | DS18B20, Motor Current Sensor, ESC Telemetry, NEO-7M, Buzzer | Common ground.                 |
 | RST / EN         |                                                              | Reset / Enable pin.            |
+
+### Table 3-1. Default Configuration of Strapping Pins
+
+| Strapping Pin | Default Configuration | Bit Value |
+| ------------- | --------------------- | --------- |
+| GPIO0         | Weak pull-up          | 1         |
+| GPIO3         | Floating              | –         |
+| GPIO45        | Weak pull-down        | 0         |
+| GPIO46        | Weak pull-down        | 0         |
+
+Please note that the ADC2_CH... analog functions (see Table 2-8 Analog Functions) cannot be used with Wi-Fi simul- taneously.

@@ -21,6 +21,7 @@ import io_local.init_io as init_io
 import io_local.data_log as data_log
 import io_local.gps_reader as gps_reader  # Import the whole module
 from io_local.gps_reader import get_gps_processing_stats  # Import specific function
+from io_local import adc  # Import the new ADC module (device/ is root)
 
 from http_server import start_server
 
@@ -199,9 +200,11 @@ async def main():
         # esc_telemetry.start_esc_reader()  # Starts the async task internally
         # ds18b20.start_ds18b20_reader()  # Starts the async task internally
         gps_reader.start_gps_reader()  # Starts the async task internally
-        log(
-            "Sensor reader tasks started (if sensors initialized correctly)."
-        )  # Changed log.log to log
+        log("Sensor reader tasks started (if sensors initialized correctly).")
+
+        log("Creating ADC Sampler task...")
+        asyncio.create_task(adc.run_adc_sampler())
+        log("ADC Sampler task created.")
 
         # Start the data logging task (from data_log module)
         log("Creating Data Logging task...")  # Changed log.log to log

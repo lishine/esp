@@ -332,6 +332,7 @@ def log_request(request):
     """Log all incoming requests with device information"""
     client_ip = get_client_ip(request)
     device_info = get_device_info(request)
-    log(
-        f"Request to {request.method} {request.path} from IP: {client_ip}, Device: {device_info}"
-    )
+    if not "live" in request.path:
+        log(
+            f"Request to {request.method} {request.path} from IP: {client_ip}, Device: {device_info}"
+        )
