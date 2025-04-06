@@ -28,21 +28,22 @@ _latest_voltage_u16: float = (
     0.0  # Voltage calculated from read_u16() with linear factor
 )
 
-# --- ADC Initialization ---
-# Initialize ADC object globally for the sampler task
 _adc: machine.ADC | None = None
-try:
-    _pin: machine.Pin = machine.Pin(ADC_PIN, machine.Pin.IN)
-    _adc = machine.ADC(_pin)
-    _adc.atten(ATTENUATION)
-    _adc.width(BIT_WIDTH)
-    log("INFO", f"ADC initialized on Pin {ADC_PIN}")
-except Exception as e:
-    log("ERROR", f"Failed to initialize ADC on Pin {ADC_PIN}: {e}")
-    # _adc remains None
 
 
-# --- Background Sampler Task ---
+async def init_adc() -> None:
+    global adc
+    try:
+        _pin: machine.Pin = machine.Pin(ADC_PIN, machine.Pin.IN)
+        _adc = machine.ADC(_pin)
+        _adc.atten(ATTENUATION)
+        _adc.width(BIT_WIDTH)
+        log("INFO", f"ADC initialized on Pin {ADC_PIN}")
+    except Exception as e:
+        log("ERROR", f"Failed to initialize ADC on Pin {ADC_PIN}: {e}")
+        # _adc remains None
+
+
 async def run_adc_sampler() -> None:
     """
     Asynchronously samples the ADC continuously using both read_uv and read_u16,

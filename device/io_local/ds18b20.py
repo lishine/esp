@@ -5,7 +5,7 @@ import uasyncio as asyncio
 from log import log
 
 # --- Configuration ---
-DS18B20_PIN = 9  # GPIO9 (Pinout Table)
+DS18B20_PIN = 4  # GPIO9 (Pinout Table)
 READ_INTERVAL_S = 2  # How often to read the sensors
 
 # --- State ---
@@ -24,27 +24,23 @@ def init_ds18b20():
         ow = onewire.OneWire(ds_pin)
         ds_sensor = ds18x20.DS18X20(ow)
 
-        log(
-            "Scanning for DS18B20 sensors on Pin", DS18B20_PIN
-        )  # Changed log.log to log
-        roms = ds_sensor.scan()
+        log("Scanning for DS18B20 sensors on Pin", DS18B20_PIN)
+        roms = sorted(ds_sensor.scan())
 
         if not roms:
-            log("Warning: No DS18B20 sensors found!")  # Changed log.log to log
+            log("Warning: No DS18B20 sensors found!")
             ds18_temperatures = []
         else:
-            log(f"Found {len(roms)} DS18B20 sensors:")  # Changed log.log to log
+            log(f"Found {len(roms)} DS18B20 sensors:")
             # Initialize temperature list with None values
             ds18_temperatures = [None] * len(roms)
             for i, rom in enumerate(roms):
                 # Convert rom bytearray to hex string for logging
                 rom_hex = "".join("{:02x}".format(x) for x in rom)
-                log(f"  Sensor {i}: ROM={rom_hex}")  # Changed log.log to log
+                log(f"  Sensor {i}: ROM={rom_hex}")
         return True
     except Exception as e:
-        log(
-            f"Error initializing DS18B20 on Pin {DS18B20_PIN}: {e}"
-        )  # Changed log.log to log
+        log(f"Error initializing DS18B20 on Pin {DS18B20_PIN}: {e}")
         ds_sensor = None
         roms = []
         ds18_temperatures = []
@@ -56,18 +52,16 @@ async def _read_ds18b20_task():
     """Asynchronous task to periodically read all detected DS18B20 sensors."""
     global ds18_temperatures
     if ds_sensor is None or not roms:
-        log(  # Changed log.log to log
-            "DS18B20 not initialized or no sensors found. Cannot start reader task."
-        )
+        log("DS18B20 not initialized or no sensors found. Cannot start reader task.")
         return
 
-    log("Starting DS18B20 reader task...")  # Changed log.log to log
+    log("Starting DS18B20 reader task...")
     while True:
         try:
             # Start temperature conversion for all sensors
             ds_sensor.convert_temp()
             # Wait for conversion (typically max 750ms for 12-bit resolution)
-            await asyncio.sleep_ms(750)
+            await asyncio.sleep_ms(1000)
 
             # Read temperature from each sensor found
             temps = []
@@ -78,17 +72,15 @@ async def _read_ds18b20_task():
                 except Exception as read_e:
                     # Log error for specific sensor, append None
                     rom_hex = "".join("{:02x}".format(x) for x in rom)
-                    log(  # Changed log.log to log
-                        f"Error reading DS18B20 sensor {i} (ROM {rom_hex}): {read_e}"
-                    )
+                    log(f"Error reading DS18B20 sensor {i} (ROM {rom_hex}): {read_e}")
                     temps.append(None)  # Indicate read failure for this sensor
 
             ds18_temperatures = temps  # Update the global state atomically
-            # log("DS18B20 Temperatures:", ds18_temperatures) # Optional: Log readings # Changed log.log to log
+            # log("DS18B20 Temperatures:", ds18_temperatures) # Optional: Log readings
 
         except Exception as e:
             # Error during convert_temp or general task issue
-            log(f"Error in DS18B20 reader task: {e}")  # Changed log.log to log
+            log(f"Error in DS18B20 reader task: {e}")
             # Reset temps to None if a major error occurred? Or keep last known?
             # For now, keep last known good values unless individual reads failed.
 
@@ -100,16 +92,14 @@ def start_ds18b20_reader():
     """Starts the asynchronous DS18B20 reader task."""
     global _reader_task
     if ds_sensor is None or not roms:
-        log(
-            "Cannot start DS18B20 reader: Not initialized or no sensors found."
-        )  # Changed log.log to log
+        log("Cannot start DS18B20 reader: Not initialized or no sensors found.")
         return False
     if _reader_task is None:
         _reader_task = asyncio.create_task(_read_ds18b20_task())
-        log("DS18B20 reader task created.")  # Changed log.log to log
+        log("DS18B20 reader task created.")
         return True
     else:
-        log("DS18B20 reader task already running.")  # Changed log.log to log
+        log("DS18B20 reader task already running.")
         return False
 
 

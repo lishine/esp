@@ -27,14 +27,14 @@
 </head>
 <body>
     <h1>Live Data Status</h1>
-    <p>Background data samplers (like ADC) are running.</p>
-    <p>Use a POST request to <code>/api/live-data</code> to fetch the latest readings in JSON format.</p>
-
     <h2>Current ADC Readings:</h2>
     <p>From read_uv() w/ 2-point calib: <strong id="adc-value-uv">Loading...</strong></p>
     <p>From read_u16() w/ linear factor: <strong id="adc-value-u16">Loading...</strong></p>
 
-    Example using fetch API (could be added later for a dynamic display):
+    <h2>DS18B20 Sensors:</h2>
+    <p>Count: <strong id="ds18b20-count">Loading...</strong></p>
+    <div id="ds18b20-sensors">Loading...</div>
+
     <script>
         async function fetchData() {
             try {
@@ -44,20 +44,43 @@
                 }
                 const data = await response.json();
                 // Update both values
-                document.getElementById('adc-value-uv').textContent = data.adc_voltage_uv_2pt.toFixed(3) + ' V';
-                document.getElementById('adc-value-u16').textContent = data.adc_voltage_u16_linear.toFixed(3) + ' V';
+                document.getElementById('adc-value-uv').textContent = data.adc_voltage_uv_2pt !== null ? data.adc_voltage_uv_2pt.toFixed(3) + ' V' : 'N/A';
+                document.getElementById('adc-value-u16').textContent = data.adc_voltage_u16_linear !== null ? data.adc_voltage_u16_linear.toFixed(3) + ' V' : 'N/A';
+                // Update DS18B20 data
+                const dsData = data.ds18b20;
+                document.getElementById('ds18b20-count').textContent = dsData ? dsData.count : 'N/A';
+                const sensorsDiv = document.getElementById('ds18b20-sensors');
+                sensorsDiv.innerHTML = ''; // Clear previous content
+
+                if (dsData && dsData.count > 0 && dsData.sensors) {
+                    const ul = document.createElement('ul');
+                    dsData.sensors.forEach(sensor => {
+                        const li = document.createElement('li');
+                        const tempStr = sensor.temp_c !== null ? sensor.temp_c.toFixed(1) + ' °C' : 'N/A';
+                        li.textContent = `ROM: ${sensor.rom} - Temp: ${tempStr}`;
+                        ul.appendChild(li);
+                    });
+                    sensorsDiv.appendChild(ul);
+                } else if (dsData && dsData.count === 0) {
+                    sensorsDiv.textContent = 'No sensors found.';
+                } else {
+                    sensorsDiv.textContent = 'Sensor data missing or invalid.';
+                }
+
             } catch (error) {
                 console.error('Error fetching live data:', error);
-                // Update both display elements on error
+                // Update all display elements on error
                 document.getElementById('adc-value-uv').textContent = 'Error';
                 document.getElementById('adc-value-u16').textContent = 'Error';
+                document.getElementById('ds18b20-count').textContent = 'Error';
+                document.getElementById('ds18b20-sensors').textContent = 'Error loading sensor data.';
             }
         }
         // Fetch data every 2 seconds
         // setInterval(fetchData, 2000);
         // Fetch data on load
         document.addEventListener('DOMContentLoaded', fetchData); // Fetch data when page loads
-        setInterval(fetchData, 500); // Fetch data every 2 seconds
+        setInterval(fetchData, 2000); // Fetch data every 2 seconds
     </script>
 </body>
 </html>

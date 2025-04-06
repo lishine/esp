@@ -36,6 +36,7 @@ import io_local.gps_config as gps_config
 from io_local.buzzer import register_buzzer_routes
 
 from io_local import adc as adc_module  # Import the ADC module (device/ is root)
+from io_local import ds18b20 as ds18b20_module  # Import the DS18B20 module
 
 HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
@@ -429,10 +430,25 @@ def post_read_live_data(request: Request):
         voltage_uv = adc_module.get_latest_voltage_uv()
         voltage_u16 = adc_module.get_latest_voltage_u16()
 
+        # Get DS18B20 data
+        ds18_roms = ds18b20_module.get_ds18b20_roms()
+        # print(ds18_roms)
+        ds18_temps = ds18b20_module.get_ds18b20_temperatures()
+        # print(ds18_temps)
+        ds18_count = len(ds18_roms)
+        # print(ds18_count)
+        ds18_sensors_data = []
+        for i, rom in enumerate(ds18_roms):
+            # print(i, rom)
+            rom_hex = "".join("{:02x}".format(x) for x in rom)
+            temp_c = ds18_temps[i] if i < len(ds18_temps) else None  # Safety check
+            ds18_sensors_data.append({"rom": rom_hex, "temp_c": temp_c})
+        # print(ds18_sensors_data)
         # Prepare JSON response
         response_data = {
             "adc_voltage_uv_2pt": voltage_uv,  # From read_uv with 2-point factor
             "adc_voltage_u16_linear": voltage_u16,  # From read_u16 with linear factor
+            "ds18b20": {"count": ds18_count, "sensors": ds18_sensors_data},
         }
         # Could add other live data sources here in the future
 

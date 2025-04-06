@@ -121,7 +121,13 @@ def _try_connect_sync(network_index, config):
         # Connected successfully
         ip_address, subnet, gateway, dns = sta.ifconfig()
         log(
-            f"WiFi Thread: Connected successfully to '{ssid}': IP={ip_address}, Subnet={subnet}, GW={gateway}, DNS={dns}"
+            f"""
+WiFi Thread: Connected successfully to '{ssid}':
+- IP Address: {ip_address}
+- Subnet: {subnet}
+- Gateway: {gateway}
+- DNS: {dns}
+            """
         )
         # Update state: Connected
         with wifi_state_lock:

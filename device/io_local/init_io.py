@@ -6,7 +6,7 @@ from log import log
 import led
 
 # Import specific IO modules from this directory
-from . import motor_current
+from . import adc
 from . import esc_telemetry
 from . import ds18b20
 
@@ -35,9 +35,9 @@ def init_io():
 
     # --- Initialize Sensors/Actuators ---
     # Initialize components sequentially. Check return values if needed.
-    # motor_current.init_motor_current()
+    # adc.init_adc()
     # esc_telemetry.init_esc_telemetry()
-    # ds18b20.init_ds18b20()
+    ds18b20.init_ds18b20()
     # ina226.init_ina226() # Commented out as requested
     gps_reader.init_gps_reader()
     buzzer.init_buzzer()
