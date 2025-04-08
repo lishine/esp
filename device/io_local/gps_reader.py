@@ -494,6 +494,3 @@ def get_gps_satellites_seen():
     """Returns the count of unique satellites seen in the last cycle."""
     # Note: This value is updated periodically by the logger task based on _seen_satellite_prns
     return gps_satellites_seen
-    """Returns the count of unique satellites seen in the last cycle."""
-    # Note: This value is updated periodically by the logger task based on _seen_satellite_prns
-    return gps_satellites_seen
