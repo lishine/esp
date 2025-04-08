@@ -104,64 +104,75 @@ def init_esc_telemetry():
 
 
 async def _read_esc_telemetry_task():
-    """Asynchronous task to continuously read and parse ESC telemetry, sampling approx once per second."""
-    global esc_voltage, esc_rpm, esc_temp, esc_current, esc_consumption, uart  # Ensure uart is global
+    """Asynchronous task implementing user-specified timing logic for ESC telemetry."""
+    global esc_voltage, esc_rpm, esc_temp, esc_current, esc_consumption, uart
 
     if uart is None:
         log("ESC Telemetry UART not initialized. Cannot start reader task.")
         return
 
-    log("Starting ESC telemetry reader task (sampling ~1Hz)...")
+    log("Starting ESC telemetry reader task (user timing logic)...")
     reader = asyncio.StreamReader(uart)
 
     while True:
+        data = None  # Reset data
+        parsed_data = None  # Reset parsed_data
+
         try:
-            # Clear any old data in the UART buffer before reading
+            # 1. Clear Buffer
             if uart.any():
-                _ = uart.read(uart.any())  # Discard buffered data
+                _ = uart.read(uart.any())
 
-            # KISS telemetry packets are 10 bytes long
-            data = await reader.readexactly(10)  # type: ignore
+            # 2. Short Delay
+            await asyncio.sleep_ms(10)
 
-            if data:
-                parsed_data = _parse_kiss_telemetry(data)
-                if parsed_data:
-                    # Update global state variables
-                    esc_voltage = parsed_data["voltage"]
-                    esc_rpm = parsed_data["rpm"]
-                    esc_temp = parsed_data["temperature"]
-                    esc_current = parsed_data["current"]
-                    esc_consumption = parsed_data["consumption"]
+            # 3. Check Buffer Again
+            if not uart.any():
+                # 4. Attempt Read (if buffer empty)
+                try:
+                    # Note: Consider adding timeout to UART init or StreamReader if readexactly blocks indefinitely
+                    data = await reader.readexactly(10)  # type: ignore
+                except asyncio.TimeoutError:
+                    # Expected if no data arrived, don't log unless debugging
+                    # log("ESC Telemetry: readexactly timed out after 10ms wait.")
+                    pass  # Proceed to short sleep at the end
+                except EOFError:
+                    log("ESC Telemetry: UART connection closed during read.")
+                    await asyncio.sleep_ms(1000)  # Longer sleep on EOF
+                    continue  # Go to start of loop
 
-                    # Log the received data
-                    log(
-                        f"ESC: V={esc_voltage:.2f} A={esc_current:.2f} RPM={esc_rpm} Temp={esc_temp} mAh={esc_consumption}"
-                    )
+                if data:
+                    # 5. Parse Data
+                    parsed_data = _parse_kiss_telemetry(data)
+                    if parsed_data:
+                        # 6. Process Valid Data
+                        esc_voltage = parsed_data["voltage"]
+                        esc_rpm = parsed_data["rpm"]
+                        esc_temp = parsed_data["temperature"]
+                        esc_current = parsed_data["current"]
+                        esc_consumption = parsed_data["consumption"]
+                        log(
+                            f"ESC: V={esc_voltage:.2f} A={esc_current:.2f} RPM={esc_rpm} Temp={esc_temp} mAh={esc_consumption}"
+                        )
+                        # 7. Long Sleep & Continue
+                        await asyncio.sleep_ms(1000)
+                        continue
+                    else:
+                        # CRC Error (already logged inside _parse_kiss_telemetry if enabled)
+                        pass  # Proceed to short sleep at the end
 
-                    # Wait approx 1 second before reading the next packet
-                    await asyncio.sleep_ms(1000)
-                    continue  # Skip the short sleep at the end
+            # If buffer was not empty after 10ms, or read failed/timed out, or CRC failed...
+            # Proceed to the short sleep at the end of the main try block
 
-            # If readexactly returned without data (shouldn't happen unless stream closed)
-            # or if parsing failed, we still need to yield briefly.
-            # However, the main delay is handled after successful processing.
-
-        except EOFError:
-            log("ESC Telemetry: UART connection closed.")
-            await asyncio.sleep_ms(1000)  # Wait before trying to read again
-        except asyncio.TimeoutError:
-            # This might happen if no new data arrives within the UART timeout
-            # after clearing the buffer. It's not necessarily an error in this sampling logic.
-            # log("ESC Telemetry: UART read timeout (expected if idle).")
-            await asyncio.sleep_ms(100)  # Short sleep before checking again
         except asyncio.CancelledError:
             log("ESC Telemetry: Reader task cancelled.")
-            raise  # Re-raise to allow task cleanup
+            raise
         except Exception as e:
-            log(f"Error in ESC telemetry reader task: {e}")
-            await asyncio.sleep_ms(500)  # Wait a bit after an unexpected error
+            # Catch other unexpected errors during the logic (not read/parse)
+            log(f"Error in ESC telemetry task logic: {e}")
+            await asyncio.sleep_ms(500)  # Wait after unexpected error
 
-        # Short sleep only if there was an error or no data processed in this iteration
+        # 8. Short Yield (if 1s sleep didn't happen)
         await asyncio.sleep_ms(25)
 
 
