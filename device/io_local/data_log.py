@@ -55,7 +55,7 @@ async def data_log_task():
         try:
             # Gather data using helper functions
             # mc_str = _log_motor_current() # Commented out
-            # esc_str = _log_esc_telemetry() # Commented out
+            # esc_str = _log_esc_telemetry()  # Commented out
             # ds_str = _log_ds18b20() # Commented out
             # ina_str = _log_ina226() # Commented out
             # gps_str = _log_gps()  # REMOVED - Logging now handled within gps_reader.py
