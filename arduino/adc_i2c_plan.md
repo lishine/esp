@@ -29,7 +29,7 @@ Read motor current via ADC (GPIO4) on an ESP32-C3 running Arduino code. Calculat
 ### 1. Calibration (Persistent via NVS)
 
 - **Storage:** Non-Volatile Storage (NVS) namespace `adc_cal` stores:
-  - `adc_zero_offset` (raw ADC reading at `CAL_LOW_MV`) - Key: `zero_offs`
+  - `adc_voltage_offset` (calculated voltage offset in mV) - Key: `volt_offs`
   - `adc_scaling_factor` (mV per ADC count) - Key: `scale_fact`
   - `waveform_mean_level_adc` (raw ADC reading for zero-crossing) - Key: `mean_lvl`
 - **Trigger:** Hold Button (GPIO9) for 5 seconds during normal operation.
@@ -40,9 +40,9 @@ Read motor current via ADC (GPIO4) on an ESP32-C3 running Arduino code. Calculat
   4.  User applies `CAL_HIGH_MV` (2V) to ADC input.
   5.  User short-presses button -> System reads `cal_high_reading`. (LED confirmation).
   6.  Calculate:
-      - `offset = cal_low_reading` (Assuming 1V maps directly to offset for simplicity, adjust if 0V was used)
-      - `factor = (CAL_HIGH_MV - CAL_LOW_MV) / (cal_high_reading - cal_low_reading)`
-  7.  Save `offset` and `factor` to NVS.
+      - `factor = (float)(CAL_HIGH_MV - CAL_LOW_MV) / (float)(cal_high_reading - cal_low_reading)`
+      - `offset_mv = (float)CAL_LOW_MV - ((float)cal_low_reading * factor)`
+  7.  Save `factor` (`scale_fact`) and `offset_mv` (`volt_offs`) to NVS.
   8.  Exit Calibration Mode (LED confirmation), resume normal operation.
 - **Loading:** Calibration values are loaded from NVS during `setup()`.
 
@@ -59,9 +59,9 @@ Read motor current via ADC (GPIO4) on an ESP32-C3 running Arduino code. Calculat
 
 - Runs continuously using FreeRTOS.
 - Reads ADC samples via DMA buffer (`adc_continuous_read`).
-- Loads calibrated `adc_zero_offset`, `adc_scaling_factor`, and `waveform_mean_level_adc` from globals (which were loaded from NVS).
+- Loads calibrated `adc_voltage_offset`, `adc_scaling_factor`, and `waveform_mean_level_adc` from globals (which were loaded from NVS).
 - **Per Sample:**
-  - Converts raw ADC to millivolts: `mV = (raw_adc - adc_zero_offset) * adc_scaling_factor`.
+  - Converts raw ADC to millivolts: `mV = (raw_adc * adc_scaling_factor) + adc_voltage_offset`.
   - Updates sum-of-squares for the current cycle's RMS calculation.
   - Increments sample count for the current cycle.
 - **Zero-Crossing Detection:** Compares `raw_adc` against `waveform_mean_level_adc` to detect full cycles (e.g., rising edge to rising edge).
@@ -149,8 +149,8 @@ graph TD
             AD --> AE(Trigger Low Set LED Flash);
             AE --> AF(Wait for Button Press - Step 2: Apply 2V);
             AF -- Short Press --> AG(Read ADC -> cal_high_reading);
-            AG --> AH(Calc offset &amp; scaling_factor using 1V/2V refs);
-            AH --> AI(Save offset &amp; factor to NVS);
+            AG --> AH(Calc voltage_offset &amp; scaling_factor using 1V/2V refs);
+            AH --> AI(Save voltage_offset &amp; factor to NVS);
             AI --> AJ(Trigger High Set LED Flash);
             AJ --> AK(Exit Calibration Mode);
         end

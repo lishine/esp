@@ -37,7 +37,7 @@ const int CAL_LOW_MV = 1000; // 1.0V reference point
 const int CAL_HIGH_MV = 2000; // 2.0V reference point
 // Declare NVS constants as extern to avoid multiple definitions
 extern const char* NVS_NAMESPACE;
-extern const char* NVS_KEY_ZERO_OFFSET;
+extern const char* NVS_KEY_VOLTAGE_OFFSET;
 extern const char* NVS_KEY_SCALE_FACTOR;
 extern const char* NVS_KEY_MEAN_LEVEL;
 
@@ -51,7 +51,7 @@ extern adc_continuous_handle_t adcHandle;
 extern nvs_handle_t nvsHandle;
 
 // Calibration Values (loaded from NVS)
-extern int32_t adc_zero_offset; // Raw ADC reading corresponding to CAL_LOW_MV
+extern float adc_voltage_offset; // Calculated voltage offset in mV at ADC reading 0
 extern float adc_scaling_factor; // Millivolts per ADC count ((CAL_HIGH_MV - CAL_LOW_MV) / (high_reading - low_reading))
 extern int32_t waveform_mean_level_adc; // Raw ADC value used as zero-crossing threshold
 

@@ -94,14 +94,14 @@ void buttonMonitorTask(void *pvParameters) {
                             int32_t high_reading = read_current_adc_value();
                             if (high_reading != -1) {
                                 Serial.printf("I (%s): Captured High Ref ADC: %ld\n", TAG, high_reading);
-                                int32_t new_offset;
+                                float new_offset; // Changed type to float
                                 float new_factor;
                                 if (calculate_calibration_factors(cal_low_reading_temp, high_reading, new_offset, new_factor)) {
-                                    adc_zero_offset = new_offset;
+                                    adc_voltage_offset = new_offset; // Use new global variable name
                                     adc_scaling_factor = new_factor;
-                                    save_zero_offset_nvs(adc_zero_offset);
+                                    save_voltage_offset_nvs(adc_voltage_offset); // Call renamed function
                                     save_scaling_factor_nvs(adc_scaling_factor);
-                                    Serial.printf("I (%s): Calibration successful. Offset: %ld, Factor: %.6f\n", TAG, adc_zero_offset, adc_scaling_factor);
+                                    Serial.printf("I (%s): Calibration successful. Voltage Offset: %.4f mV, Factor: %.6f\n", TAG, adc_voltage_offset, adc_scaling_factor);
                                     set_led_state(LedState::CAL_SPAN_SET); // Signal success
                                     flash_led_blocking(LED_PIN, 3, 150, 150); // 3 quick flashes
                                 } else {

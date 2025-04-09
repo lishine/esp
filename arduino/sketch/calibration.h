@@ -20,10 +20,10 @@ bool init_nvs();
 void load_calibration_nvs();
 
 /**
- * @brief Saves the given ADC zero offset value to NVS.
- * @param offset The raw ADC reading corresponding to CAL_LOW_MV.
+ * @brief Saves the given ADC voltage offset (in mV) to NVS.
+ * @param offset_mv The calculated voltage offset.
  */
-void save_zero_offset_nvs(int32_t offset);
+void save_voltage_offset_nvs(float offset_mv);
 
 /**
  * @brief Saves the given ADC scaling factor (mV per ADC count) to NVS.
@@ -41,11 +41,11 @@ void save_mean_level_nvs(int32_t level);
  * @brief Performs the two-point calibration calculation.
  * @param low_reading Raw ADC reading at CAL_LOW_MV.
  * @param high_reading Raw ADC reading at CAL_HIGH_MV.
- * @param out_offset Pointer to store the calculated zero offset.
- * @param out_factor Pointer to store the calculated scaling factor.
+ * @param out_offset_mv Reference to store the calculated voltage offset (in mV).
+ * @param out_factor Reference to store the calculated scaling factor (mV/count).
  * @return true if calculation was successful, false if readings are invalid (e.g., equal).
  */
-bool calculate_calibration_factors(int32_t low_reading, int32_t high_reading, int32_t &out_offset, float &out_factor);
+bool calculate_calibration_factors(int32_t low_reading, int32_t high_reading, float &out_offset_mv, float &out_factor);
 
 
 #endif // CALIBRATION_H

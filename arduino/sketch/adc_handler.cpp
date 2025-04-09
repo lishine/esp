@@ -96,14 +96,16 @@ bool init_adc() {
 // --- Convert Raw ADC to Millivolts ---
 // Uses the revised formula based on storing reading at CAL_LOW_MV as offset
 float convert_adc_to_mv(int32_t raw_adc) {
-    // Formula: mV = ((raw_adc - adc_zero_offset) * adc_scaling_factor) + CAL_LOW_MV
+    // Correct Formula: mV = (raw_adc * adc_scaling_factor) + adc_voltage_offset
     // Ensure adc_scaling_factor is not zero if loaded incorrectly
     if (adc_scaling_factor == 0.0f) {
-        // Avoid division by zero or incorrect scaling
-        // Return raw value or some indicator? For now, return 0.
-        return 0.0f;
+         // Avoid division by zero or incorrect scaling. Return 0 or NaN?
+         // Returning 0 for now, but consider if NaN is better.
+         // Serial.printf("W (%s): convert_adc_to_mv - scaling factor is zero!\n", TAG);
+         return 0.0f;
     }
-    return ((float)(raw_adc - adc_zero_offset) * adc_scaling_factor) + (float)CAL_LOW_MV;
+    // Use the correct global variable adc_voltage_offset
+    return ((float)raw_adc * adc_scaling_factor) + adc_voltage_offset;
 }
 
 
@@ -130,6 +132,7 @@ void adcProcessingTask(void *pvParameters) {
 
     uint8_t consecutive_timeouts = 0;
     uint32_t total_successful_reads = 0;
+    static unsigned long lastPrintTime = 0; // For throttling voltage print
     
     Serial.printf("I (%s): ADC Task starting with sample rate %d Hz, buffer size %d bytes\n",
                  TAG, TARGET_SAMPLE_FREQ_HZ, ADC_DMA_BUF_SIZE);
@@ -175,6 +178,15 @@ void adcProcessingTask(void *pvParameters) {
                     // --- Process Sample ---
                     samples_in_current_cycle++;
                     float current_mv = convert_adc_to_mv(current_raw);
+
+                    // --- Debug Print Voltage (approx once per second) ---
+                    unsigned long currentTime = millis();
+                    if (currentTime - lastPrintTime >= 1000) {
+                        Serial.printf("D (%s): Sample mV: %.2f (Raw: %ld)\n", TAG, current_mv, current_raw);
+                        lastPrintTime = currentTime;
+                    }
+                    // --- End Debug Print ---
+
                     sum_sq_current_cycle += ((double)current_mv * (double)current_mv); // Use double for sum
 
                     // --- Zero-Crossing Detection ---

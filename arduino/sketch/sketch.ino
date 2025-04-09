@@ -16,7 +16,7 @@ adc_continuous_handle_t adcHandle = NULL;
 nvs_handle_t nvsHandle = 0; // NVS handle is uint32_t
 
 // Default calibration values (will be overwritten by NVS or calibration)
-int32_t adc_zero_offset = 0; // Default: Assume 0 offset initially
+float adc_voltage_offset = 0.0f; // Default: Assume 0 mV offset initially
 float adc_scaling_factor = 1.0; // Default: Assume 1 mV per ADC count initially
 int32_t waveform_mean_level_adc = 2048; // Default: Midpoint for 12-bit ADC
 
@@ -35,7 +35,7 @@ volatile LedState currentLedState = LedState::NORMAL;
 
 // --- Define NVS Constants (declared extern in globals.h) ---
 const char* NVS_NAMESPACE = "adc_cal";
-const char* NVS_KEY_ZERO_OFFSET = "zero_offs";
+const char* NVS_KEY_VOLTAGE_OFFSET = "volt_offs"; // Renamed key
 const char* NVS_KEY_SCALE_FACTOR = "scale_fact";
 const char* NVS_KEY_MEAN_LEVEL = "mean_lvl";
 
@@ -62,8 +62,8 @@ void setup() {
       Serial.println("DEBUG: Loading calibration data from NVS...");
       delay(100);
       load_calibration_nvs(); // Function defined in calibration.cpp
-      Serial.printf("DEBUG: Loaded Offset: %ld, Scale Factor: %.4f, Mean Level: %ld\n",
-                    adc_zero_offset, adc_scaling_factor, waveform_mean_level_adc);
+      Serial.printf("DEBUG: Loaded Offset: %.4f mV, Scale Factor: %.4f, Mean Level: %ld\n",
+                    adc_voltage_offset, adc_scaling_factor, waveform_mean_level_adc);
       delay(100);
       // Explicitly set ADC pin to INPUT mode before ADC init
       pinMode(ADC_PIN_NUM, INPUT);
