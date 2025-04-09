@@ -18,6 +18,7 @@ import ap
 
 # IO related modules
 import io_local.init_io as init_io
+import io_local.esc_telemetry as esc_telemetry
 import io_local.data_log as data_log
 import io_local.gps_reader as gps_reader
 from io_local.gps_reader import get_gps_processing_stats
@@ -172,7 +173,7 @@ async def main():
         # Start logger task first
         log("Creating Log Writer task...")  # Changed log.log to log
         # Note: _log_writer_task was imported directly
-        asyncio.create_task(_log_writer_task())  # Use imported task directly
+        # asyncio.create_task(_log_writer_task())  # Use imported task directly
         log("Log Writer task created.")  # Changed log.log to log
 
         # Initialize IO components
@@ -198,20 +199,20 @@ async def main():
 
         # Start sensor reader tasks (if they have one)
         log("Starting sensor reader tasks...")  # Changed log.log to log
-        # esc_telemetry.start_esc_reader()  # Starts the async task internally
+        esc_telemetry.start_esc_reader()  # Starts the async task internally
         # ds18b20.start_ds18b20_reader()  # Starts the async task internally
-        gps_reader.start_gps_reader()  # Starts the async task internally
+        # gps_reader.start_gps_reader()  # Starts the async task internally
         log("Sensor reader tasks started (if sensors initialized correctly).")
 
-        asyncio.create_task(ds18b20._read_ds18b20_task())
+        # asyncio.create_task(ds18b20._read_ds18b20_task())
         # log("ADC Sampler task created.")
         # asyncio.create_task(adc.run_adc_sampler())
 
         # Start the data logging task (from data_log module)
         log("Creating Data Logging task...")  # Changed log.log to log
-        asyncio.create_task(
-            data_log.data_log_task()
-        )  # Call function from imported module
+        # asyncio.create_task(
+        # data_log.data_log_task()
+        # )  # Call function from imported module
         log("Data Logging task created.")
 
         # --- Start the HTTP server in its thread ---
@@ -223,12 +224,12 @@ async def main():
         # Start CPU load measurement tasks
         # Start CPU load measurement tasks
         log("Creating CPU load measurement tasks...")
-        asyncio.create_task(idle_task())
-        asyncio.create_task(measure_cpu())
+        # asyncio.create_task(idle_task())
+        # asyncio.create_task(measure_cpu())
         log("CPU load measurement tasks created.")
 
         log("Creating WiFi LED Status Monitor task...")
-        asyncio.create_task(manage_wifi_led_status())
+        # asyncio.create_task(manage_wifi_led_status())
         log("WiFi LED Status Monitor task created.")
 
         # Keep the main task running indefinitely so background tasks continue
@@ -239,34 +240,32 @@ async def main():
         loop_count = 0
         while True:
             # Remove blocking call from loop: blink_sequence(3, 2, 0.1)
-            await asyncio.sleep(15)  # Use await asyncio.sleep to yield control
+            await asyncio.sleep(1)  # Use await asyncio.sleep to yield control
             loop_count += 1
-            log(  # Changed log.log to log
-                f"Async main loop alive - iteration {loop_count}"
-            )  # Add periodic log
+            log(f"LOOP {loop_count}")  # Changed log.log to log  # Add periodic log
 
             # Log largest contiguous free block in data heaps
-            try:
-                # Get IDF Heap Info
-                heap_info = esp32.idf_heap_info(
-                    esp32.HEAP_DATA
-                )  # List of (total, free, largest_free, min_free)
-                max_free_block = 0
-                total_free = 0
-                num_regions = len(heap_info)
-                for heap in heap_info:
-                    total_free += heap[1]
-                    if heap[2] > max_free_block:
-                        max_free_block = heap[2]
+            # try:
+            #     # Get IDF Heap Info
+            #     heap_info = esp32.idf_heap_info(
+            #         esp32.HEAP_DATA
+            #     )  # List of (total, free, largest_free, min_free)
+            #     max_free_block = 0
+            #     total_free = 0
+            #     num_regions = len(heap_info)
+            #     for heap in heap_info:
+            #         total_free += heap[1]
+            #         if heap[2] > max_free_block:
+            #             max_free_block = heap[2]
 
-                # Get MicroPython Heap Info
-                upy_free = gc.mem_free()
+            #     # Get MicroPython Heap Info
+            #     upy_free = gc.mem_free()
 
-                log(  # Changed log.log to log
-                    f"Mem: IDF TotalFree={total_free}, MaxBlock={max_free_block}, Regions={num_regions}; UPy Free={upy_free}"
-                )
-            except Exception as heap_err:
-                log(f"Error getting memory info: {heap_err}")  # Changed log.log to log
+            #     log(  # Changed log.log to log
+            #         f"Mem: IDF TotalFree={total_free}, MaxBlock={max_free_block}, Regions={num_regions}; UPy Free={upy_free}"
+            #     )
+            # except Exception as heap_err:
+            #     log(f"Error getting memory info: {heap_err}")  # Changed log.log to log
     except Exception as e:
         log("Error during async main execution:", e)  # Changed log.log to log
         sys.print_exception(e)

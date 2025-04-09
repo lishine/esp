@@ -16,7 +16,7 @@ _current_log_index = -1  # Uninitialized by default, set by writer task
 _log_dir_checked = False  # Flag to check dir only once
 _log_queue = []  # In-memory queue for log messages (bytes)
 _MAX_QUEUE_SIZE = 200  # Max messages before dropping
-_WRITE_THRESHOLD = 10  # Number of messages to trigger a write
+_WRITE_THRESHOLD = 50  # Number of messages to trigger a write
 _write_event = asyncio.Event()  # Event to signal the writer task
 
 # --- Reset Counter ---
@@ -247,6 +247,7 @@ def log(*args, **kwargs):
 
     # 2. Always print to console
     print(output, end="", **kwargs)
+    return
     # 3. Queue the message for the writer task
     output_bytes = output.encode("utf-8")
 

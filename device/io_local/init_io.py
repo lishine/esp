@@ -37,9 +37,9 @@ def init_io():
     # Initialize components sequentially. Check return values if needed.
     # adc.init_adc()
     esc_telemetry.init_esc_telemetry()
-    ds18b20.init_ds18b20()
+    # ds18b20.init_ds18b20()
     # ina226.init_ina226() # Commented out as requested
-    gps_reader.init_gps_reader()
-    buzzer.init_buzzer()
+    # gps_reader.init_gps_reader()
+    # buzzer.init_buzzer()
 
     log("IO initialization complete.")  # Changed log.log to log
