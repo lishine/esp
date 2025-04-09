@@ -23,12 +23,7 @@ void ledNormalFlashTask(void *pvParameters);
  */
 void flash_led_blocking(int pin, int count, int on_ms, int off_ms);
 
-/**
- * @brief Sets the desired LED state, allowing the ledNormalFlashTask
- * to be temporarily overridden for feedback patterns.
- * @param newState The desired LedState.
- */
-void set_led_state(LedState newState);
+// Removed set_led_state declaration as it's no longer used.
 
 
 #endif // LED_HANDLER_H

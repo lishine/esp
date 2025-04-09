@@ -5,6 +5,10 @@
 
 static const char *TAG = "I2CHandler";
 
+// --- Define Global Variables (declared extern in globals.h) ---
+volatile uint16_t latest_freq_hz = 0;
+volatile uint16_t latest_rms_millivolts = 0;
+
 // --- Initialize I2C Slave ---
 void init_i2c_slave() {
     // Note: Wire.begin(address) automatically sets SDA/SCL pins based on board definition

@@ -4,16 +4,11 @@
 
 static const char *TAG = "LEDHandler";
 
-// --- Set LED State ---
-// This function allows other tasks (like button handler) to request
-// a temporary override of the normal flashing pattern.
-void set_led_state(LedState newState) {
-    // This simple implementation directly sets the global state.
-    // A more robust implementation might use a queue or mutex
-    // if contention between tasks setting the state is a concern.
-    currentLedState = newState;
-    // Serial.printf("D (%s): LED State changed to: %d\n", TAG, (int)newState); // Debug level, maybe too verbose
-}
+// --- Define Global Variables (declared extern in globals.h) ---
+TaskHandle_t ledNormalFlashTaskHandle = NULL;
+
+// --- Removed set_led_state function ---
+// No longer needed as complex states are gone.
 
 // --- Blocking LED Flash ---
 // Used for immediate feedback (e.g., after calibration step)
@@ -41,49 +36,14 @@ void flash_led_blocking(int pin, int count, int on_ms, int off_ms) {
 void ledNormalFlashTask(void *pvParameters) {
     Serial.printf("I (%s): LED Normal Flash Task started.\n", TAG);
     TickType_t lastWakeTime = xTaskGetTickCount();
-    const TickType_t normalOnTime = pdMS_TO_TICKS(4000);
-    const TickType_t normalOffTime = pdMS_TO_TICKS(4000);
+    // Simple heartbeat blink: 1s ON, 1s OFF
+    const TickType_t blinkInterval = pdMS_TO_TICKS(5000);
     bool ledIsOn = false;
 
     while (1) {
-        // Serial.println("DEBUG: LED Task Loop Start"); // Removed basic task running check
-        // Check if a temporary state override is active
-        LedState stateSnapshot = currentLedState; // Take snapshot to avoid race conditions
-
-        switch (stateSnapshot) {
-            case LedState::NORMAL:
-                // Normal 4s ON / 4s OFF cycle
-                ledIsOn = !ledIsOn;
-                digitalWrite(LED_PIN, ledIsOn ? HIGH : LOW);
-                // Serial.printf("D (%s): Normal LED state: %s\n", TAG, ledIsOn ? "ON" : "OFF"); // Debug level
-                vTaskDelayUntil(&lastWakeTime, ledIsOn ? normalOnTime : normalOffTime);
-                break;
-
-            // --- Handle Feedback Patterns (Blocking flashes are called directly) ---
-            // These states are set by other tasks, and this task just waits
-            // until the state is set back to NORMAL. The actual flashing for
-            // feedback happens via direct calls to flash_led_blocking from
-            // the button handler task immediately after setting the state.
-            case LedState::CAL_MODE_ENTRY:
-            case LedState::CAL_ZERO_WAIT:
-            case LedState::CAL_ZERO_SET:
-            case LedState::CAL_SPAN_WAIT:
-            case LedState::CAL_SPAN_SET:
-            case LedState::MEAN_SET:
-                // While in a feedback state, this task just yields,
-                // waiting for the button task to finish the feedback
-                // and set the state back to NORMAL.
-                // Serial.printf("D (%s): LED Task yielding, waiting for state NORMAL (current: %d)\n", TAG, (int)stateSnapshot); // Debug level
-                digitalWrite(LED_PIN, LOW); // Ensure LED is off during feedback pauses
-                ledIsOn = false; // Reset normal cycle state
-                vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(100)); // Check state frequently
-                break;
-
-            default:
-                Serial.printf("W (%s): Unhandled LED state: %d\n", TAG, (int)stateSnapshot);
-                currentLedState = LedState::NORMAL; // Recover to normal state
-                vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(100));
-                break;
-        }
+        // Simple heartbeat blink
+        ledIsOn = !ledIsOn;
+        digitalWrite(LED_PIN, ledIsOn ? HIGH : LOW);
+        vTaskDelayUntil(&lastWakeTime, blinkInterval);
     }
 }
