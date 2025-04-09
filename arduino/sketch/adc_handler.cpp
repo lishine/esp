@@ -1,12 +1,15 @@
 #include "adc_handler.h"
 #include "globals.h"
 #include <cmath> // For sqrt
+#include <esp_adc_cal.h> // For built-in calibration
 // #include <esp_log.h> // Using Serial.printf instead
 #include <driver/adc.h> // For adc1_get_raw (used cautiously)
 // #include <esp_adc/adc_continuous_io.h> // Header not found, reverting change
 
-static const char *TAG = "ADCHandler";
+#define DEFAULT_VREF    1100 // Default Vref for esp_adc_cal if eFuse not available
 
+static const char *TAG = "ADCHandler";
+static esp_adc_cal_characteristics_t *adc_chars = NULL; // For built-in calibration
 // --- Static variables for processing state ---
 static int32_t last_sample_raw = -1; // Initialize to invalid state
 static bool crossed_up = false;      // Tracks if last crossing was upwards
@@ -15,33 +18,47 @@ static double sum_sq_current_cycle = 0.0; // Use double for accumulator precisio
 
 // --- Initialize ADC Continuous Mode ---
 bool init_adc() {
-    // --- Pre-configure the specific ADC channel (Attempting workaround for timeouts) ---
-    // Configure ADC1 width and attenuation for the specific channel
-    // Note: This uses the single-shot API, hoping it influences the continuous setup.
-    // Map adc_bitwidth_t to adc_bits_width_t for the single-shot API call
-    adc_bits_width_t width_bit;
+    // --- Convert ADC_BITWIDTH for esp_adc_cal ---
+    adc_bits_width_t width_bit_cal;
     switch (ADC_BITWIDTH) {
         // Add cases for other bitwidths if needed
         case ADC_BITWIDTH_12:
         default:
-            width_bit = ADC_WIDTH_BIT_12;
+            width_bit_cal = ADC_WIDTH_BIT_12;
             break;
     }
-    esp_err_t config_ret = adc1_config_width(width_bit);
-    if (config_ret != ESP_OK) {
-         Serial.printf("W (%s): Failed to configure ADC1 width: %s\n", TAG, esp_err_to_name(config_ret));
-         // Continue anyway, maybe not fatal
+
+    // --- Setup Built-in ADC Calibration (for debug print) ---
+    Serial.printf("I (%s): Setting up esp_adc_cal...\n", TAG);
+    if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP) == ESP_OK) {
+        Serial.printf("I (%s): eFuse Two Point calibration values available.\n", TAG);
+        adc_chars = (esp_adc_cal_characteristics_t*)calloc(1, sizeof(esp_adc_cal_characteristics_t));
+        esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT, ADC_ATTEN, width_bit_cal, DEFAULT_VREF, adc_chars); // Use converted width
+         if (val_type == ESP_ADC_CAL_VAL_EFUSE_TP) {
+            Serial.printf("I (%s): Characterized using Two Point Value\n", TAG);
+        } else if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
+            Serial.printf("I (%s): Characterized using eFuse Vref\n", TAG);
+        } else {
+            Serial.printf("I (%s): Characterized using Default Vref\n", TAG);
+        }
+    } else if (esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_VREF) == ESP_OK) {
+         Serial.printf("I (%s): eFuse Vref calibration value available.\n", TAG);
+        adc_chars = (esp_adc_cal_characteristics_t*)calloc(1, sizeof(esp_adc_cal_characteristics_t));
+        esp_adc_cal_value_t val_type = esp_adc_cal_characterize(ADC_UNIT, ADC_ATTEN, width_bit_cal, DEFAULT_VREF, adc_chars); // Use converted width
+         if (val_type == ESP_ADC_CAL_VAL_EFUSE_VREF) {
+            Serial.printf("I (%s): Characterized using eFuse Vref\n", TAG);
+        } else {
+            Serial.printf("I (%s): Characterized using Default Vref\n", TAG); // Should ideally not happen if Vref eFuse is OK
+        }
     } else {
-         Serial.printf("I (%s): Configured ADC1 width to %d bits.\n", TAG, ADC_BITWIDTH);
+        Serial.printf("W (%s): No eFuse calibration values available, using default Vref for debug print.\n", TAG);
+         // Optionally characterize using default Vref anyway if needed for the structure
+         adc_chars = (esp_adc_cal_characteristics_t*)calloc(1, sizeof(esp_adc_cal_characteristics_t));
+         esp_adc_cal_characterize(ADC_UNIT, ADC_ATTEN, width_bit_cal, DEFAULT_VREF, adc_chars); // Use converted width
     }
-    config_ret = adc1_config_channel_atten(ADC1_CHANNEL_4, ADC_ATTEN); // Use specific enum ADC1_CHANNEL_4
-     if (config_ret != ESP_OK) {
-         Serial.printf("W (%s): Failed to configure ADC1 channel %d attenuation: %s\n", TAG, (int)ADC1_CHANNEL_4, esp_err_to_name(config_ret));
-         // Continue anyway
-    } else {
-         Serial.printf("I (%s): Configured ADC1 channel %d attenuation to %d.\n", TAG, (int)ADC1_CHANNEL_4, (int)ADC_ATTEN);
-    }
-    // --- End of Pre-configuration ---
+    // --- End of Built-in ADC Calibration Setup ---
+
+    // --- Continuous Mode Setup ---
 
     adc_continuous_handle_cfg_t adc_config = {
         // Allocate DMA buffer size. Larger can handle higher speeds/longer processing delays.
@@ -182,7 +199,15 @@ void adcProcessingTask(void *pvParameters) {
                     // --- Debug Print Voltage (approx once per second) ---
                     unsigned long currentTime = millis();
                     if (currentTime - lastPrintTime >= 1000) {
-                        Serial.printf("D (%s): Sample mV: %.2f (Raw: %ld)\n", TAG, current_mv, current_raw);
+                        uint32_t calibrated_mv_debug = 0; // Variable for the debug value
+                        if (adc_chars != NULL) {
+                             calibrated_mv_debug = esp_adc_cal_raw_to_voltage(current_raw, adc_chars);
+                        } else {
+                            // Fallback or indicate error if adc_chars is NULL
+                            calibrated_mv_debug = 9999; // Example error indicator
+                        }
+                        // Use calibrated_mv_debug ONLY in this print statement, compare with manual calc
+                        Serial.printf("D (%s): Sample mV (cal): %lu (Raw: %ld) | Manual mV: %.2f\n", TAG, calibrated_mv_debug, current_raw, current_mv);
                         lastPrintTime = currentTime;
                     }
                     // --- End Debug Print ---
