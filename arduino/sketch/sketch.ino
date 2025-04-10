@@ -25,6 +25,7 @@ void setup() {
   Serial.println("DEBUG: Initializing GPIO pins...");
   delay(100);
   pinMode(LED_PIN, OUTPUT);
+//   pinMode(3, OUTPUT);
   digitalWrite(LED_PIN, LOW); // Start with LED off
   Serial.println("DEBUG: GPIO Pins Initialized.");
   delay(100);
@@ -87,8 +88,21 @@ delay(100);
 
   Serial.println("--- Setup Complete ---");
   delay(100);
+
+    ledcAttach(3,50,12); //ledcAttach(uint8_tpin,uint32_tfreq,uint8_tresolution); for ESP core V3
+  
+  delay(115); 
+ledcWrite(3,4095/2);
 }
 
 void loop() {
-  vTaskDelay(pdMS_TO_TICKS(1000)); // Nothing critical here, yield time
+//   static bool pinState = false;
+//   pinState = !pinState;
+//   digitalWrite(3, pinState);
+//   Serial.printf("DEBUG: PWM Duty changed to %d%% (value: %d)\n",
+                // highDuty ? 100 : 0, dutyValue);
+  
+  vTaskDelay(pdMS_TO_TICKS(1000));// Nothing critical here, yield time
 }
+
+
