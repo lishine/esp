@@ -11,11 +11,22 @@ static const char *TAG = "ADCHandler";
 esp_adc_cal_characteristics_t adc_chars; // Definition for ADC calibration characteristics
 TaskHandle_t adcProcessingTaskHandle = NULL;
 adc_continuous_handle_t adcHandle = NULL;
+float cycle_periods[NUM_CYCLES_AVERAGE] = {0};
+float cycle_rms_values[NUM_CYCLES_AVERAGE] = {0};
+int cycle_buffer_index = 0;
+int cycle_count = 0;
 
 // static esp_adc_cal_characteristics_t *adc_chars = NULL; // Now a global extern variable `adc_chars`
 // --- Static variables for processing state ---
 static int32_t last_sample_mv = -1; // Initialize to invalid state (Using mV now)
+static bool crossed_up = false;      // Tracks if last crossing was upwards
+static uint32_t samples_in_current_cycle = 0;
+static double sum_sq_current_cycle = 0.0; // Use double for accumulator precision
+static double sum_mv_current_cycle = 0.0; // Accumulator for sum of mV in the current cycle
 
+// --- State machine for cycle detection ---
+enum CycleState { IDLE, SAW_RISING, SAW_FALLING };
+static CycleState current_cycle_state = IDLE;
 // --- Initialize ADC Continuous Mode & Perform Calibration ---
 bool init_adc() {
     Serial.printf("I (%s): Initializing ADC and Calibration...\n", TAG);
@@ -58,7 +69,6 @@ bool init_adc() {
         // Must be multiple of SOC_ADC_DMA_MAX_BUFFER_SIZE if defined.
         .max_store_buf_size = ADC_DMA_BUF_SIZE, // Use increased buffer size from globals.h
         .conv_frame_size = ADC_CONV_FRAME_SIZE,
-        .flags = 0 // Added to address warning
     };
     esp_err_t ret = adc_continuous_new_handle(&adc_config, &adcHandle);
     if (ret != ESP_OK) {
@@ -123,7 +133,21 @@ void adcProcessingTask(void *pvParameters) {
     static double sum_sq_current_batch = 0.0;    // Accumulator for sum of squares of mV for the entire batch
     static uint32_t valid_samples_in_current_batch = 0; // Counter for valid samples in the entire batch (for DC RMS)
 
-    last_sample_mv = -1;
+    // Cycle-specific state
+    crossed_up = false;
+    last_sample_mv = -1; // Reset mV tracking too
+    samples_in_current_cycle = 0;
+    sum_sq_current_cycle = 0.0;
+    sum_mv_current_cycle = 0.0;
+    cycle_buffer_index = 0;
+    cycle_count = 0;
+    
+    current_cycle_state = IDLE; // Initialize cycle state machine
+    // Initialize circular buffers (optional, they are global)
+    for(int i=0; i<NUM_CYCLES_AVERAGE; ++i) {
+        cycle_periods[i] = 0.0f;
+        cycle_rms_values[i] = 0.0f;
+    }
 
     uint8_t consecutive_timeouts = 0;
     uint32_t total_successful_reads = 0;
@@ -163,7 +187,6 @@ void adcProcessingTask(void *pvParameters) {
     uint32_t discard_samples_max = 0;          // Max samples per discard read call
     uint32_t SAFETY_MARGIN_MS = 3;          // Max samples per discard read call
     uint32_t theoretical_acquisition_time_ms = (ADC_READ_LEN * 1000.0) / TARGET_SAMPLE_FREQ_HZ;
-    // uint32_t processing_time_ms = 9 * ADC_READ_LEN / 512; // Removed unused variable
 
     while (1)
     {
@@ -230,7 +253,7 @@ void adcProcessingTask(void *pvParameters) {
                  }
             }
             // Calculate dynamic mean using mV values
-            // double dynamic_mean_level_mv = (valid_samples > 0) ? (voltage_sum / valid_samples) : 0.0; // Removed unused variable
+            double dynamic_mean_level_mv = (valid_samples > 0) ? (voltage_sum / valid_samples) : 0.0; // Fallback to 0.0 if no valid samples
                     // Serial.printf("D (%s): Buffer Valid Samples: %d, Dynamic Mean: %.2f mV\n", TAG, valid_samples, dynamic_mean_level_mv); // Already commented
             if (valid_samples == 0) {
                 // Log this specific issue and invalidate the batch
@@ -246,9 +269,17 @@ void adcProcessingTask(void *pvParameters) {
                     uint32_t current_mv = voltage_buffer[i]; // Use pre-converted voltage
                     samples_in_current_batch++; // Increment batch sample counter
 
+                    // Initialize last_sample_mv on first valid run (Moved up)
+                    if (last_sample_mv == -1) {
+                         last_sample_mv = current_mv;
+                    }
 
                     // --- Process Sample ---
+                    samples_in_current_cycle++;
+                    // Incrementally update sums for RMS calculation
                     double current_mv_double = (double)current_mv;
+                    sum_mv_current_cycle += current_mv_double;
+                    sum_sq_current_cycle += current_mv_double * current_mv_double;
 
                     // Also update batch-level accumulators
                     sum_mv_current_batch += current_mv_double;
@@ -263,9 +294,32 @@ void adcProcessingTask(void *pvParameters) {
                     }
                     // --- End Debug Print ---
 
+                    // Check if the signal crossed the DYNAMIC mean voltage level
+                    if (samples_in_current_cycle > 1) {
+                        double mean_voltage_mv = sum_mv_current_cycle / samples_in_current_cycle;
+                        double mean_sq = mean_voltage_mv * mean_voltage_mv;
+                        double sum_sq_over_n = sum_sq_current_cycle / samples_in_current_cycle;
+                        float rms_mv = (sum_sq_over_n >= mean_sq) ? sqrt(sum_sq_over_n - mean_sq) : 0.0f;
 
-                    } // Moved brace from line 248 to here to fix current_mv scope
-                // } // Removed extra brace
+                        cycle_rms_values[cycle_buffer_index] = rms_mv;
+                        cycle_count++;
+                        cycle_buffer_index = (cycle_buffer_index + 1) % NUM_CYCLES_AVERAGE;
+                    } else {
+                                     Serial.printf("W (%s): Cycle detected with <= 1 sample? Skipping and invalidating batch.\n", TAG);
+                                     batch_valid = false;
+                    }
+                    // Reset for next cycle measurement & transition state
+                    samples_in_current_cycle = 0;
+                    sum_mv_current_cycle = 0.0;
+                    sum_sq_current_cycle = 0.0;
+                    current_cycle_state = SAW_RISING; // Start next cycle timing
+                    // Serial.printf("D (%s): State -> SAW_RISING (Cycle Complete)\n", TAG); // Already commented
+
+                
+
+                    last_sample_mv = current_mv; // Update mV tracking for next iteration
+
+                } // End check for valid sample (voltage_buffer[i] != UINT32_MAX)
             } // End second for loop (processing samples)
 
             // --- NEW BATCH COMPLETION CHECK (Based primarily on sample count) ---
@@ -276,20 +330,41 @@ void adcProcessingTask(void *pvParameters) {
                 // DEBUG: Log batch state before averaging
                 // Serial.printf("D (%s): Batch End Check: Valid=%d, CycleCount=%d, ValidSamplesInBatch=%lu\n", TAG, batch_valid, cycle_count, valid_samples_in_current_batch);
                 if (batch_valid) {
-                    if (valid_samples_in_current_batch > 0) {
-                        double batch_mean_mv = sum_mv_current_batch / valid_samples_in_current_batch;
-                        double batch_mean_sq = batch_mean_mv * batch_mean_mv;
-                        double batch_sum_sq_over_n = sum_sq_current_batch / valid_samples_in_current_batch;
-                        float batch_rms_mv = 0.0f;
-                        if (batch_sum_sq_over_n >= batch_mean_sq) {
-                            batch_rms_mv = sqrt(batch_sum_sq_over_n - batch_mean_sq);
+                    // Determine how many cycles were actually completed in this batch
+                    int cycles_to_average = (cycle_count > NUM_CYCLES_AVERAGE) ? NUM_CYCLES_AVERAGE : cycle_count;
+
+                    if (cycles_to_average > 0) { // If cycles were detected, average them
+                        double sum_rms = 0.0;
+                        int start_idx = (cycle_buffer_index - cycles_to_average + NUM_CYCLES_AVERAGE) % NUM_CYCLES_AVERAGE;
+                        for (int k = 0; k < cycles_to_average; ++k) {
+                            int current_idx = (start_idx + k) % NUM_CYCLES_AVERAGE;
+                            sum_rms += cycle_rms_values[current_idx];
                         }
-                        latest_rms_millivolts = (uint16_t)round(batch_rms_mv);
-                        Serial.printf("I (%s): Batch ended: Batch RMS=%.2fmV (%u) over %lu samples\n", TAG,
-                                 batch_rms_mv, latest_rms_millivolts, valid_samples_in_current_batch);
-                    } else {
-                        Serial.printf("W (%s): Batch ended with 0 valid samples. Resetting results.\n", TAG);
-                        latest_rms_millivolts = 0;
+                        float avg_rms = sum_rms / cycles_to_average;
+
+                        // Update volatile globals
+                        latest_rms_millivolts = (uint16_t)round(avg_rms);
+
+                        Serial.printf("I (%s): Avg (%d cycles):, RMS=%.2fmV (%u)\n", TAG,
+                                 cycles_to_average,  avg_rms, latest_rms_millivolts);
+
+                    } else { // If no full cycles detected, calculate overall Batch RMS/Mean
+                        if (valid_samples_in_current_batch > 0) {
+                            double batch_mean_mv = sum_mv_current_batch / valid_samples_in_current_batch;
+                            double batch_mean_sq = batch_mean_mv * batch_mean_mv;
+                            double batch_sum_sq_over_n = sum_sq_current_batch / valid_samples_in_current_batch;
+                            float batch_rms_mv = 0.0f;
+                            if (batch_sum_sq_over_n >= batch_mean_sq) {
+                                batch_rms_mv = sqrt(batch_sum_sq_over_n - batch_mean_sq);
+                            }
+                            latest_rms_millivolts = (uint16_t)round(batch_rms_mv);
+                            Serial.printf("I (%s): Batch ended (0 cycles): Batch RMS=%.2fmV (%u) over %lu samples\n", TAG,
+                                     batch_rms_mv, latest_rms_millivolts, valid_samples_in_current_batch);
+                            Serial.printf("D (%s): dynamic_mean_level_mv=%.2f\n", TAG, dynamic_mean_level_mv);
+                        } else {
+                            Serial.printf("W (%s): Batch ended with 0 cycles and 0 valid samples. Resetting results.\n", TAG);
+                            latest_rms_millivolts = 0;
+                        }
                     }
                 } else {
                     // Log that the average calculation is being skipped due to invalid batch
@@ -313,6 +388,7 @@ void adcProcessingTask(void *pvParameters) {
                     } else {
                          Serial.printf("D (%s): Processing Time Stats (Batch): Not enough reads yet.\n", TAG);
                     }
+                
                 } else {
                     Serial.printf("W (%s): ADC Read Timing (Batch): No successful reads in this batch.\n", TAG);
                 }
@@ -333,11 +409,13 @@ void adcProcessingTask(void *pvParameters) {
                 processing_read_count = 0;
                 last_read_complete_time_us = 0; // Reset to prevent calculation across batch boundary
                 // --- Reset state for the next batch ---
+                cycle_count = 0; // Reset cycle count for the next batch window
                 batch_valid = true; // Assume next batch is valid until proven otherwise
                 samples_in_current_batch = 0; // Reset batch sample counter
                 sum_mv_current_batch = 0.0;     // Reset batch accumulators
                 sum_sq_current_batch = 0.0;
                 valid_samples_in_current_batch = 0;
+                // Note: Cycle-specific accumulators (samples_in_current_cycle, etc.) are reset when a cycle *is* detected
 
                 // --- Replace Delay with Discard Reads ---
                 uint32_t batch_end_time = millis();
@@ -355,7 +433,7 @@ void adcProcessingTask(void *pvParameters) {
                         uint32_t discard_read_start_us = micros(); // Start timing discard read
                         // Read with minimal timeout (0) to keep ADC active and drain DMA buffer quickly
                         // We don't strictly need the return value here, but capture it in case of future debugging needs
-                        /* esp_err_t discard_ret = */ adc_continuous_read(adcHandle, discard_buffer, ADC_CONV_FRAME_SIZE, &discard_bytes_read, 30); // Removed unused variable discard_ret
+                        adc_continuous_read(adcHandle, discard_buffer, ADC_CONV_FRAME_SIZE, &discard_bytes_read, 30);
                         uint32_t discard_read_end_us = micros(); // End timing discard read
  
                         // Update discard timing stats
@@ -403,7 +481,7 @@ void adcProcessingTask(void *pvParameters) {
                 }
                 actual_batch_start_time = millis(); // Update start time for the *next* batch interval
             } // --- End of NEW batch completion block ---
-        }
+        } // <<< THIS BRACE CLOSES: if (ret == ESP_OK)
         else if (ret == ESP_ERR_TIMEOUT) { // Start else if block correctly
              consecutive_timeouts++;
              batch_valid = false; // Invalidate batch on timeout
@@ -411,7 +489,8 @@ void adcProcessingTask(void *pvParameters) {
              if (consecutive_timeouts == 1 || consecutive_timeouts % 5 == 0) {
                  Serial.printf("W (%s): ADC Read Timeout #%u! ADC might not be sampling at expected rate.\n",
                               TAG, consecutive_timeouts);
-                 Serial.printf("D (%s): DMA buffer state - Samples in batch: %lu\n", TAG, samples_in_current_batch);
+                 Serial.printf("D (%s): DMA buffer state - Samples: %lu, Cycle count: %d\n",
+                              TAG, samples_in_current_cycle, cycle_count);
              }
              // Short fixed delay on timeout, interval timing is handled after a *successful* batch completion
              // vTaskDelay(pdMS_TO_TICKS(50)); // Commented out: Let main loop yield handle it
@@ -428,7 +507,7 @@ void adcProcessingTask(void *pvParameters) {
         }
 
         // Removed fixed delay - now handled by calculated delay after batch completion
-        vTaskDelay(pdMS_TO_TICKS(2)); // <-- MOVED INSIDE: Yield control briefly every loop iteration
+        vTaskDelay(pdMS_TO_TICKS(20)); // <-- MOVED INSIDE: Yield control briefly every loop iteration
     } // End while(1)
 } // <-- ADDED: Closing brace for adcProcessingTask function
 

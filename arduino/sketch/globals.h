@@ -57,7 +57,7 @@ extern esp_adc_cal_characteristics_t adc_chars; // Added for ESP-IDF calibration
 // extern float adc_scaling_factor;
 // extern int32_t waveform_mean_level_adc; // Mean level calculated dynamically
 // Processing Buffers & State
-extern float cycle_periods[NUM_CYCLES_AVERAGE]; // Stores periods of last N cycles (in seconds)
+extern float cycle_frequencies[NUM_CYCLES_AVERAGE]; // Stores frequencies of last N cycles (in Hz)
 extern float cycle_rms_values[NUM_CYCLES_AVERAGE]; // Stores RMS of last N cycles (in mV)
 extern int cycle_buffer_index;
 extern int cycle_count; // How many cycles measured since last average calculation

@@ -89,10 +89,10 @@ delay(100);
   Serial.println("--- Setup Complete ---");
   delay(100);
 
-    ledcAttach(3,50,12); //ledcAttach(uint8_tpin,uint32_tfreq,uint8_tresolution); for ESP core V3
+    // ledcAttach(3,31,12); //ledcAttach(uint8_tpin,uint32_tfreq,uint8_tresolution); for ESP core V3
   
   delay(115); 
-ledcWrite(3,4095/2);
+// ledcWrite(3,4095/2);
 }
 
 void loop() {
@@ -101,8 +101,19 @@ void loop() {
 //   digitalWrite(3, pinState);
 //   Serial.printf("DEBUG: PWM Duty changed to %d%% (value: %d)\n",
                 // highDuty ? 100 : 0, dutyValue);
-  
-  vTaskDelay(pdMS_TO_TICKS(1000));// Nothing critical here, yield time
+  // if (Serial.available()) {
+  //   String input = Serial.readStringUntil('\n');
+  //   int newFreq = input.toInt();
+  //   if (newFreq > 0) {
+  //     ledcChangeFrequency(3,newFreq,12);// Update frequency
+  //     Serial.print("PWM frequency updated to: ");
+  //     Serial.println(newFreq);
+  //   } else {
+  //     Serial.println("Invalid input. Enter a number > 0.");
+  //   }
+  // }
+
+  vTaskDelay(pdMS_TO_TICKS(300));// Nothing critical here, yield time
 }
 
 
