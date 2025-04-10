@@ -156,8 +156,37 @@ void adcProcessingTask(void *pvParameters) {
     if (actual_batch_start_time == 0) { // Initialize on first run
         actual_batch_start_time = millis();
     }
+ 
+    // Timing statistics for adc_continuous_read within a batch
+    uint64_t batch_read_time_sum_us = 0;
+    uint32_t batch_read_time_min_us = UINT32_MAX;
+    uint32_t batch_read_time_max_us = 0;
+    uint32_t batch_read_count = 0;
+    uint64_t total_batch_samples_read = 0; // Accumulator for total samples read in main loop
+    uint32_t batch_samples_min = UINT32_MAX; // Min samples per main read call
+    uint32_t batch_samples_max = 0;          // Max samples per main read call
+ 
+    // Statistics for processing time between main reads
+    uint64_t processing_time_sum_us = 0;
+    uint32_t processing_time_min_us = UINT32_MAX;
+    uint32_t processing_time_max_us = 0;
+    uint32_t processing_read_count = 0; // Count of reads used for processing time calc
+    static uint32_t last_read_complete_time_us = 0; // Time the previous read finished
+ 
+    // Timing statistics for adc_continuous_read within the discard loop
+    uint64_t discard_read_time_sum_us = 0;
+    uint32_t discard_read_time_min_us = UINT32_MAX;
+    uint32_t discard_read_time_max_us = 0;
+    uint32_t discard_read_count = 0;
+    uint64_t total_discard_samples_read = 0; // Accumulator for total samples read in discard loop
+    uint32_t discard_samples_min = UINT32_MAX; // Min samples per discard read call
+    uint32_t discard_samples_max = 0;          // Max samples per discard read call
+    uint32_t SAFETY_MARGIN_MS = 3;          // Max samples per discard read call
+    uint32_t theoretical_acquisition_time_ms = (ADC_READ_LEN * 1000.0) / TARGET_SAMPLE_FREQ_HZ;
+    uint32_t processing_time_ms = 9 * ADC_READ_LEN / 512;
 
-    while (1) {
+    while (1)
+    {
         // uint32_t batch_start_time = millis(); // REMOVED - No longer needed here
         // Add periodic health report every ~5 seconds (assuming ~5ms per iteration)
         if (total_successful_reads % 1000 == 0 && total_successful_reads > 0) {
@@ -170,14 +199,35 @@ void adcProcessingTask(void *pvParameters) {
              continue;
         }
 
-        esp_err_t ret = adc_continuous_read(adcHandle, raw_result_buffer, ADC_CONV_FRAME_SIZE, &bytes_read, 100);
-
+        uint32_t read_start_us = micros(); // Start timing
+        esp_err_t ret = adc_continuous_read(adcHandle, raw_result_buffer, ADC_CONV_FRAME_SIZE, &bytes_read, 30);
+        uint32_t read_end_us = micros(); // End timing
+ 
         if (ret == ESP_OK) {
+            uint32_t duration_us = read_end_us - read_start_us;
+            batch_read_time_sum_us += duration_us;
+            batch_read_time_min_us = min(batch_read_time_min_us, duration_us);
+            batch_read_time_max_us = max(batch_read_time_max_us, duration_us);
+            batch_read_count++;
+ 
+            // Calculate samples and update sample stats for the main read
+            int samples_in_buffer = bytes_read / SOC_ADC_DIGI_RESULT_BYTES;
+            total_batch_samples_read += samples_in_buffer;
+            batch_samples_min = min(batch_samples_min, (uint32_t)samples_in_buffer);
+            batch_samples_max = max(batch_samples_max, (uint32_t)samples_in_buffer);
+ 
+            // Calculate processing time since last read completed
+            if (last_read_complete_time_us != 0) { // Skip first iteration
+                 uint32_t current_processing_time_us = read_start_us - last_read_complete_time_us;
+                 processing_time_sum_us += current_processing_time_us;
+                 processing_time_min_us = min(processing_time_min_us, current_processing_time_us);
+                 processing_time_max_us = max(processing_time_max_us, current_processing_time_us);
+                 processing_read_count++;
+            }
+            last_read_complete_time_us = read_end_us; // Store end time for next iteration's calc
+ 
             consecutive_timeouts = 0; // Reset timeout counter on success
             total_successful_reads++;
-            
-            // --- Convert samples and calculate dynamic mean voltage ---
-            int samples_in_buffer = bytes_read / SOC_ADC_DIGI_RESULT_BYTES;
             // Declare sum and count before the loop
             double voltage_sum = 0.0;
             int valid_samples = 0;
@@ -359,6 +409,41 @@ void adcProcessingTask(void *pvParameters) {
                     latest_rms_millivolts = 0;
                 }
 
+                // --- Report ADC Read Timing and Sample Stats ---
+                if (batch_read_count > 0) {
+                    float avg_read_time_us = (float)batch_read_time_sum_us / batch_read_count;
+                    float avg_batch_samples = (float)total_batch_samples_read / batch_read_count;
+                    Serial.printf("I (%s): ADC Main Read Stats (Batch): Count=%lu, TotalSamples=%llu, MinSamples=%lu, MaxSamples=%lu, AvgSamples=%.2f | MinTime=%lu us, MaxTime=%lu us, AvgTime=%.2f us\n", TAG,
+                                  batch_read_count, total_batch_samples_read, batch_samples_min, batch_samples_max, avg_batch_samples,
+                                  batch_read_time_min_us, batch_read_time_max_us, avg_read_time_us);
+ 
+                    // --- Report Processing Time Stats ---
+                    if (processing_read_count > 0) {
+                         float avg_processing_time_us = (float)processing_time_sum_us / processing_read_count;
+                         Serial.printf("I (%s): Processing Time Stats (Batch): Count=%lu, Min=%lu us, Max=%lu us, Avg=%.2f us\n", TAG,
+                                       processing_read_count, processing_time_min_us, processing_time_max_us, avg_processing_time_us);
+                    } else {
+                         Serial.printf("D (%s): Processing Time Stats (Batch): Not enough reads yet.\n", TAG);
+                    }
+                } else {
+                    Serial.printf("W (%s): ADC Read Timing (Batch): No successful reads in this batch.\n", TAG);
+                }
+ 
+                // Reset timing stats for next batch
+                batch_read_time_sum_us = 0;
+                batch_read_time_min_us = UINT32_MAX;
+                batch_read_time_max_us = 0;
+                batch_read_count = 0;
+                total_batch_samples_read = 0; // Reset sample accumulator
+                batch_samples_min = UINT32_MAX; // Reset min samples per call
+                batch_samples_max = 0;          // Reset max samples per call
+ 
+                // Reset processing time stats for next batch
+                processing_time_sum_us = 0;
+                processing_time_min_us = UINT32_MAX;
+                processing_time_max_us = 0;
+                processing_read_count = 0;
+                last_read_complete_time_us = 0; // Reset to prevent calculation across batch boundary
                 // --- Reset state for the next batch ---
                 cycle_count = 0; // Reset cycle count for the next batch window
                 batch_valid = true; // Assume next batch is valid until proven otherwise
@@ -368,23 +453,69 @@ void adcProcessingTask(void *pvParameters) {
                 valid_samples_in_current_batch = 0;
                 // Note: Cycle-specific accumulators (samples_in_current_cycle, etc.) are reset when a cycle *is* detected
 
-                // --- Calculate Delay for ~TARGET_BATCH_INTERVAL_MS Interval ---
+                // --- Replace Delay with Discard Reads ---
                 uint32_t batch_end_time = millis();
-                uint32_t total_batch_duration_ms = batch_end_time - actual_batch_start_time; // Use actual start time
+                uint32_t total_batch_duration_ms = batch_end_time - actual_batch_start_time;
                 int32_t delay_ms = TARGET_BATCH_INTERVAL_MS - total_batch_duration_ms;
+ 
+                if (delay_ms > 0) {
+                    Serial.printf("D (%s): Total Batch Duration: %lu ms, Entering discard-read loop for %ld ms\n", TAG, total_batch_duration_ms, delay_ms);
+                    uint32_t discard_loop_end_time = millis() + delay_ms;
+                    // Use a static buffer to avoid stack allocation in the loop if preferred,
+                    // but local should be fine given the size and context.
+                    uint8_t discard_buffer[ADC_CONV_FRAME_SIZE]; // Temporary buffer for discarded reads
+                    uint32_t discard_bytes_read = 0;
+                    while (millis() < discard_loop_end_time) {
+                        uint32_t discard_read_start_us = micros(); // Start timing discard read
+                        // Read with minimal timeout (0) to keep ADC active and drain DMA buffer quickly
+                        // We don't strictly need the return value here, but capture it in case of future debugging needs
+                        esp_err_t discard_ret = adc_continuous_read(adcHandle, discard_buffer, ADC_CONV_FRAME_SIZE, &discard_bytes_read, 30);
+                        uint32_t discard_read_end_us = micros(); // End timing discard read
+ 
+                        // Update discard timing stats
+                        uint32_t discard_duration_us = discard_read_end_us - discard_read_start_us;
+                        discard_read_time_sum_us += discard_duration_us;
+                        discard_read_time_min_us = min(discard_read_time_min_us, discard_duration_us);
+                        discard_read_time_max_us = max(discard_read_time_max_us, discard_duration_us);
+                        discard_read_count++;
 
-                if (delay_ms < 5) { // Ensure a minimum positive delay to yield
-                   // If the processing took longer than the target interval, log it
-                   if (delay_ms < 0) {
-                       Serial.printf("W (%s): Batch processing (%lu ms) exceeded target interval (%d ms). Applying minimum delay.\n",
-                                    TAG, total_batch_duration_ms, TARGET_BATCH_INTERVAL_MS);
-                   }
-                   delay_ms = 5;
+                        // Calculate samples and update sample stats for the discard read
+                        int discard_samples_read = discard_bytes_read / SOC_ADC_DIGI_RESULT_BYTES;
+                        total_discard_samples_read += discard_samples_read;
+                        discard_samples_min = min(discard_samples_min, (uint32_t)discard_samples_read);
+                        discard_samples_max = max(discard_samples_max, (uint32_t)discard_samples_read);
+                        vTaskDelay(pdMS_TO_TICKS(theoretical_acquisition_time_ms-SAFETY_MARGIN_MS+2));
+                        // No delay needed here, adc_continuous_read with 0 timeout should return quickly
+                    }
+                    Serial.printf("D (%s): Discard-read loop finished.\n", TAG);
+ 
+                    // --- Report Discard Read Timing and Sample Stats ---
+                    if (discard_read_count > 0) {
+                        float avg_discard_read_time_us = (float)discard_read_time_sum_us / discard_read_count;
+                        float avg_discard_samples_read = (float)total_discard_samples_read / discard_read_count;
+                        // Changed Bytes to Samples
+                        Serial.printf("I (%s): ADC Discard Read Stats: Count=%lu, TotalSamples=%llu, MinSamples=%lu, MaxSamples=%lu, AvgSamples=%.2f | MinTime=%lu us, MaxTime=%lu us, AvgTime=%.2f us\n", TAG,
+                                      discard_read_count, total_discard_samples_read, discard_samples_min, discard_samples_max, avg_discard_samples_read,
+                                      discard_read_time_min_us, discard_read_time_max_us, avg_discard_read_time_us);
+                    } else {
+                         Serial.printf("D (%s): ADC Discard Read Timing: No discard reads performed in this loop.\n", TAG);
+                    }
+                    // Reset discard timing stats for next potential loop
+                    discard_read_time_sum_us = 0;
+                    discard_read_time_min_us = UINT32_MAX;
+                    discard_read_time_max_us = 0;
+                    discard_read_count = 0;
+                    total_discard_samples_read = 0; // Reset total sample accumulator
+                    discard_samples_min = UINT32_MAX; // Reset min samples per call
+                    discard_samples_max = 0;          // Reset max samples per call
+ 
+                } else {
+                     Serial.printf("W (%s): Batch processing (%lu ms) exceeded target interval (%d ms). No discard loop needed.\n",
+                                  TAG, total_batch_duration_ms, TARGET_BATCH_INTERVAL_MS);
+                     // Yield briefly even if overrun to allow other tasks
+                     vTaskDelay(pdMS_TO_TICKS(10));
                 }
-                Serial.printf("D (%s): Total Batch Duration: %lu ms, Delaying: %ld ms\n", TAG, total_batch_duration_ms, delay_ms);
-                vTaskDelay(pdMS_TO_TICKS(delay_ms));
                 actual_batch_start_time = millis(); // Update start time for the *next* batch interval
-
             } // --- End of NEW batch completion block ---
         } // <<< THIS BRACE CLOSES: if (ret == ESP_OK)
         else if (ret == ESP_ERR_TIMEOUT) { // Start else if block correctly
@@ -398,7 +529,7 @@ void adcProcessingTask(void *pvParameters) {
                               TAG, samples_in_current_cycle, cycle_count);
              }
              // Short fixed delay on timeout, interval timing is handled after a *successful* batch completion
-             vTaskDelay(pdMS_TO_TICKS(50)); // Reduced delay slightly
+             // vTaskDelay(pdMS_TO_TICKS(50)); // Commented out: Let main loop yield handle it
              // If we have too many consecutive timeouts, log a warning about potential hardware issues
              if (consecutive_timeouts == 20) {
                  Serial.printf("E (%s): 20 consecutive ADC timeouts! Hardware may need attention.\n", TAG);
@@ -408,11 +539,11 @@ void adcProcessingTask(void *pvParameters) {
              batch_valid = false; // Invalidate batch on other read errors
              // Consider error handling: re-init ADC?
              // Short fixed delay on error, interval timing is handled after a *successful* batch completion
-             vTaskDelay(pdMS_TO_TICKS(50)); // Reduced delay slightly
+             // vTaskDelay(pdMS_TO_TICKS(50)); // Commented out: Let main loop yield handle it
         }
 
         // Removed fixed delay - now handled by calculated delay after batch completion
-        vTaskDelay(pdMS_TO_TICKS(1)); // <-- MOVED INSIDE: Yield control briefly every loop iteration
+        vTaskDelay(pdMS_TO_TICKS(theoretical_acquisition_time_ms-processing_time_ms-SAFETY_MARGIN_MS)); // <-- MOVED INSIDE: Yield control briefly every loop iteration
     } // End while(1)
 } // <-- ADDED: Closing brace for adcProcessingTask function
 

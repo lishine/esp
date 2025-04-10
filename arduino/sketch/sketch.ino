@@ -55,7 +55,7 @@ void setup() {
   xTaskCreatePinnedToCore(
       adcProcessingTask,      // Task function
       "ADC Processing Task",  // Name of the task
-      8192,                   // Stack size in words (Increased from 4096)
+      8192*2,                   // Stack size in words (Increased from 4096)
       NULL,                   // Task input parameter
       4,                      // Priority of the task (Reduced from 5)
       &adcProcessingTaskHandle, // Task handle
