@@ -24,6 +24,9 @@ static uint32_t samples_in_current_cycle = 0;
 static double sum_sq_current_cycle = 0.0; // Use double for accumulator precision
 static double sum_mv_current_cycle = 0.0; // Accumulator for sum of mV in the current cycle
 
+// --- State machine for cycle detection ---
+enum CycleState { IDLE, SAW_RISING, SAW_FALLING };
+static CycleState current_cycle_state = IDLE;
 // --- Initialize ADC Continuous Mode & Perform Calibration ---
 bool init_adc() {
     Serial.printf("I (%s): Initializing ADC and Calibration...\n", TAG);
@@ -139,6 +142,7 @@ void adcProcessingTask(void *pvParameters) {
     cycle_buffer_index = 0;
     cycle_count = 0;
     
+    current_cycle_state = IDLE; // Initialize cycle state machine
     // Initialize circular buffers (optional, they are global)
     for(int i=0; i<NUM_CYCLES_AVERAGE; ++i) {
         cycle_periods[i] = 0.0f;
@@ -251,6 +255,7 @@ void adcProcessingTask(void *pvParameters) {
             }
             // Calculate dynamic mean using mV values
             double dynamic_mean_level_mv = (valid_samples > 0) ? (voltage_sum / valid_samples) : 0.0; // Fallback to 0.0 if no valid samples
+                    // Serial.printf("D (%s): Buffer Valid Samples: %d, Dynamic Mean: %.2f mV\n", TAG, valid_samples, dynamic_mean_level_mv); // Already commented
             if (valid_samples == 0) {
                 // Log this specific issue and invalidate the batch
                 Serial.printf("W (%s): Zero valid samples in buffer, invalidating current batch.\n", TAG);
@@ -296,57 +301,72 @@ void adcProcessingTask(void *pvParameters) {
                     bool above_mean_now = (current_mv >= dynamic_mean_level_mv);
                     bool above_mean_before = (last_sample_mv >= dynamic_mean_level_mv);
                     if (above_mean_now != above_mean_before) { // A crossing occurred
+                        // DEBUG: Log crossing details
+                        // Serial.printf("D (%s): Crossing! Curr: %lu mV, Last: %ld mV, Mean: %.2f mV, AboveNow: %d\n", TAG, current_mv, last_sample_mv, dynamic_mean_level_mv, above_mean_now); // Already commented
+                        // --- State Machine Logic ---
                         if (above_mean_now) { // Crossed upwards (rising edge)
-                            // Serial.printf("D (%s): Rising edge detected at sample %lu\n", TAG, samples_in_current_cycle); // Debug level
-                            if (crossed_up) {
-                                // --- Full Cycle Detected (Rising Edge to Rising Edge) ---
-                                if (samples_in_current_cycle > 1) { // Need at least 2 samples for a valid cycle
+                            if (current_cycle_state == SAW_FALLING) {
+                                // --- Full Cycle Detected (IDLE -> SAW_RISING -> SAW_FALLING -> rising edge) ---
+                                // // Serial.printf("D (%s): Full Cycle Detected (State Machine). Samples: %lu\n", TAG, samples_in_current_cycle);
+                                if (samples_in_current_cycle > 1) {
                                     float period_seconds = (float)samples_in_current_cycle / TARGET_SAMPLE_FREQ_HZ;
                                     float frequency_hz = (period_seconds > 1e-9) ? (1.0f / period_seconds) : 0.0f;
-
-                                    // --- Calculate Mean and RMS using accumulated values ---
                                     double mean_voltage_mv = sum_mv_current_cycle / samples_in_current_cycle;
                                     double mean_sq = mean_voltage_mv * mean_voltage_mv;
                                     double sum_sq_over_n = sum_sq_current_cycle / samples_in_current_cycle;
-                                    float rms_mv = 0.0f;
-                                    if (sum_sq_over_n >= mean_sq) { // Avoid sqrt of negative due to precision issues
-                                       rms_mv = sqrt(sum_sq_over_n - mean_sq);
-                                    } else {
-                                       // This might happen with very stable DC signals or precision errors
-                                       // Serial.printf("W (%s): sum_sq_over_n < mean_sq (%.4f < %.4f), setting RMS to 0\n", TAG, sum_sq_over_n, mean_sq);
-                                       rms_mv = 0.0f; // Or handle as an error/warning
-                                    }
-                                    // --- End Incremental RMS Calculation ---
+                                    float rms_mv = (sum_sq_over_n >= mean_sq) ? sqrt(sum_sq_over_n - mean_sq) : 0.0f;
 
-                                    Serial.printf("D (%s): Cycle %d: Samples=%lu, Period=%.6fs, Freq=%.2fHz, RMS=%.2fmV (Mean mV: %.2f)\n", TAG,
-                                             cycle_count + 1, samples_in_current_cycle, period_seconds, frequency_hz, rms_mv, mean_voltage_mv); // Removed dynamic_mean_level_mv from this log
+                                    // // Serial.printf("D (%s): Cycle %d: Samples=%lu, Period=%.6fs, Freq=%.2fHz, RMS=%.2fmV (Mean mV: %.2f)\n", TAG,
+                                    //          cycle_count + 1, samples_in_current_cycle, period_seconds, frequency_hz, rms_mv, mean_voltage_mv);
 
-                                    // Store in circular buffers
-                                    // Store frequency (Hz) and RMS (mV) in circular buffers
-                                    cycle_periods[cycle_buffer_index] = frequency_hz; // Storing frequency now, not period
+                                    cycle_periods[cycle_buffer_index] = frequency_hz;
                                     cycle_rms_values[cycle_buffer_index] = rms_mv;
-
                                     cycle_count++;
-
-                                    // --- Averaging ---
-                                    // Increment circular buffer index (Only after a valid cycle is processed)
                                     cycle_buffer_index = (cycle_buffer_index + 1) % NUM_CYCLES_AVERAGE;
-                                    // --- BATCH COMPLETION LOGIC MOVED OUTSIDE THIS BLOCK ---
-
                                 } else {
                                      Serial.printf("W (%s): Cycle detected with <= 1 sample? Skipping and invalidating batch.\n", TAG);
-                                     batch_valid = false; // Invalidate the batch if a short cycle occurs
+                                     batch_valid = false;
                                 }
-                                // Reset for next cycle measurement
+                                // Reset for next cycle measurement & transition state
                                 samples_in_current_cycle = 0;
-                                sum_mv_current_cycle = 0.0; // Reset accumulators
+                                sum_mv_current_cycle = 0.0;
                                 sum_sq_current_cycle = 0.0;
+                                current_cycle_state = SAW_RISING; // Start next cycle timing
+                                // Serial.printf("D (%s): State -> SAW_RISING (Cycle Complete)\n", TAG); // Already commented
 
-                            } // else: First rising edge, don't calculate cycle yet
-                            crossed_up = true; // Mark that we are now above mean after rising edge
+                            } else if (current_cycle_state == IDLE) {
+                                // First rising edge detected
+                                samples_in_current_cycle = 0; // Start counting samples *from* this edge
+                                sum_mv_current_cycle = 0.0;
+                                sum_sq_current_cycle = 0.0;
+                                current_cycle_state = SAW_RISING;
+                                // Serial.printf("D (%s): State -> SAW_RISING (First Rise)\n", TAG); // Already commented
+                            } else { // State was SAW_RISING (consecutive rising edges)
+                                Serial.printf("W (%s): Consecutive rising edges detected (State was SAW_RISING). Resetting state to SAW_RISING.\n", TAG);
+                                // Reset counters and stay in SAW_RISING, effectively restarting cycle timing
+                                samples_in_current_cycle = 0;
+                                sum_mv_current_cycle = 0.0;
+                                sum_sq_current_cycle = 0.0;
+                                current_cycle_state = SAW_RISING; // Re-affirm state
+                            }
                         } else { // Crossed downwards (falling edge)
-                             // Serial.printf("D (%s): Falling edge detected at sample %lu\n", TAG, samples_in_current_cycle); // Debug level
-                             crossed_up = false; // Mark that we are now below mean
+                            if (current_cycle_state == SAW_RISING) {
+                                // Expected falling edge after a rising edge
+                                current_cycle_state = SAW_FALLING;
+                                // Serial.printf("D (%s): State -> SAW_FALLING\n", TAG); // Already commented
+                                // Continue accumulating samples
+                            } else {
+                                // Consecutive falling edges (IDLE -> falling or SAW_FALLING -> falling)
+                                // Reset state to IDLE, as we need a clean rising edge first
+                                if (current_cycle_state != IDLE) {
+                                     Serial.printf("W (%s): Consecutive falling edges detected (State was %d). Resetting state to IDLE.\n", TAG, current_cycle_state);
+                                     current_cycle_state = IDLE;
+                                }
+                                // Reset counters if we fall back to IDLE unexpectedly
+                                samples_in_current_cycle = 0;
+                                sum_mv_current_cycle = 0.0;
+                                sum_sq_current_cycle = 0.0;
+                            }
                         }
                     } // End of crossing check
 
@@ -360,6 +380,8 @@ void adcProcessingTask(void *pvParameters) {
                 Serial.printf("D (%s): Batch ended: Sample limit (%lu) reached.\n", TAG, samples_in_current_batch);
 
                 // --- Averaging / Calculation (Conditional on batch validity) ---
+                // DEBUG: Log batch state before averaging
+                // Serial.printf("D (%s): Batch End Check: Valid=%d, CycleCount=%d, ValidSamplesInBatch=%lu\n", TAG, batch_valid, cycle_count, valid_samples_in_current_batch);
                 if (batch_valid) {
                     // Determine how many cycles were actually completed in this batch
                     int cycles_to_average = (cycle_count > NUM_CYCLES_AVERAGE) ? NUM_CYCLES_AVERAGE : cycle_count;
@@ -396,6 +418,7 @@ void adcProcessingTask(void *pvParameters) {
                             latest_rms_millivolts = (uint16_t)round(batch_rms_mv);
                             Serial.printf("I (%s): Batch ended (0 cycles): Freq=0Hz, Batch RMS=%.2fmV (%u) over %lu samples\n", TAG,
                                      batch_rms_mv, latest_rms_millivolts, valid_samples_in_current_batch);
+                            Serial.printf("D (%s): dynamic_mean_level_mv=%.2f\n", TAG, dynamic_mean_level_mv);
                         } else {
                             Serial.printf("W (%s): Batch ended with 0 cycles and 0 valid samples. Resetting results.\n", TAG);
                             latest_freq_hz = 0;
@@ -543,7 +566,7 @@ void adcProcessingTask(void *pvParameters) {
         }
 
         // Removed fixed delay - now handled by calculated delay after batch completion
-        vTaskDelay(pdMS_TO_TICKS(theoretical_acquisition_time_ms-processing_time_ms-SAFETY_MARGIN_MS)); // <-- MOVED INSIDE: Yield control briefly every loop iteration
+        vTaskDelay(pdMS_TO_TICKS(2)); // <-- MOVED INSIDE: Yield control briefly every loop iteration
     } // End while(1)
 } // <-- ADDED: Closing brace for adcProcessingTask function
 
