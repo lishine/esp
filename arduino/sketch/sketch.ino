@@ -57,24 +57,32 @@ void setup() {
       "ADC Processing Task",  // Name of the task
       8192,                   // Stack size in words (Increased from 4096)
       NULL,                   // Task input parameter
-      5,                      // Priority of the task (higher number = higher priority)
+      4,                      // Priority of the task (Reduced from 5)
       &adcProcessingTaskHandle, // Task handle
       0                       // Core where the task should run (ESP32-C3 only has Core 0)
   );
   Serial.println("DEBUG: ADC Task Created.");
   delay(100);
 
+Serial.println("DEBUG: Attempting to create LED Task..."); // <-- Added log
+delay(100); // <-- Added delay for stability
 
-  xTaskCreatePinnedToCore(
-      ledNormalFlashTask,
-      "LED Flash Task",
-      2048, // Increased stack size for LED task
-      NULL,
-      2,     // Low priority
-      &ledNormalFlashTaskHandle,
-      0      // Core 0 for button/IO?
-  );
-  Serial.println("DEBUG: LED Task Created.");
+BaseType_t ledTaskCreated = xTaskCreatePinnedToCore( // <-- Check return value
+    ledNormalFlashTask,
+    "LED Flash Task",
+    2048, // Increased stack size for LED task
+    NULL,
+    2,     // Low priority
+    &ledNormalFlashTaskHandle,
+    0      // Core 0 for button/IO?
+);
+
+if (ledTaskCreated == pdPASS) { // <-- Check if creation succeeded
+  Serial.println("DEBUG: LED Task Creation SUCCEEDED.");
+} else {
+  Serial.printf("DEBUG: LED Task Creation FAILED! Code: %d\n", ledTaskCreated); // <-- Print error code if failed
+}
+delay(100);
   delay(100);
 
   Serial.println("--- Setup Complete ---");

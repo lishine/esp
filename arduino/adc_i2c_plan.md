@@ -1,8 +1,12 @@
-# ESP32-C3 ADC/I2C Processing Plan (Revised)
+# ESP32-C3 ADC/I2C Processing Plan (Revised v3)
 
 ## Objective
 
-Read motor current via ADC (GPIO4) on an ESP32-C3 running Arduino code. Use ESP-IDF calibration functions (eFuse Two Point only) to convert readings to millivolts. Dynamically calculate the signal's mean level, frequency (using zero-crossing against the dynamic mean), and RMS voltage. Average these values over 5 cycles. Act as an I2C slave (address 0x08) to send the latest averaged frequency (Hz) and RMS (mV) as two `uint16_t` values (4 bytes total) to an ESP32-S3 master upon request.
+Read motor current via ADC (GPIO4) on an ESP32-C3 running Arduino code. Use ESP-IDF calibration functions (eFuse Two Point only) to convert readings to millivolts. Dynamically calculate the signal's mean level, frequency (using zero-crossing against the dynamic mean), and RMS voltage.
+
+A "batch" of processing involves collecting data until either a target number of cycles (`NUM_CYCLES_AVERAGE`) is detected OR a maximum sample count (`MAX_SAMPLES_PER_BATCH`, calculated based on `MIN_EXPECTED_FREQ_HZ`) is reached. Average the frequency and RMS values over the valid cycles completed within that batch. If specific errors occur during batch collection (ADC read errors, invalid mean calculation, short cycles), the averaging for that batch is skipped. **If a batch completes due to the sample limit with zero cycles detected (e.g., DC input), calculate and report the overall RMS of the entire batch with a frequency of 0 Hz.**
+
+Act as an I2C slave (address 0x08) to send the latest calculated frequency (Hz) and RMS (mV) as two `uint16_t` values (4 bytes total) to an ESP32-S3 master upon request. Aim for a reporting interval of approximately 1 second between the start of consecutive batches by calculating and applying a delay after each batch completes.
 
 ## Hardware & Configuration
 
@@ -16,72 +20,67 @@ Read motor current via ADC (GPIO4) on an ESP32-C3 running Arduino code. Use ESP-
   - Continuous DMA Mode
   - Attenuation: `ADC_ATTEN_DB_11` (Defines the input voltage range, e.g., 0-2.5V)
   - Bitwidth: `ADC_BITWIDTH_12` (Raw ADC values 0-4095)
-  - Target Sample Rate (`TARGET_SAMPLE_FREQ_HZ`): ~50,000 Hz (Adjustable)
+  - Target Sample Rate (`TARGET_SAMPLE_FREQ_HZ`): **80,000 Hz**
   - **Important:** Requires low source impedance (<10kΩ, ideally <1kΩ) driving the ADC pin, or use an op-amp buffer.
 - **Calibration:**
   - Uses ESP-IDF `esp_adc_cal` library.
   - **Requires eFuse Two Point (TP) calibration values.** Initialization will fail if TP values are not present in the ESP32-C3's eFuse.
-  - Default Vref: `DEFAULT_VREF` (Typically 1100mV, but check ESP-IDF documentation for the specific board/chip).
-- **Averaging Window:** `NUM_CYCLES_AVERAGE = 5` cycles
+- **Processing Parameters:**
+  - Averaging Window (Cycles): `NUM_CYCLES_AVERAGE = 10` cycles
+  - **Minimum Expected Frequency:** `MIN_EXPECTED_FREQ_HZ = 20` Hz (Used for sample limit calculation)
+  - **Maximum Expected Frequency:** `MAX_EXPECTED_FREQ_HZ = 300` Hz (Informational)
+  - Max Samples per Batch (`MAX_SAMPLES_PER_BATCH`): Calculated as `(1.0 / MIN_EXPECTED_FREQ_HZ) * NUM_CYCLES_AVERAGE * TARGET_SAMPLE_FREQ_HZ` (approx. 40000 samples)
+  - Target Reporting Interval: ~1000 ms
 
 ## Core Logic
 
 ### 1. ADC Calibration Initialization (`setup()`)
 
-- Include necessary ESP-IDF headers (`esp_adc_cal.h`).
-- Check if eFuse Two Point calibration values are available using `esp_adc_cal_check_efuse(ESP_ADC_CAL_VAL_EFUSE_TP)`.
-  - If `ESP_OK`:
-    - Allocate memory for `esp_adc_cal_characteristics_t` structure (`adc_chars`).
-    - Characterize the ADC using `esp_adc_cal_characterize(ADC_UNIT_1, ADC_ATTEN_DB_11, ADC_BITWIDTH_12, DEFAULT_VREF, adc_chars)`.
-    - Verify the characterization type returned is `ESP_ADC_CAL_VAL_EFUSE_TP`. If not, log an error (calibration method mismatch).
-    - Store the `adc_chars` structure globally for use in the processing task.
-  - If eFuse TP values are _not_ available:
-    - Log a critical error and halt or enter a safe state. This plan relies _exclusively_ on TP calibration.
+- (Unchanged from v2)
 
 ### 2. ADC Processing Task (`adcProcessingTask`)
 
 - Runs continuously using FreeRTOS.
-- Reads ADC samples via DMA buffer (`adc_continuous_read`) into a local buffer (e.g., `sample_buffer`). The buffer should be large enough to hold samples for slightly more than the longest expected cycle to ensure full cycles can be captured.
-- **Per Buffer Full / Processing Interval:**
-  1.  **Calculate Dynamic Mean (Raw ADC):** Compute the average raw ADC value of all samples in the `sample_buffer`. This is `dynamic_mean_level_adc`, used for zero-crossing detection.
-  2.  **Convert Samples to Voltage:** Iterate through the `sample_buffer`, converting each `raw_adc` sample to millivolts using `esp_adc_cal_raw_to_voltage(raw_adc, adc_chars)`. Store these `voltage_mv` values, perhaps in a parallel buffer or by replacing the raw values if memory is tight.
-  3.  **Initialize Cycle Variables:** Reset sum-of-squared-voltage-deviations (`sum_sq_mv_deviation`), sample count (`samples_in_cycle`), zero-crossing state, etc.
-  4.  **Iterate Through Samples for Cycle Processing:**
-      - **Zero-Crossing Detection:** Compare `raw_adc` (from the original buffer) against `dynamic_mean_level_adc` to detect full cycles (e.g., rising edge to rising edge). Track the number of samples between crossings.
-      - **RMS Accumulation (within a detected cycle):**
-        - Once a full cycle's samples are identified (based on zero-crossings), calculate the mean voltage (`mean_voltage_mv`) of the _converted_ `voltage_mv` samples belonging _only_ to that specific cycle.
-        - For each `voltage_mv` sample within that cycle, calculate the squared deviation: `pow(voltage_mv - mean_voltage_mv, 2)`.
-        - Accumulate these squared deviations into `sum_sq_mv_deviation`.
-        - Keep track of the number of samples in this specific cycle (`samples_in_cycle`).
-  5.  **Per Full Cycle Detected (End of Cycle):**
-      - Calculate period (samples between crossings / sample rate).
-      - Calculate frequency (1 / period).
-      - Calculate RMS voltage for the completed cycle: `cycle_rms_mv = sqrt(sum_sq_mv_deviation / samples_in_cycle)`.
-      - Store calculated frequency and `cycle_rms_mv` in respective circular buffers (size `NUM_CYCLES_AVERAGE`).
-      - Reset cycle variables (`sum_sq_mv_deviation`, `samples_in_cycle`).
-      - Increment cycle counter.
-  6.  **Averaging (Every `NUM_CYCLES_AVERAGE` Cycles):**
-      - Calculate the average frequency (Hz) from the last `NUM_CYCLES_AVERAGE` values in the frequency buffer.
-      - Calculate the average RMS (mV) from the last `NUM_CYCLES_AVERAGE` values in the RMS buffer.
-      - Update `volatile` global variables: `latest_freq_hz` and `latest_rms_millivolts` (use mutex/critical section if necessary).
-      - Reset cycle counter.
-- Yields CPU (`vTaskDelay`).
+- **Main Loop:**
+  1.  **Record Batch Start Time:** `batch_start_time = millis();`
+  2.  **Read ADC Samples:** Read available samples via DMA (`adc_continuous_read`). Handle errors, set `batch_valid = false` on error.
+  3.  **Convert & Calculate Dynamic Mean:** If read OK, convert raw samples to mV, calculate `dynamic_mean_level_mv`. Set `batch_valid = false` if no valid samples in buffer.
+  4.  **Process Individual Samples:** Iterate through valid converted samples (`voltage_buffer[i] != UINT32_MAX`):
+      - Increment `samples_in_current_batch`.
+      - **Accumulate Batch Totals:** Increment `valid_samples_in_current_batch`, add to `sum_mv_current_batch`, add squared value to `sum_sq_current_batch`.
+      - **Accumulate Cycle Totals:** Increment `samples_in_current_cycle`, add to `sum_mv_current_cycle`, add squared value to `sum_sq_current_cycle`.
+      - **Zero-Crossing Detection:** Compare `current_mv` against `dynamic_mean_level_mv`.
+      - **On Full Cycle Detected:**
+        - Check `samples_in_current_cycle > 1`. If not, set `batch_valid = false`.
+        - Calculate cycle frequency and RMS.
+        - Store in circular buffers.
+        - Increment `cycle_count`.
+        - Reset cycle accumulators.
+  5.  **Check for Batch Completion:** Check if `cycle_count >= NUM_CYCLES_AVERAGE` OR `samples_in_current_batch >= MAX_SAMPLES_PER_BATCH`.
+  6.  **Handle Batch Completion:** If condition met:
+      - Log completion reason.
+      - **Conditional Processing:** Check `if (batch_valid)`.
+        - If `true`:
+          - Determine `cycles_to_average` (actual cycles completed, max `NUM_CYCLES_AVERAGE`).
+          - **If `cycles_to_average > 0`:** Calculate average frequency and RMS from circular buffers. Update `latest_freq_hz` and `latest_rms_millivolts`. Log average results.
+          - **If `cycles_to_average == 0` (DC Input / No Cycles Detected):**
+            - Check if `valid_samples_in_current_batch > 0`.
+            - If yes: Calculate overall batch RMS using `sum_mv_current_batch`, `sum_sq_current_batch`, and `valid_samples_in_current_batch`. Set `latest_freq_hz = 0`, update `latest_rms_millivolts`. Log batch RMS result.
+            - If no: Log warning, reset globals to 0.
+        - If `false`: Log skip message, reset globals to 0.
+      - **Reset Batch State:** Reset `cycle_count`, `batch_valid`, `samples_in_current_batch`, and **batch accumulators** (`sum_mv_current_batch`, `sum_sq_current_batch`, `valid_samples_in_current_batch`).
+      - **Calculate and Apply Delay:** Calculate `delay_ms` for ~1s interval, `vTaskDelay()`.
+  7.  **Loop:** Continue to next batch.
 
 ### 3. I2C Communication (`i2cRequestEvent`)
 
-- ISR triggered when I2C Master requests data.
-- Reads the `volatile` `latest_freq_hz` and `latest_rms_millivolts`.
-- Packs these two `uint16_t` values into a 4-byte buffer.
-- Sends the buffer via `Wire.write()`.
-- **Note:** Ensure reads of `latest_freq_hz` and `latest_rms_millivolts` are safe (atomic or protected if updates in the ADC task are not atomic). `uint16_t` reads/writes are typically atomic on ESP32.
+- (Unchanged from v2)
 
 ### 4. LED Task (`ledStatusTask`) (Optional)
 
-- Runs continuously using FreeRTOS.
-- Provides basic status indication (e.g., blinking LED) to show the system is running.
-- Could potentially indicate error states (e.g., calibration failure).
+- (Unchanged from v2)
 
-## System Flow Diagram (Revised)
+## System Flow Diagram (Revised v3)
 
 ```mermaid
 graph TD
@@ -96,42 +95,65 @@ graph TD
         D --> H(Start Status LED Task?);
 
         subgraph ADC Processing Task
-            I[Loop] --> J(Read ADC DMA -> sample_buffer);
-            J --> K(Calc dynamic_mean_level_adc from buffer);
-            K --> L(Convert all samples -> voltage_mv & Calc mean_voltage_mv);
-            L --> M{Process Samples in Buffer};
-            M -- Sample --> N(Update SumSq Voltage Deviation for cycle);
-            N --> O(Incr Cycle Sample Count);
-            O --> P{Zero Crossing vs dynamic_mean_level_adc?};
-            P -- Full Cycle --> Q(Calc Freq & Cycle RMS Voltage);
-            Q --> R(Store Freq/RMS in Circ Buff [5]);
-            R --> S{Have 5 Cycles?};
-            S -- Yes --> T(Update Averages -> latest_freq/rms);
-            S -- No --> U(Yield);
-            T --> U;
-            P -- No/Partial --> V(Next Sample or Yield);
-            V --> M;
-            U --> I;
+            I[Loop: Start Batch] --> I1(Record batch_start_time)
+            I1 --> J(Read ADC DMA -> raw_result_buffer);
+            J --> J_ERR{Read OK?};
+            J_ERR -- No (Timeout/Error) --> J_INV[Set batch_valid=false] --> J_DEL(Delay 50ms) --> I; // Start new batch on error
+            J_ERR -- Yes --> K(Convert Samples -> voltage_buffer);
+            K --> K1(Calc dynamic_mean_level_mv);
+            K1 --> K_ERR{valid_samples > 0?};
+            K_ERR -- No --> K_INV[Set batch_valid=false] --> L{Process Samples in Buffer};
+            K_ERR -- Yes --> L;
+
+            subgraph Process Samples in Buffer Loop
+                L_Start --> L_IncBatch(Incr samples_in_batch, Acc Batch Sums) --> L_IncCyc(Incr samples_in_cycle, Acc Cycle Sums) --> L_Cross{Zero Crossing?};
+                L_Cross -- Yes --> L_Rise{Rising Edge?};
+                L_Rise -- Yes --> L_Full{Full Cycle?};
+                L_Full -- Yes --> L_Len{Cycle Len > 1?};
+                L_Len -- Yes --> L_Calc(Calc Cycle Freq/RMS) --> L_Store(Store in Circ Buff) --> L_IncCycCnt(Incr cycle_count) --> L_ResetCycAcc(Reset Cycle Acc) --> L_EndSample;
+                L_Len -- No --> L_Inv[Set batch_valid=false] --> L_LogShort(Log Short) --> L_ResetCycAcc;
+                L_Full -- No --> L_MarkRise(Mark Rising) --> L_EndSample;
+                L_Rise -- No --> L_MarkFall(Mark Falling) --> L_EndSample;
+                L_Cross -- No --> L_EndSample;
+            end
+
+            L --> L_Start;
+            L_EndSample --> M{Batch End Condition Met?};
+
+            M -- No --> J; // Continue reading for current batch
+            M -- Yes --> N(Log Batch End Reason);
+            N --> O{batch_valid == true?};
+            O -- Yes --> P{Cycles > 0?};
+            P -- Yes --> Q(Average Cycle Freq/RMS) --> Q_Upd(Update Globals) --> S(Reset Batch State);
+            P -- No --> R{Valid Samples in Batch > 0?};
+            R -- Yes --> R_Calc(Calc Batch RMS) --> R_Upd(Update Globals Freq=0) --> S;
+            R -- No --> R_Warn(Log Warn, Reset Globals) --> S;
+            O -- No --> T(Log Skip, Reset Globals) --> S;
+
+            S --> U(Calc batch_proc_time);
+            U --> V(Calc delay_ms = 1000 - proc_time);
+            V --> W(Delay(delay_ms));
+            W --> I; // Start next batch
         end
 
         subgraph I2C onRequest Handler (ISR Context)
-            W[Master Requests Data] --> X(Read volatile latest_freq/rms);
-            X --> Y(Pack u16, u16);
-            Y --> Z(Wire.write(buffer, 4));
+            X[Master Requests Data] --> Y(Read volatile latest_freq/rms);
+            Y --> Z(Pack u16, u16);
+            Z --> AA(Wire.write(buffer, 4));
         end
 
         subgraph Status LED Task (Optional)
-            AA[Loop] --> BB(Check System State);
-            BB -- Normal --> CC(Toggle LED);
-            BB -- Error --> DD(Show Error Pattern);
-            CC --> EE(Delay);
-            DD --> EE;
-            EE --> AA;
+            BB[Loop] --> CC(Check System State);
+            CC -- Normal --> DD(Toggle LED);
+            CC -- Error --> EE(Show Error Pattern);
+            DD --> FF(Delay);
+            EE --> FF;
+            FF --> BB;
         end
 
-        F -.-> W; // I2C Request triggers handler
+        F -.-> X; // I2C Request triggers handler
         G --> I; // Start ADC Task Loop
-        H --> AA; // Start LED Task Loop
+        H --> BB; // Start LED Task Loop
     end
 
     subgraph ESP32-S3 (MicroPython - Master)
@@ -143,21 +165,27 @@ graph TD
         RR --> NN;
     end
 
-    Z -.-> PP; // Slave sends data to Master
+    AA -.-> PP; // Slave sends data to Master
+
+    note right of M
+      Batch End Condition:
+      (cycle_count >= 10)
+      OR
+      (samples_in_current_batch >= 40000)
+    end note
 ```
 
-## Key Changes Summary
+## Key Changes Summary (v3)
 
-- Removed manual calibration (button, NVS, `CAL_LOW_MV`, `CAL_HIGH_MV`).
-- Relies solely on ESP-IDF `esp_adc_cal` with eFuse Two Point data.
-- Removed manual mean level setting (button, NVS).
-- Mean level (`dynamic_mean_level_adc`) is calculated dynamically from sample buffers.
-- RMS voltage is calculated using the standard formula on the _voltage_ values (obtained via `esp_adc_cal_raw_to_voltage`), based on deviations from the dynamically calculated mean _voltage_ of each cycle.
-- Frequency calculation uses zero-crossings against the dynamic _raw_ mean level.
-- Removed `buttonMonitorTask`.
-- Simplified `ledNormalFlashTask` to an optional `ledStatusTask`.
-- Updated Mermaid diagram significantly.
+- Removed manual calibration and mean level setting; relies on ESP-IDF TP calibration and dynamic mean calculation.
+- **Batch Cancellation:** Averaging is skipped if ADC read errors, zero valid samples for mean, or short cycles occur during batch collection. `batch_valid` flag tracks this. Globals reset if averaging skipped.
+- **Dynamic Batch Termination:** Batch ends when `NUM_CYCLES_AVERAGE` (10) cycles are detected OR `MAX_SAMPLES_PER_BATCH` (~40000) samples are processed.
+- **Fixed Reporting Interval:** Task calculates batch processing time and delays to achieve an approximate 1-second interval between batch starts.
+- **Averaging Logic:** Averages are calculated over the _actual_ number of valid cycles completed within the batch (up to 10).
+- **DC Input Handling:** If a batch completes with 0 cycles detected (due to sample limit), the overall RMS of the entire batch is calculated and reported with Frequency = 0 Hz.
+- **Frequency Constants:** Added `MIN_EXPECTED_FREQ_HZ` and `MAX_EXPECTED_FREQ_HZ` to `globals.h`.
+- Updated Mermaid diagram to reflect new logic flow, including DC handling.
 
 ## Next Steps
 
-Implement the code changes based on this updated plan.
+The implementation reflecting this plan is complete in `adc_handler.cpp` and `globals.h`. Next steps involve compiling, uploading, and testing the firmware on the ESP32-C3, specifically testing with a DC input to verify the batch RMS calculation and reporting. Monitor serial output.

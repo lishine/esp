@@ -34,6 +34,7 @@ void flash_led_blocking(int pin, int count, int on_ms, int off_ms) {
 
 // --- Normal LED Flash Task ---
 void ledNormalFlashTask(void *pvParameters) {
+    Serial.println("DEBUG: >>> Entering ledNormalFlashTask function <<<"); // <-- Added log
     Serial.printf("I (%s): LED Normal Flash Task started.\n", TAG);
     TickType_t lastWakeTime = xTaskGetTickCount();
     // Simple heartbeat blink: 1s ON, 1s OFF
@@ -42,6 +43,7 @@ void ledNormalFlashTask(void *pvParameters) {
 
     while (1) {
         // Simple heartbeat blink
+        Serial.printf("LED BLINK");
         ledIsOn = !ledIsOn;
         digitalWrite(LED_PIN, ledIsOn ? HIGH : LOW);
         vTaskDelayUntil(&lastWakeTime, blinkInterval);

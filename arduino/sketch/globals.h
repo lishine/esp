@@ -26,11 +26,12 @@ const int TARGET_SAMPLE_FREQ_HZ = 80000;
 const int ADC_READ_LEN = 256; // Number of samples to read from DMA buffer at once
 const int ADC_DMA_BUF_SIZE = 1024 * 8; 
 const int ADC_CONV_FRAME_SIZE = ADC_READ_LEN * SOC_ADC_DIGI_RESULT_BYTES; // Bytes per DMA frame
-// const uint32_t DEFAULT_VREF = 1100; // Removed - No longer used
 
 // --- Processing Configuration ---
-const int NUM_CYCLES_AVERAGE = 10; // Average over 5 full cycles
-
+const int NUM_CYCLES_AVERAGE = 10; // Number of cycles to average over
+const int MIN_EXPECTED_FREQ_HZ = 20; // Minimum frequency used for MAX_SAMPLES_PER_BATCH calculation
+const int MAX_EXPECTED_FREQ_HZ = 300; // Maximum expected frequency (currently informational)
+const int TARGET_BATCH_INTERVAL_MS = 1000; // Target interval between batch starts (ms)
 // --- Calibration Configuration Removed ---
 // const uint32_t CALIBRATION_HOLD_TIME_MS = 5000;
 // const uint32_t MEAN_SET_HOLD_TIME_MS = 3000;
