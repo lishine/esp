@@ -1,51 +1,109 @@
 import uasyncio as asyncio
+import machine
+import utime
 from log import log
-from lib.ppm_reader import PpmReader
 
-_ppm_reader = None  # type: PpmReader | None
+# Configuration
+THROTTLE_PIN_ID = 9
+# Expected pulse range (microseconds) - adjust if needed
+MIN_PULSE_US = 1000
+MAX_PULSE_US = 2000
+# Timeout for time_pulse_us (microseconds) - should be > max period (e.g., 20ms = 20000us)
+PULSE_TIMEOUT_US = 50000
+# Polling interval (milliseconds)
+POLL_INTERVAL_MS = 20
+# Log rate limit (seconds)
+LOG_RATE_LIMIT_S = 1
+
+# Module state
+_throttle_pin = None  # type: machine.Pin | None
 _reader_task = None  # type: asyncio.Task | None
-_last_value = None  # type: float | None
+_last_value_us = None  # type: int | None # Store raw microseconds
 _last_log_time = 0  # type: int
 
 
 def init_throttle_reader() -> None:
-    """Initialize the PPM reader for throttle on pin 9, single channel."""
-    global _ppm_reader
-    _ppm_reader = PpmReader(9, 1)
+    """Initialize the PWM reader for throttle on the specified pin."""
+    global _throttle_pin
+    try:
+        _throttle_pin = machine.Pin(THROTTLE_PIN_ID, machine.Pin.IN)
+        log(f"Throttle PWM reader initialized on pin {THROTTLE_PIN_ID}")
+    except Exception as e:
+        log(f"Throttle PWM: Failed to initialize pin {THROTTLE_PIN_ID}: {e}")
+        _throttle_pin = None
 
 
 async def _throttle_reader_task() -> None:
-    """Async task to monitor throttle PPM value and log changes (rate-limited)."""
-    global _ppm_reader, _last_value, _last_log_time
-    first_packet_printed = False
-    import utime
+    """Async task to monitor throttle PWM value using time_pulse_us and log changes."""
+    global _throttle_pin, _last_value_us, _last_log_time
+
+    if _throttle_pin is None:
+        log("Throttle PWM: Pin not initialized, task stopping.")
+        return
+
+    log("Throttle PWM reader task started using time_pulse_us")
+    signal_lost_logged = False
 
     while True:
-        await asyncio.sleep_ms(100)
-        if _ppm_reader is None:
-            continue
-        if _ppm_reader.get_valid_packets() == 0:
-            continue
-        value = _ppm_reader.get_value(0)
-        if not first_packet_printed:
-            print("PPM throttle available")
-            first_packet_printed = True
-        if _last_value is None or value != _last_value:
-            now = utime.ticks_ms() // 1000
-            if now - _last_log_time >= 1:
-                log(f"PPM throttle changed: {value:.3f}")
-                _last_log_time = now
-            _last_value = value
+        current_value_us = 0  # Default to 0 if error or no pulse
+        try:
+            # Measure the duration of the next high pulse (level=1)
+            current_value_us = machine.time_pulse_us(_throttle_pin, 1, PULSE_TIMEOUT_US)
+        except OSError:
+            # Timeout likely means signal lost or pin issue
+            # time_pulse_us returns 0 or negative on timeout, but OSError can also occur
+            pass  # Keep current_value_us as 0
+
+        if current_value_us > 0:  # Got a valid pulse reading
+            signal_lost_logged = False  # Reset lost signal flag
+            if _last_value_us is None or current_value_us != _last_value_us:
+                now_s = utime.ticks_ms() // 1000
+                if now_s - _last_log_time >= LOG_RATE_LIMIT_S:
+                    # Optional: Scale value to 0.0-1.0 if needed elsewhere
+                    # scaled_value = (current_value_us - MIN_PULSE_US) / (MAX_PULSE_US - MIN_PULSE_US)
+                    # scaled_value = max(0.0, min(1.0, scaled_value)) # Clamp
+                    log(f"Throttle PWM changed: {current_value_us} us")
+                    _last_log_time = now_s
+                _last_value_us = current_value_us
+        else:
+            # Handle case where pulse wasn't detected (timeout or 0 width)
+            if (
+                not signal_lost_logged and _last_value_us != 0
+            ):  # Log only once when signal lost
+                log("Throttle PWM signal lost or invalid.")
+                signal_lost_logged = True
+            _last_value_us = 0  # Indicate signal lost/invalid
+
+        await asyncio.sleep_ms(POLL_INTERVAL_MS)
 
 
 def start_throttle_reader() -> None:
-    """Start the async throttle reader task if not already running."""
+    """Start the async throttle PWM reader task if not already running."""
     global _reader_task
+    if _throttle_pin is None:
+        log("Throttle PWM: Cannot start reader task, pin not initialized.")
+        return
+
     if _reader_task is None:
         try:
             _reader_task = asyncio.create_task(_throttle_reader_task())
-            log("Throttle PPM reader task started")
+            log("Throttle PWM reader task scheduled")
         except Exception as e:
-            log(f"Throttle PPM: Failed to start reader task: {e}")
+            log(f"Throttle PWM: Failed to start reader task: {e}")
+            _reader_task = None  # Ensure task is None if creation failed
     else:
-        log("Throttle PPM: Reader task already running")
+        log("Throttle PWM: Reader task already running")
+
+
+# Optional: Add a function to get the latest value if needed by other modules
+def get_throttle_us() -> int | None:
+    """Returns the last read throttle value in microseconds, or None if not read yet."""
+    return _last_value_us
+
+
+def get_throttle_scaled() -> float | None:
+    """Returns the last read throttle value scaled to 0.0-1.0, or None."""
+    if _last_value_us is None or _last_value_us == 0:
+        return None
+    scaled = (_last_value_us - MIN_PULSE_US) / (MAX_PULSE_US - MIN_PULSE_US)
+    return max(0.0, min(1.0, scaled))  # Clamp to 0.0-1.0
