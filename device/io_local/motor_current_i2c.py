@@ -3,8 +3,8 @@ from machine import I2C, Pin
 from log import log
 
 I2C_ID = 0
-I2C_SCL_PIN = 3
-I2C_SDA_PIN = 8
+I2C_SCL_PIN = 37
+I2C_SDA_PIN = 36
 I2C_FREQ = 400_000
 I2C_ADDR = 0x08
 
