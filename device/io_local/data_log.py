@@ -4,7 +4,6 @@ import uasyncio as asyncio
 from log import log
 
 # Import specific IO modules from this directory
-from . import motor_current
 from . import esc_telemetry
 from . import ds18b20
 
@@ -18,11 +17,6 @@ DATA_LOG_INTERVAL_S = 10
 
 # --- Data Gathering Functions (Optional Abstraction) ---
 # These could be simple wrappers or add formatting
-
-
-def _log_motor_current():
-    mc_amps = motor_current.get_motor_current_amps()
-    return f"MC:{mc_amps:.2f}A" if mc_amps is not None else "MC:N/A"
 
 
 def _log_esc_telemetry():

@@ -179,6 +179,12 @@ async def main():
         # Initialize IO components
         init_io.init_io()  # Call the centralized init function
 
+        from io_local import motor_current_i2c
+        from io_local import throttle_reader
+
+        motor_current_i2c.start_rms_motor_current_i2c_reader()
+        throttle_reader.start_throttle_reader()
+
         # Start AP mode
         log("Starting AP...")  # Changed log.log to log
         ap.start_ap(essid="DDDEV", password="")
