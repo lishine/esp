@@ -42,3 +42,5 @@ This document summarizes the GPIO pin usage for this project based on the curren
 | GPIO46        | Weak pull-down        | 0         |
 
 Please note that the ADC2_CH... analog functions (see Table 2-8 Analog Functions) cannot be used with Wi-Fi simul- taneously.
+
+36,37 - probably input only!

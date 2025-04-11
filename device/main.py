@@ -6,6 +6,9 @@ import time  # For ticks_ms, ticks_diff, sleep
 import _thread  # Import the thread module
 
 
+time.sleep(1)
+print("main")
+
 # Core project modules
 from log import log, _log_writer_task
 
@@ -28,14 +31,6 @@ import io_local.throttle_reader as throttle_reader
 
 from http_server import start_server
 
-# --- Constants ---
-# Removed DATA_LOG_INTERVAL_S (moved to data_log.py)
-
-# --- Sensor Initialization ---
-# Removed init_sensors() function (moved to init_io.py)
-
-# --- Data Logging Task ---
-# Removed data_log_task() function (moved to data_log.py)
 
 # --- CPU Load Measurement ---
 idle_counter = 0
@@ -182,7 +177,7 @@ async def main():
         # Initialize IO components
         init_io.init_io()  # Call the centralized init function
 
-        # motor_current_i2c.start_rms_motor_current_i2c_reader()
+        motor_current_i2c.start_rms_motor_current_i2c_reader()
         # throttle_reader.start_throttle_reader()
 
         # Start AP mode

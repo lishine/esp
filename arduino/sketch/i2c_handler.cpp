@@ -18,7 +18,7 @@ void init_i2c_slave() {
     bool success = Wire.setPins(0, 1); // SDA=GPIO0, SCL=GPIO1
     if (!success) {
          Serial.printf("E (%s): Failed to set I2C pins (SDA=0, SCL=1).\n", TAG);
-         // Handle error appropriately
+         // Handle error appropriately  
          return;
     }
     Serial.printf("I (%s): Set I2C pins: SDA=0, SCL=1\n", TAG);

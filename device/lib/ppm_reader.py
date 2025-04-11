@@ -11,9 +11,7 @@ class PpmReader:
         self.max_value = max_value
         self.packet_gap = packet_gap
         self.pin = machine.Pin(pin_id, machine.Pin.IN)
-        self.pin.irq(
-            trigger=machine.Pin.IRQ_RISING, handler=self._irq_handler, hard=True
-        )
+        self.pin.irq(trigger=machine.Pin.IRQ_RISING, handler=self._irq_handler)
 
         self.timer = time.ticks_us()
         self.last_valid_time = 0
