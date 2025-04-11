@@ -21,7 +21,9 @@ def init_rms_motor_current_i2c() -> None:
             scl=Pin(I2C_SCL_PIN),
             sda=Pin(I2C_SDA_PIN),
             freq=I2C_FREQ,
+            timeout=50,
         )
+        log(f"RMS I2C: I2C object created: {_i2c}")  # Add log here
         devices = _i2c.scan()
         if I2C_ADDR not in devices:
             log(f"RMS I2C: Device not found at address 0x{I2C_ADDR:02X}")
@@ -33,22 +35,32 @@ def init_rms_motor_current_i2c() -> None:
 
 
 async def _rms_motor_current_i2c_task() -> None:
-    """Async task to periodically read RMS motor current from I2C and log it."""
+    """Async task to poll RMS motor current from I2C 10 times/sec, log once/sec."""
     global _i2c
+    import time
+
+    last_log_time = time.ticks_ms()
+    last_result = None
     while True:
         try:
             if _i2c is None:
-                log("RMS I2C: Not initialized, skipping read")
+                last_result = "RMS I2C: Not initialized, skipping read"
             else:
                 data = _i2c.readfrom(I2C_ADDR, 2)
                 if len(data) == 2:
                     rms_mv = data[0] | (data[1] << 8)
-                    log(f"RMS Motor Current (I2C): {rms_mv} mV")
+                    last_result = f"RMS Motor Current (I2C): {rms_mv} mV"
                 else:
-                    log(f"RMS I2C: Incomplete read, got {len(data)} bytes")
+                    last_result = f"RMS I2C: Incomplete read, got {len(data)} bytes"
         except Exception as e:
-            log(f"RMS I2C: Read error: {e}")
-        await asyncio.sleep(1)
+            last_result = f"RMS I2C: Read error: {e}"
+        # Log only once per second
+        now = time.ticks_ms()
+        if time.ticks_diff(now, last_log_time) >= 1000:
+            if last_result is not None:
+                log(last_result)
+            last_log_time = now
+        await asyncio.sleep(0.3)
 
 
 def start_rms_motor_current_i2c_reader() -> None:

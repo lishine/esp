@@ -428,7 +428,7 @@ void adcProcessingTask(void *pvParameters) {
         }
 
         // Removed fixed delay - now handled by calculated delay after batch completion
-        vTaskDelay(pdMS_TO_TICKS(2)); // <-- MOVED INSIDE: Yield control briefly every loop iteration
+        vTaskDelay(pdMS_TO_TICKS(12)); // <-- MOVED INSIDE: Yield control briefly every loop iteration
     } // End while(1)
 } // <-- ADDED: Closing brace for adcProcessingTask function
 

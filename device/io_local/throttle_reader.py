@@ -43,8 +43,6 @@ def start_throttle_reader() -> None:
     global _reader_task
     if _reader_task is None:
         try:
-            import uasyncio as asyncio
-
             _reader_task = asyncio.create_task(_throttle_reader_task())
             log("Throttle PPM reader task started")
         except Exception as e:

@@ -177,8 +177,8 @@ async def main():
         # Initialize IO components
         init_io.init_io()  # Call the centralized init function
 
-        motor_current_i2c.start_rms_motor_current_i2c_reader()
-        # throttle_reader.start_throttle_reader()
+        # motor_current_i2c.start_rms_motor_current_i2c_reader()
+        throttle_reader.start_throttle_reader()
 
         # Start AP mode
         log("Starting AP...")  # Changed log.log to log
@@ -200,7 +200,7 @@ async def main():
 
         # Start sensor reader tasks (if they have one)
         log("Starting sensor reader tasks...")  # Changed log.log to log
-        esc_telemetry.start_esc_reader()  # Starts the async task internally
+        # esc_telemetry.start_esc_reader()  # Starts the async task internally
         # ds18b20.start_ds18b20_reader()  # Starts the async task internally
         # gps_reader.start_gps_reader()  # Starts the async task internally
         log("Sensor reader tasks started (if sensors initialized correctly).")
