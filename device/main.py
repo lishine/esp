@@ -21,9 +21,10 @@ import io_local.init_io as init_io
 import io_local.esc_telemetry as esc_telemetry
 import io_local.data_log as data_log
 import io_local.gps_reader as gps_reader
-from io_local.gps_reader import get_gps_processing_stats
-from io_local import adc
-from io_local import ds18b20
+import io_local.adc as adc
+import io_local.ds18b20 as ds18b20
+import io_local.motor_current_i2c as motor_current_i2c
+import io_local.throttle_reader as throttle_reader
 
 from http_server import start_server
 
@@ -80,7 +81,9 @@ async def measure_cpu():  # Note: This task now depends on gps_reader being init
         count_diff = current_count - last_idle_count
 
         # Get current GPS processing stats
-        current_gps_time_sum_us, current_gps_count = get_gps_processing_stats()
+        current_gps_time_sum_us, current_gps_count = (
+            gps_reader.get_gps_processing_stats()
+        )
 
         # Calculate differences since last measurement
         gps_time_diff_us = current_gps_time_sum_us - prev_gps_time_sum_us
@@ -179,11 +182,8 @@ async def main():
         # Initialize IO components
         init_io.init_io()  # Call the centralized init function
 
-        from io_local import motor_current_i2c
-        from io_local import throttle_reader
-
-        motor_current_i2c.start_rms_motor_current_i2c_reader()
-        throttle_reader.start_throttle_reader()
+        # motor_current_i2c.start_rms_motor_current_i2c_reader()
+        # throttle_reader.start_throttle_reader()
 
         # Start AP mode
         log("Starting AP...")  # Changed log.log to log
