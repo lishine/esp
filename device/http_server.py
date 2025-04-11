@@ -37,6 +37,7 @@ from io_local.buzzer import register_buzzer_routes
 
 from io_local import adc as adc_module  # Import the ADC module (device/ is root)
 from io_local import ds18b20 as ds18b20_module  # Import the DS18B20 module
+from io_local import fan
 
 HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
@@ -430,21 +431,14 @@ def post_read_live_data(request: Request):
         voltage_uv = adc_module.get_latest_voltage_uv()
         voltage_u16 = adc_module.get_latest_voltage_u16()
 
-        # Get DS18B20 data
         ds18_roms = ds18b20_module.get_ds18b20_roms()
-        # print(ds18_roms)
         ds18_temps = ds18b20_module.get_ds18b20_temperatures()
-        # print(ds18_temps)
         ds18_count = len(ds18_roms)
-        # print(ds18_count)
         ds18_sensors_data = []
         for i, rom in enumerate(ds18_roms):
-            # print(i, rom)
             rom_hex = "".join("{:02x}".format(x) for x in rom)
             temp_c = ds18_temps[i] if i < len(ds18_temps) else None  # Safety check
             ds18_sensors_data.append({"rom": rom_hex, "temp_c": temp_c})
-        # print(ds18_sensors_data)
-        # Prepare JSON response
         response_data = {
             "adc_voltage_uv_2pt": voltage_uv,  # From read_uv with 2-point factor
             "adc_voltage_u16_linear": voltage_u16,  # From read_u16 with linear factor
@@ -467,9 +461,6 @@ def post_read_live_data(request: Request):
         return Response(
             body=body, status=status, headers={"Content-Type": "application/json"}
         )
-
-
-# --- Log Viewer Routes ---
 
 
 @app.route("/log/infinite")
@@ -642,6 +633,52 @@ register_buzzer_routes(app)
 
 
 # --- End Added Routes ---
+
+
+@app.route("/control", methods=["GET"])
+def control_page(request: Request):
+    try:
+        with open("control.html", "r") as f:
+            content = f.read()
+        gc.collect()
+        return Response(
+            body=content,
+            status=HTTP_OK,
+            headers={"Content-Type": "text/html; charset=utf-8"},
+        )
+    except Exception as e:
+        log(f"Error in /control: {e}")
+        return Response(
+            body=f"Error reading control page: {str(e)}", status=HTTP_INTERNAL_ERROR
+        )
+
+
+@app.route("/api/control", methods=["POST"])
+def api_control(request: Request):
+    try:
+        data = json.loads(request.body)
+        on = data.get("on")
+        if not isinstance(on, bool):
+            return Response(
+                body=json.dumps(
+                    {"success": False, "error": "Missing or invalid 'on' parameter"}
+                ),
+                status=HTTP_BAD_REQUEST,
+                headers={"Content-Type": "application/json"},
+            )
+        fan.set_fan(on)
+        return Response(
+            body=json.dumps({"success": True, "fan_on": on}),
+            status=HTTP_OK,
+            headers={"Content-Type": "application/json"},
+        )
+    except Exception as e:
+        log(f"Error in /api/control: {e}")
+        return Response(
+            body=json.dumps({"success": False, "error": str(e)}),
+            status=HTTP_INTERNAL_ERROR,
+            headers={"Content-Type": "application/json"},
+        )
 
 
 def start_server():
