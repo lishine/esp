@@ -34,20 +34,17 @@ void init_i2c_slave() {
 // --- I2C Request Event Handler ---
 // This function is called in an ISR context when the master requests data
 void i2cRequestEvent() {
-    // Prepare the data buffer (4 bytes: uint16_t freq, uint16_t rms)
-    uint8_t buffer[4];
+    // Prepare the data buffer (2 bytes: uint16_t rms only)
+    uint8_t buffer[2];
 
-    // Read the volatile global variables atomically (should be safe for uint16_t on ESP32)
-    uint16_t freq = latest_freq_hz;
+    // Read the volatile global variable atomically (should be safe for uint16_t on ESP32)
     uint16_t rms = latest_rms_millivolts;
 
-    // Serial.printf("D (%s): I2C request received. Sending Freq: %u Hz, RMS: %u mV\n", TAG, freq, rms); // Debug level
+    // Serial.printf("D (%s): I2C request received. Sending RMS: %u mV\n", TAG, rms); // Debug level
 
-    // Pack the data (assuming Little Endian for both ESP32s)
-    buffer[0] = freq & 0xFF;         // Frequency LSB
-    buffer[1] = (freq >> 8) & 0xFF;  // Frequency MSB
-    buffer[2] = rms & 0xFF;          // RMS LSB
-    buffer[3] = (rms >> 8) & 0xFF;   // RMS MSB
+    // Pack the data (Little Endian: LSB first)
+    buffer[0] = rms & 0xFF;         // RMS LSB
+    buffer[1] = (rms >> 8) & 0xFF;  // RMS MSB
 
     // Send the buffer to the master
     size_t bytes_written = Wire.write(buffer, sizeof(buffer));
