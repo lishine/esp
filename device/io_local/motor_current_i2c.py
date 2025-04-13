@@ -62,10 +62,13 @@ async def _rms_motor_current_i2c_task() -> None:
                         f"RMS I2C: Incomplete read, got {len(data)} bytes",
                     )
         except Exception as e:
+            pass
             data_log.report_error(
-                SENSOR_NAME, time.ticks_ms(), f"RMS I2C: Read error: {e}"
+                SENSOR_NAME,
+                time.ticks_ms(),
+                "no data",
             )
-        await asyncio.sleep(0.3)
+        await asyncio.sleep(0.35)
 
 
 def start_rms_motor_current_i2c_reader() -> None:

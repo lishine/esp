@@ -2,6 +2,8 @@ import uasyncio as asyncio
 import machine
 import utime
 from log import log
+import time
+from . import data_log
 
 # Configuration
 THROTTLE_PIN_ID = 9
@@ -11,7 +13,7 @@ MAX_PULSE_US = 2000
 # Timeout for time_pulse_us (microseconds) - should be > max period (e.g., 20ms = 20000us)
 PULSE_TIMEOUT_US = 50000
 # Polling interval (milliseconds)
-POLL_INTERVAL_MS = 20
+POLL_INTERVAL_MS = 350
 # Log rate limit (seconds)
 LOG_RATE_LIMIT_S = 1
 
@@ -20,6 +22,8 @@ _throttle_pin = None  # type: machine.Pin | None
 _reader_task = None  # type: asyncio.Task | None
 _last_value_us = None  # type: int | None # Store raw microseconds
 _last_log_time = 0  # type: int
+
+SENSOR_NAME = "throttle"
 
 
 def init_throttle_reader() -> None:
@@ -62,15 +66,20 @@ async def _throttle_reader_task() -> None:
                     # Optional: Scale value to 0.0-1.0 if needed elsewhere
                     # scaled_value = (current_value_us - MIN_PULSE_US) / (MAX_PULSE_US - MIN_PULSE_US)
                     # scaled_value = max(0.0, min(1.0, scaled_value)) # Clamp
-                    log(f"Throttle PWM changed: {current_value_us} us")
+                    data_log.report_data(SENSOR_NAME, time.ticks_ms(), current_value_us)
                     _last_log_time = now_s
                 _last_value_us = current_value_us
         else:
+            data_log.report_error(
+                SENSOR_NAME,
+                time.ticks_ms(),
+                "no data",
+            )
             # Handle case where pulse wasn't detected (timeout or 0 width)
             if (
                 not signal_lost_logged and _last_value_us != 0
             ):  # Log only once when signal lost
-                log("Throttle PWM signal lost or invalid.")
+                # log("Throttle PWM signal lost or invalid.")
                 signal_lost_logged = True
             _last_value_us = 0  # Indicate signal lost/invalid
 

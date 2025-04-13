@@ -2,6 +2,7 @@ from machine import UART, Pin
 import uasyncio as asyncio
 import time  # Keep time for sleep in the reading loop for now
 from log import log
+from . import data_log
 
 # --- Configuration ---
 ESC_UART_ID = 2
@@ -18,6 +19,9 @@ esc_temp = 0
 esc_current = 0.0
 esc_consumption = 0
 _reader_task = None
+
+
+SENSOR_NAME = "esc"
 
 
 # --- CRC Calculation ---
@@ -90,7 +94,13 @@ def init_esc_telemetry():
         # Ensure pins are correctly assigned if using specific constructor
         # uart = UART(ESC_UART_ID, baudrate=ESC_BAUDRATE, tx=Pin(ESC_TX_PIN), rx=Pin(ESC_RX_PIN), bits=8, parity=None, stop=1)
         # Simpler init if pins are fixed for the UART ID on the board:
-        uart = UART(ESC_UART_ID, baudrate=ESC_BAUDRATE, tx=ESC_TX_PIN, rx=ESC_RX_PIN)
+        uart = UART(
+            ESC_UART_ID,
+            baudrate=ESC_BAUDRATE,
+            tx=ESC_TX_PIN,
+            rx=ESC_RX_PIN,
+            timeout=1000,
+        )
         log(  # Changed log.log to log
             f"ESC Telemetry UART({ESC_UART_ID}) initialized on TX={ESC_TX_PIN}, RX={ESC_RX_PIN}"
         )
@@ -133,11 +143,20 @@ async def _read_esc_telemetry_task():
                     # Note: Consider adding timeout to UART init or StreamReader if readexactly blocks indefinitely
                     data = await reader.readexactly(10)  # type: ignore
                 except asyncio.TimeoutError:
+                    data_log.report_error(
+                        SENSOR_NAME,
+                        time.ticks_ms(),
+                        "uart no data",
+                    )
                     # Expected if no data arrived, don't log unless debugging
                     # log("ESC Telemetry: readexactly timed out after 10ms wait.")
                     pass  # Proceed to short sleep at the end
                 except EOFError:
-                    log("ESC Telemetry: UART connection closed during read.")
+                    data_log.report_error(
+                        SENSOR_NAME,
+                        time.ticks_ms(),
+                        "ESC Telemetry: UART connection closed during read.",
+                    )
                     await asyncio.sleep_ms(1000)  # Longer sleep on EOF
                     continue  # Go to start of loop
 
@@ -151,15 +170,26 @@ async def _read_esc_telemetry_task():
                         esc_temp = parsed_data["temperature"]
                         esc_current = parsed_data["current"]
                         esc_consumption = parsed_data["consumption"]
-                        log(
-                            f"ESC: V={esc_voltage:.2f} A={esc_current:.2f} RPM={esc_rpm} Temp={esc_temp} mAh={esc_consumption}"
+                        data_log.report_data(
+                            SENSOR_NAME,
+                            time.ticks_ms(),
+                            dict(
+                                v=esc_voltage,
+                                c=esc_current,
+                                rpm=esc_rpm,
+                                t=esc_temp,
+                                mah=esc_consumption,
+                            ),
                         )
-                        # 7. Long Sleep & Continue
-                        await asyncio.sleep_ms(1000)
+                        await asyncio.sleep_ms(350)
                         continue
                     else:
+                        data_log.report_error(
+                            SENSOR_NAME,
+                            time.ticks_ms(),
+                            "ESC Telemetry: UART parsing error",
+                        )
                         # CRC Error (already logged inside _parse_kiss_telemetry if enabled)
-                        pass  # Proceed to short sleep at the end
 
             # If buffer was not empty after 10ms, or read failed/timed out, or CRC failed...
             # Proceed to the short sleep at the end of the main try block

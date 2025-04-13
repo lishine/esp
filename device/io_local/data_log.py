@@ -10,10 +10,10 @@ from . import ds18b20
 # from . import ina226 # Assuming INA might push data later
 
 # --- Configuration ---
-DATA_REPORT_INTERVAL_MS: int = 300
+DATA_REPORT_INTERVAL_MS: int = 500
 DATA_LOG_INTERVAL_S: int = 5
-ERROR_LOG_INTERVAL_S: int = 10
-QUEUE_SIZE: int = 50
+ERROR_LOG_INTERVAL_S: int = 30
+QUEUE_SIZE: int = 500
 
 # --- Queues ---
 # Using lazy initialization pattern for queues as well
@@ -142,6 +142,19 @@ async def data_log_task():
                     # Convert items to string for joining
                     items_str = ",".join(map(str, value))
                     log_parts.append(f"{key}:[{items_str}]")
+                elif isinstance(value, dict):
+                    # Format dictionaries as key: K1=V1 K2=V2 ...
+                    dict_parts = []
+                    for sub_key, sub_value in value.items():
+                        # Apply basic formatting, maybe specific for floats?
+                        if isinstance(sub_value, float):
+                            dict_parts.append(
+                                f"{sub_key}={sub_value:.2f}"
+                            )  # Example: 2 decimal places for floats
+                        else:
+                            dict_parts.append(f"{sub_key}={sub_value}")
+                    dict_string = " ".join(dict_parts)
+                    log_parts.append(f"{key}: {dict_string}")
                 # elif isinstance(value, float):
                 #     # Optional: Specific formatting for floats if needed
                 #     log_parts.append(f"{key}:{value:.2f}") # Example: 2 decimal places

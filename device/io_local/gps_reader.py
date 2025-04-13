@@ -2,12 +2,10 @@ from machine import UART, Pin, RTC  # Added RTC
 import uasyncio as asyncio
 import time
 import machine  # Added machine
-
-# from _thread import allocate_lock # REMOVED
 from log import log
+from . import data_log
 
 _JERUSALEM_TZ_OFFSET_HOURS = 3  # Jerusalem Timezone Offset (UTC+3 for IDT)
-
 
 # --- Configuration ---
 GPS_UART_ID = 1  # Using UART1
@@ -38,8 +36,7 @@ _rtc_needs_initial_sync = True  # Flag to track if RTC needs first sync before f
 _rtc_synced_by_fix = False  # Flag to track if RTC has been synced by a fix
 _seen_satellite_prns = set()  # Internal set to track unique PRNs seen in a GSV cycle
 
-
-# --- Getter Functions ---
+SENSOR_NAME = "gps"
 
 
 # --- Getter Functions ---
@@ -96,7 +93,11 @@ def _parse_gpgga(parts):
         # else: Keep last known good altitude
 
     except (ValueError, IndexError) as e:
-        log(f"Error parsing GPGGA: {e}, parts: {parts}")
+        data_log.report_error(
+            SENSOR_NAME,
+            time.ticks_ms(),
+            f"Error parsing GPGGA: {e}, parts: {parts}",
+        )
         # Don't set global gps_fix to False here
 
 
@@ -134,7 +135,11 @@ def _parse_gprmc(parts):
                         lon = -lon
                     gps_longitude = lon
                 except (ValueError, IndexError) as e:
-                    log(f"Error parsing Lat/Lon in GPRMC (post-sync): {e}")
+                    data_log.report_error(
+                        SENSOR_NAME,
+                        time.ticks_ms(),
+                        f"Error parsing Lat/Lon in GPRMC (post-sync): {e}",
+                    )
             return  # Skip all time processing
 
         # --- Time Processing (Only if RTC not yet synced by fix) ---
@@ -175,8 +180,10 @@ def _parse_gprmc(parts):
                         log(f"Error setting RTC during initial sync: {e}")
 
             except (ValueError, IndexError, TypeError) as e:
-                log(
-                    f"Error parsing GPS date/time: {e}, Date: '{date_str}', Time: '{time_str}'"
+                data_log.report_error(
+                    SENSOR_NAME,
+                    time.ticks_ms(),
+                    f"Error parsing GPS date/time: {e}, Date: '{date_str}', Time: '{time_str}'",
                 )
                 gps_epoch = None  # Ensure gps_epoch is None if parsing failed
 
@@ -207,10 +214,18 @@ def _parse_gprmc(parts):
                     lon = -lon
                 gps_longitude = lon
             except (ValueError, IndexError) as e:
-                log(f"Error parsing Lat/Lon in GPRMC: {e}")
+                data_log.report_error(
+                    SENSOR_NAME,
+                    time.ticks_ms(),
+                    f"Error parsing Lat/Lon in GPRMC: {e}",
+                )
 
     except (ValueError, IndexError) as e:
-        log(f"Critical Error parsing GPRMC: {e}, parts: {parts}")
+        data_log.report_error(
+            SENSOR_NAME,
+            time.ticks_ms(),
+            f"Critical Error parsing GPRMC: {e}, parts: {parts}",
+        )
         gps_fix = False  # Ensure fix is false on major parsing error
 
 
@@ -243,7 +258,11 @@ def _parse_gpgsv(parts):
             # We don't currently need elevation, azimuth, or SNR
 
     except (ValueError, IndexError) as e:
-        log(f"Error parsing GPGSV: {e}, parts: {parts}")
+        data_log.report_error(
+            SENSOR_NAME,
+            time.ticks_ms(),
+            f"Error parsing GPGSV: {e}, parts: {parts}",
+        )
 
 
 # --- Initialization ---
@@ -305,7 +324,11 @@ async def _read_gps_task():
                 try:
                     line = line_bytes.decode("ascii").strip()
                 except UnicodeError:
-                    log("GPS RX: Invalid ASCII data received")
+                    data_log.report_error(
+                        SENSOR_NAME,
+                        time.ticks_ms(),
+                        "GPS RX: Invalid ASCII data received",
+                    )
                     continue
 
                 if not line.startswith("$") or "*" not in line:
@@ -321,15 +344,28 @@ async def _read_gps_task():
                         for char in sentence[1:]:
                             calculated_checksum ^= ord(char)
                         if calculated_checksum != received_checksum:
-                            log(
-                                f"GPS Checksum error! Line: {line}, Calc: {hex(calculated_checksum)}, Recv: {hex(received_checksum)}"
+                            data_log.report_error(
+                                SENSOR_NAME,
+                                time.ticks_ms(),
+                                f"GPS Checksum error! Line: {line}, Calc: {hex(calculated_checksum)}, Recv: {hex(received_checksum)}",
                             )
                             continue
                     except ValueError:
+                        data_log.report_error(
+                            SENSOR_NAME,
+                            time.ticks_ms(),
+                            f"GPS Malformed NMEA (no checksum?): {line}",
+                        )
+
                         log(f"GPS Invalid checksum format: {parts_checksum[1]}")
                         continue
                 else:
-                    log(f"GPS Malformed NMEA (no checksum?): {line}")
+                    data_log.report_error(
+                        SENSOR_NAME,
+                        time.ticks_ms(),
+                        f"GPS Malformed NMEA (no checksum?): {line}",
+                    )
+
                     continue
 
                 # Parse Specific Sentences
@@ -374,14 +410,12 @@ async def _read_gps_task():
         await asyncio.sleep_ms(25)
 
 
-# --- Logging Task ---
 async def _log_gps_status_task():
     """Asynchronous task to log GPS status periodically."""
     global gps_satellites_seen  # We need to update this global based on the set
-    log("Starting GPS Status Logger task (10s interval)...")
     while True:
         try:
-            await asyncio.sleep_ms(10000)  # Log every 10 seconds
+            await asyncio.sleep_ms(1000)
 
             # Check communication status
             is_com_ok = False
@@ -392,20 +426,34 @@ async def _log_gps_status_task():
                 is_com_ok = time_since_last_data < COMM_TIMEOUT_MS
 
             if not is_com_ok:
-                continue  # Log nothing if no communication
+                data_log.report_error(SENSOR_NAME, time.ticks_ms(), "nocom")
+                continue
 
             # Update seen satellite count from the collected set
             gps_satellites_seen = len(_seen_satellite_prns)
 
             # Log based on fix status
             if gps_fix:
-                log_msg = f"GPS: Fix(Lat: {gps_latitude:.4f}, Lon: {gps_longitude:.4f}, Alt: {gps_altitude:.1f}, Spd: {gps_speed_knots:.1f}, Seen: {gps_satellites_seen}, Active: {gps_satellites})"
-                log(log_msg)
-            else:
-                log_msg = (
-                    f"GPS: NoFix(Seen: {gps_satellites_seen}, Active: {gps_satellites})"
+                data_log.report_data(
+                    SENSOR_NAME,
+                    time.ticks_ms(),
+                    dict(
+                        Fix=True,
+                        Lat=gps_latitude,
+                        Lon=gps_longitude,
+                        Alt=gps_altitude,
+                        Spd=gps_speed_knots,
+                        Seen=gps_satellites_seen,
+                        Active=gps_satellites,
+                    ),
                 )
-                log(log_msg)
+
+            else:
+                data_log.report_data(
+                    SENSOR_NAME,
+                    time.ticks_ms(),
+                    dict(Fix=False, Seen=gps_satellites_seen, Active=gps_satellites),
+                )
 
         except asyncio.CancelledError:
             log("GPS Logger: Task cancelled.")
