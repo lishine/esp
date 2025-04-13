@@ -173,18 +173,16 @@ if [ "$DRY_RUN" == false ]; then
 
   # Execute the single upload command
   echo "Running: $SCRIPT_DIR_COMMON/upload.sh ${UPLOAD_CMD_ARGS[*]}" # Use [*] for display clarity
-  # Execute and capture output/status
-  upload_output=$("$SCRIPT_DIR_COMMON/upload.sh" "${UPLOAD_CMD_ARGS[@]}" 2>&1)
+  # Execute directly to stream output
+  "$SCRIPT_DIR_COMMON/upload.sh" "${UPLOAD_CMD_ARGS[@]}"
   upload_status=$?
-  echo "$upload_output" # Show output from the upload script
+  # Output is now streamed directly, no need to echo a captured variable
 
   # Check if the upload succeeded
   if [ "$upload_status" -ne 0 ]; then
       echo "Error: Upload script failed (Status: $upload_status). Sync aborted." >&2
-      # Check for connection error specifically, maybe suggest --ap?
-      if echo "$upload_output" | grep -q "Connection to .* failed"; then
-          echo "Hint: Upload failed due to connection. Consider using '--ap' flag with the main './run' command if the device is in AP mode." >&2
-      fi
+      # Cannot check specific output anymore, but the error message from upload.sh should be visible now.
+      # Consider adding more robust error checking directly in upload.sh if needed.
       exit 1 # Abort sync
   else
     echo "Sync finished successfully."
