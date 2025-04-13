@@ -41,7 +41,7 @@ class Queue:
         while self.empty():  # May be multiple tasks waiting on get()
             # Queue is empty, suspend task until a put occurs
             # 1st of N tasks gets, the rest loop again
-            await self._evput.wait()
+            await self._evput.wait()  # type: ignore
         return self._get()
 
     def get_nowait(self):  # Remove and return an item from the queue.
@@ -59,7 +59,7 @@ class Queue:
     async def put(self, val):  # Usage: await queue.put(item)
         while self.full():
             # Queue full
-            await self._evget.wait()
+            await self._evget.wait()  # type: ignore
             # Task(s) waiting to get from queue, schedule first Task
         self._put(val)
 
@@ -90,4 +90,4 @@ class Queue:
         self._upd_jnevt(-1)
 
     async def join(self):  # Wait for join event
-        await self._jnevt.wait()
+        await self._jnevt.wait()  # type: ignore
