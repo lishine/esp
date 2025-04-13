@@ -1,6 +1,7 @@
 import uasyncio as asyncio
 from machine import I2C, Pin
 from log import log
+from . import data_log
 
 I2C_ID = 0
 I2C_SCL_PIN = 39
@@ -10,6 +11,8 @@ I2C_ADDR = 0x08
 
 _i2c = None
 _reader_task = None
+
+SENSOR_NAME = "motor current"
 
 
 def init_rms_motor_current_i2c() -> None:
@@ -39,27 +42,29 @@ async def _rms_motor_current_i2c_task() -> None:
     global _i2c
     import time
 
-    last_log_time = time.ticks_ms()
-    last_result = None
     while True:
         try:
             if _i2c is None:
-                last_result = "RMS I2C: Not initialized, skipping read"
+                data_log.report_error(
+                    SENSOR_NAME,
+                    time.ticks_ms(),
+                    "RMS I2C: Not initialized, skipping read",
+                )
             else:
                 data = _i2c.readfrom(I2C_ADDR, 2)
                 if len(data) == 2:
                     rms_mv = data[0] | (data[1] << 8)
-                    last_result = f"RMS Motor Current (I2C): {rms_mv} mV"
+                    data_log.report_data(SENSOR_NAME, time.ticks_ms(), rms_mv)
                 else:
-                    last_result = f"RMS I2C: Incomplete read, got {len(data)} bytes"
+                    data_log.report_error(
+                        SENSOR_NAME,
+                        time.ticks_ms(),
+                        f"RMS I2C: Incomplete read, got {len(data)} bytes",
+                    )
         except Exception as e:
-            last_result = f"RMS I2C: Read error: {e}"
-        # Log only once per second
-        now = time.ticks_ms()
-        if time.ticks_diff(now, last_log_time) >= 1000:
-            if last_result is not None:
-                log(last_result)
-            last_log_time = now
+            data_log.report_error(
+                SENSOR_NAME, time.ticks_ms(), f"RMS I2C: Read error: {e}"
+            )
         await asyncio.sleep(0.3)
 
 

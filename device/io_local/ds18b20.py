@@ -14,8 +14,9 @@ roms = []
 ds18_temperatures = []
 _reader_task = None
 
+SENSOR = "DS"
 
-# --- Initialization ---
+
 def init_ds18b20():
     """Initializes the OneWire bus and scans for DS18B20 sensors."""
     global ds_sensor, roms, ds18_temperatures
@@ -47,7 +48,6 @@ def init_ds18b20():
         return False
 
 
-# --- Data Reading Task ---
 async def _read_ds18b20_task():
     """Asynchronous task to periodically read all detected DS18B20 sensors."""
     global ds18_temperatures
@@ -55,7 +55,6 @@ async def _read_ds18b20_task():
         log("DS18B20 not initialized or no sensors found. Cannot start reader task.")
         return
 
-    log("Starting DS18B20 reader task...")
     while True:
         try:
             # Start temperature conversion for all sensors
@@ -75,20 +74,20 @@ async def _read_ds18b20_task():
                     err_msg = f"Sensor {i} (ROM {rom_hex}) read error: {read_e}"
                     temps.append(None)  # Indicate read failure for this sensor
                     # Report error to data_log
-                    data_log.report_error("DS18B20", time.ticks_ms(), err_msg)
+                    data_log.report_error(SENSOR, time.ticks_ms(), err_msg)
 
             ds18_temperatures = temps  # Update the global state atomically
             # Report successful data to data_log
             # Note: Reporting the list even if it contains None from individual sensor failures.
             # Consider adding logic here to only report if all sensors were successful, if needed.
-            data_log.report_data("DS18B20", time.ticks_ms(), ds18_temperatures)
+            data_log.report_data(SENSOR, time.ticks_ms(), ds18_temperatures)
             # log("DS18B20 Temperatures:", ds18_temperatures) # Optional: Log readings
 
         except Exception as e:
             # Error during convert_temp or general task issue
             err_msg = f"Error in DS18B20 reader task: {e}"
             # Report task error to data_log
-            data_log.report_error("DS18B20", time.ticks_ms(), err_msg)
+            data_log.report_error(SENSOR, time.ticks_ms(), err_msg)
             # Reset temps to None if a major error occurred? Or keep last known?
             # For now, keep last known good values unless individual reads failed.
 

@@ -128,23 +128,6 @@ async def data_log_task():
         # Format the final log message if data exists
         if final_data_this_log_interval:
             log_parts = []
-            # --- Format DS18B20 ---
-            if "DS18B20" in final_data_this_log_interval:
-                temps = final_data_this_log_interval["DS18B20"]
-                # Ensure temps is a list or tuple before joining
-                if isinstance(temps, (list, tuple)):
-                    ds_str = (
-                        "DS:"
-                        + "["
-                        + ",".join(
-                            [f"{t:.1f}C" if t is not None else "N/A" for t in temps]
-                        )
-                        + "]"
-                    )
-                    log_parts.append(ds_str)
-                else:
-                    log(f"DataLogTask: Invalid DS18B20 data format: {temps}")
-
             # --- Format ESC Telemetry (Example) ---
             # if 'ESC' in final_data_this_log_interval:
             #     esc_data = final_data_this_log_interval['ESC']
@@ -152,8 +135,21 @@ async def data_log_task():
             #     esc_str = f"ESC:{esc_data.get('voltage', 0):.1f}V,{esc_data.get('rpm', 0)}rpm,{esc_data.get('temperature', 0)}C,{esc_data.get('current', 0):.1f}A,{esc_data.get('consumption', 0)}mAh"
             #     log_parts.append(esc_str)
 
-            # --- Add formatting for other sensors here ---
+            # --- Generic Formatting for All Sensors ---
+            for key, value in final_data_this_log_interval.items():
+                if isinstance(value, (list, tuple)):
+                    # Format lists/tuples as key:[item1,item2,...]
+                    # Convert items to string for joining
+                    items_str = ",".join(map(str, value))
+                    log_parts.append(f"{key}:[{items_str}]")
+                # elif isinstance(value, float):
+                #     # Optional: Specific formatting for floats if needed
+                #     log_parts.append(f"{key}:{value:.2f}") # Example: 2 decimal places
+                else:
+                    # Default key:value format for other types
+                    log_parts.append(f"{key}:{value}")
 
+            # --- Logging ---
             if log_parts:
                 log(f"DATA | {' | '.join(log_parts)}")
 
@@ -162,23 +158,26 @@ async def data_log_task():
 
 async def error_log_task():
     """
-    Error logging task (10s): Reads all errors from the error queue and logs them.
+    Error logging task (10s): Reads all errors from the error queue and logs
+    only unique errors (by sensor_name and error_msg) per cycle.
     """
     log("Starting error logging task...")
     error_q = _get_error_queue()
     while True:
+        unique_errors_this_cycle = set()  # Track unique errors for this cycle
         # Drain the error queue
-        errors_found = False
         while True:
             try:
                 sensor_name, timestamp, error_msg = error_q.get_nowait()
-                log(f"ERROR | {sensor_name}: {error_msg}")
-                errors_found = True
+                error_key = (sensor_name, error_msg)
+
+                if error_key not in unique_errors_this_cycle:
+                    unique_errors_this_cycle.add(error_key)
+                    log(f"ERROR | {sensor_name}: {error_msg}")  # Log only unique errors
             except QueueEmpty:
-                # if errors_found: log("ErrorLogTask: Error queue drained.") # Optional
-                break  # Error queue drained
+                break  # Error queue drained for this cycle
             except Exception as e:
                 log(f"ErrorLogTask: Error processing error queue: {e}")
-                break
+                break  # Avoid tight loop on error
 
         await asyncio.sleep(ERROR_LOG_INTERVAL_S)
