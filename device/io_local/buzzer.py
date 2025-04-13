@@ -209,7 +209,6 @@ def register_buzzer_routes(app: HTTPServer):
         try:
             with open(html_file, "r") as f:
                 content = f.read()
-            gc.collect()
             return Response(
                 body=content,
                 status=HTTP_OK,

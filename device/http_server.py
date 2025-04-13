@@ -11,7 +11,6 @@ from log import (
     read_log_file_content,
     get_latest_log_index,
     clear_logs,
-    get_log_write_stats,
 )
 
 from wifi import (
@@ -149,7 +148,6 @@ def get_settings(request):
         # Read the entire file content (buffered)
         with open(settings_file, "r") as f:  # Read as text
             content = f.read()
-        gc.collect()
         return Response(
             body=content,
             status=HTTP_OK,
@@ -270,7 +268,6 @@ def get_free_space(request):
                 "_machine": impl_machine,
             },
         }
-        gc.collect()  # Run GC before creating potentially large JSON string
         return Response(
             body=json.dumps(data), headers={"Content-Type": "application/json"}
         )
@@ -334,7 +331,6 @@ def get_gps_settings_page(request):
     try:
         with open(gps_settings_file, "r") as f:
             content = f.read()
-        gc.collect()
         return Response(
             body=content,
             status=HTTP_OK,
@@ -376,7 +372,6 @@ def status(request):
             response_data["ip"] = get_ip()
         else:
             response_data["ip"] = None
-        response_data["stat"] = get_log_write_stats()  # Add log stats
         return Response(
             body=json.dumps(response_data), headers={"Content-Type": "application/json"}
         )
@@ -400,7 +395,6 @@ def get_live_data_page(request: Request):
         # Read the entire file content (buffered)
         with open(live_data_html_path, "r") as f:  # Read as text
             content = f.read()
-        gc.collect()
         return Response(
             body=content,
             status=HTTP_OK,
@@ -446,7 +440,6 @@ def post_read_live_data(request: Request):
         }
         # Could add other live data sources here in the future
 
-        gc.collect()  # Optional GC before creating JSON string
         return Response(
             body=json.dumps(response_data),
             status=HTTP_OK,
@@ -472,7 +465,6 @@ def log_viewer(request):
     try:
         with open(log_viewer_file, "r") as f:
             content = f.read()
-        gc.collect()
         return Response(
             body=content,
             status=HTTP_OK,
@@ -536,7 +528,6 @@ def api_log_chunk_file(request: Request):
             "Content-Type": "text/plain; charset=utf-8",
             "X-Log-File-Index": str(target_index),
         }
-        gc.collect()
         # Ensure log_content is string before passing to Response with text/plain
         if isinstance(log_content, bytes):
             try:
@@ -583,7 +574,7 @@ def clear_log_files(request):
 @app.route("/log/add-test-entries", methods=["POST"])
 def add_test_log_entries(request):
     try:
-        count = 200
+        count = 2000
         log(f"Adding {count} test log entries...")
         for i in range(count):
             log(f"Test log entry {i+1}/{count}")
@@ -625,14 +616,10 @@ def index(request: Request):
     return Response.redirect("/settings")
 
 
-# --- Register component routes ---
 from captive import register_captive_portal_routes
 
 register_captive_portal_routes(app)
 register_buzzer_routes(app)
-
-
-# --- End Added Routes ---
 
 
 @app.route("/control", methods=["GET"])
@@ -640,7 +627,6 @@ def control_page(request: Request):
     try:
         with open("control.html", "r") as f:
             content = f.read()
-        gc.collect()
         return Response(
             body=content,
             status=HTTP_OK,

@@ -1,13 +1,10 @@
 import time
 import machine
-import log
+from log import log, _get_log_filepath, get_latest_log_index, _MONTH_ABBR
 
-import uos  # Added import
-
-# --- Helper Functions ---
+import uos
 
 
-# Helper function to read the last line efficiently
 def _read_last_line(filepath):
     """Reads the last line of a file in binary mode."""
     try:
@@ -62,10 +59,10 @@ def _read_last_line(filepath):
                     return buffer  # Return the whole buffer (single line file)
     except OSError as e:
         # Use log function which is already imported
-        log.log(f"RTC: Error reading file {filepath} in _read_last_line: {e}")
+        log(f"RTC: Error reading file {filepath} in _read_last_line: {e}")
         return None
     except Exception as e:
-        log.log(f"RTC: Unexpected error in _read_last_line for {filepath}: {e}")
+        log(f"RTC: Unexpected error in _read_last_line for {filepath}: {e}")
         return None
 
 
@@ -80,38 +77,38 @@ def set_time_from_last_log():
     try:
         # 1. Find the latest log file index
         # Use log module directly as it's imported
-        latest_index = log.get_latest_log_index()
+        latest_index = get_latest_log_index()
 
         # get_latest_log_index returns 0 if no logs exist or dir error.
         # We need to check if the corresponding file actually exists.
-        filepath = log._get_log_filepath(latest_index)
+        filepath = _get_log_filepath(latest_index)
         try:
             # Check existence by trying to get status
             uos.stat(filepath)
         except OSError as e:
             if e.args[0] == 2:  # ENOENT (File not found)
-                log.log(
+                log(
                     f"RTC: No log file found at index {latest_index} ({filepath}) to set time from."
                 )
                 return
             else:  # Other stat error
-                log.log(f"RTC: Error checking log file {filepath}: {e}")
+                log(f"RTC: Error checking log file {filepath}: {e}")
                 return
 
         # 2. Read the last line of the latest log file
         last_line_bytes = _read_last_line(filepath)
         if not last_line_bytes:
-            log.log(f"RTC: Could not read last line or file empty: {filepath}")
+            log(f"RTC: Could not read last line or file empty: {filepath}")
             return
 
         try:
             last_line_str = last_line_bytes.decode("utf-8").strip()
         except UnicodeError:
-            log.log(f"RTC: Error decoding last line from {filepath}")
+            log(f"RTC: Error decoding last line from {filepath}")
             return
 
         if not last_line_str:
-            log.log(f"RTC: Last line is empty in {filepath}")
+            log(f"RTC: Last line is empty in {filepath}")
             return
 
         # 3. Parse the timestamp from the last line
@@ -158,13 +155,13 @@ def set_time_from_last_log():
 
             # Map month abbreviation to number using log._MONTH_ABBR
             # Ensure log._MONTH_ABBR is accessible (it should be if log is imported)
-            MONTH_MAP = {abbr: i + 1 for i, abbr in enumerate(log._MONTH_ABBR)}
+            MONTH_MAP = {abbr: i + 1 for i, abbr in enumerate(_MONTH_ABBR)}
             if mon_abbr not in MONTH_MAP:
                 raise ValueError(f"Invalid month abbreviation: {mon_abbr}")
             month = MONTH_MAP[mon_abbr]
 
         except (ValueError, IndexError, KeyError) as e:
-            log.log(f"RTC: Error parsing timestamp from line '{last_line_str}': {e}")
+            log(f"RTC: Error parsing timestamp from line '{last_line_str}': {e}")
             return
 
         # 4. Calculate the new time (+1 second)
@@ -174,7 +171,7 @@ def set_time_from_last_log():
             time_tuple = (year, month, day, hour, minute, second, 0, 0)
 
             # Convert to epoch seconds
-            epoch_seconds = time.mktime(time_tuple)
+            epoch_seconds = time.mktime(time_tuple)  # type: ignore
 
             # Add 1 second
             new_epoch_seconds = epoch_seconds + 1
@@ -197,7 +194,7 @@ def set_time_from_last_log():
                 0,  # subseconds
             )
         except Exception as e:
-            log.log(f"RTC: Error calculating new time: {e}")
+            log(f"RTC: Error calculating new time: {e}")
             return
 
         # 5. Set the RTC
@@ -206,13 +203,13 @@ def set_time_from_last_log():
             rtc.datetime(rtc_tuple)
             # Log success confirmation using the tuple components
             # Ensure log._MONTH_ABBR is accessible
-            log.log(
-                f"RTC: Set time from log {filepath} to {rtc_tuple[0]}-{log._MONTH_ABBR[rtc_tuple[1]-1]}-{rtc_tuple[2]:02d} {rtc_tuple[4]:02d}:{rtc_tuple[5]:02d}:{rtc_tuple[6]:02d}"
+            log(
+                f"RTC: Set time from log {filepath} to {rtc_tuple[0]}-{_MONTH_ABBR[rtc_tuple[1]-1]}-{rtc_tuple[2]:02d} {rtc_tuple[4]:02d}:{rtc_tuple[5]:02d}:{rtc_tuple[6]:02d}"
             )
 
         except Exception as e:
-            log.log(f"RTC: Error setting RTC time: {e}")
+            log(f"RTC: Error setting RTC time: {e}")
 
     except Exception as e:
         # Catch-all for unexpected errors in the main function logic
-        log.log(f"RTC: Unexpected error in set_time_from_last_log: {e}")
+        log(f"RTC: Unexpected error in set_time_from_last_log: {e}")

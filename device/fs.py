@@ -49,30 +49,43 @@ def get_file_details(path="."):
         return [f"Error listing files: {str(e)}"]
 
 
-def get_hierarchical_list_with_sizes(path=".", prefix="", _initial_files=None):
+def get_hierarchical_list_with_sizes(
+    path: str = ".", prefix: str = "", _initial_files: list | None = None
+) -> list:
     """
-    # Define current_dir_name early to avoid unbound error in final except block
-    # Use string splitting for basename, as uos may not have os.path.basename
+    Returns a hierarchical list of files and directories with sizes, including SD card files if present at root.
     """
     current_dir_name = path.split("/")[-1] if "/" in path else path
     try:
         result = []
         files_to_process = []
         is_truncated_list = False
-        # current_dir_name = os.path.basename(path) if path != "." else "." # Moved up
 
-        if _initial_files is not None:
-            # Using a pre-defined list (potentially truncated with None marker)
+        # Special handling at root: merge internal and SD card files
+        if (path == "." or path == "/") and _initial_files is None:
+            # List internal files
+            try:
+                internal_files = os.listdir(".")
+                internal_files.sort()
+            except OSError as e:
+                internal_files = []
+                log(f"Error listing internal root: {e}")
+            # Check for SD card
+            sd_present = is_dir("/sd")
+            # Merge: add "sd" if present and not already in internal_files
+            files_to_process = list(internal_files)
+            if sd_present and "sd" not in files_to_process:
+                files_to_process.append("sd")
+            files_to_process.sort()
+        elif _initial_files is not None:
             files_to_process = _initial_files
             is_truncated_list = True
         else:
-            # List the directory if no initial list provided
             try:
                 files_to_process = os.listdir(path)
                 files_to_process.sort()
             except OSError as e:
                 log(f"Error listing directory '{path}': {e}")
-                # Return error indication that can be appended by the caller
                 return [f"{prefix}└── Error listing contents: {e}"]
 
         count = len(files_to_process)
@@ -81,73 +94,56 @@ def get_hierarchical_list_with_sizes(path=".", prefix="", _initial_files=None):
         max_name_length = 0
         for item in files_to_process:
             if item is None:
-                continue  # Skip ellipsis marker
+                continue
             name_len = len(item)
             item_full_path = path + "/" + item if path != "." else item
             try:
-                # Check if item is a directory to add trailing slash length
                 if (os.stat(item_full_path)[0] & 0x4000) != 0:
                     name_len += 1
             except OSError:
-                pass  # Ignore stat errors for length calculation
+                pass
             if name_len > max_name_length:
                 max_name_length = name_len
-        max_name_length += 2  # Add padding
+        max_name_length += 2
 
-        # --- Loop through the provided or listed files ---
         for i, file in enumerate(files_to_process):
             is_current_last = i == count - 1
             line_prefix = prefix + ("└── " if is_current_last else "├── ")
 
-            # Handle ellipsis marker (if present from truncation)
             if file is None:
-                ellipsis_padding = " " * (max_name_length - 3)  # Padding for "..."
+                ellipsis_padding = " " * (max_name_length - 3)
                 result.append(f"{line_prefix}{'...'}{ellipsis_padding}")
                 continue
 
-            # Process regular file/dir name
             full_path = path + "/" + file if path != "." else file
 
             try:
                 stat = os.stat(full_path)
                 size = stat[6]
-                is_dir = (stat[0] & 0x4000) != 0
+                is_dir_flag = (stat[0] & 0x4000) != 0
 
-                if is_dir:
-                    # --- Process Directory ---
+                if is_dir_flag:
                     display_name = f"{file}/"
                     padding = " " * (max_name_length - len(display_name))
                     result.append(f"{line_prefix}{display_name}{padding}<DIR>")
 
-                    # --- Recursive Call Logic (with potential truncation for 'logs') ---
-                    subdir_prefix = prefix + (
-                        "    " if is_current_last else "│   "
-                    )  # Use current item's last status for connector
-                    subdir_items_to_pass = (
-                        None  # Default to no truncation / normal listing
-                    )
+                    subdir_prefix = prefix + ("    " if is_current_last else "│   ")
+                    subdir_items_to_pass = None
 
-                    # Check if this subdir is 'logs' and needs truncation
                     if file == "logs":
                         try:
                             subdir_items_list = os.listdir(full_path)
                             if len(subdir_items_list) > 10:
                                 subdir_items_list.sort()
-                                # Create truncated list with None marker for ellipsis
                                 subdir_items_to_pass = (
                                     subdir_items_list[:3]
                                     + [None]
                                     + subdir_items_list[-3:]
                                 )
-                            # else: No truncation needed, subdir_items_to_pass remains None
                         except OSError as e:
-                            # Error listing logs dir, append error message and skip recursion for it
                             result.append(f"{subdir_prefix}└── Error listing logs: {e}")
-                            continue  # Skip recursion for this directory
+                            continue
 
-                    # Make the recursive call
-                    # Pass is_current_last to the next level (determines its line prefix)
-                    # Pass subdir_items_to_pass (truncated list or None)
                     subdir_files_result = get_hierarchical_list_with_sizes(
                         full_path,
                         subdir_prefix,
@@ -155,27 +151,21 @@ def get_hierarchical_list_with_sizes(path=".", prefix="", _initial_files=None):
                     )
                     if subdir_files_result:
                         result.extend(subdir_files_result)
-                    # --- End Recursive Call Logic ---
-
                 else:
-                    # --- Process File ---
                     padding = " " * (max_name_length - len(file))
                     result.append(
                         f"{line_prefix}{file}{padding}{format_size(size):>10}"
                     )
-            except OSError as e:  # Error stating the item 'file'
-                # Error accessing file/directory during loop
+            except OSError as e:
                 padding = " " * (max_name_length - len(file))
                 result.append(f"{line_prefix}{file}{padding}{'ERROR':>10} ({str(e)})")
 
-        # Add root directory indicator only if at top level AND not processing a predefined list
-        if prefix == "" and path == "." and not is_truncated_list:
+        if prefix == "" and (path == "." or path == "/") and not is_truncated_list:
             result.insert(0, ".")
 
         return result
-    except Exception as e:  # Catch-all for unexpected errors in the function
+    except Exception as e:
         log(f"General error in get_hierarchical_list_with_sizes for path '{path}': {e}")
-        # Return a more specific error message for the level, including the exception
         return [f"{prefix}└── Error processing directory '{current_dir_name}': {e}"]
 
 
@@ -285,45 +275,56 @@ def remove_empty_parents(path):
         return False
 
 
-def get_hierarchical_json(path=".", include_dirs=True):
+def get_hierarchical_json(path: str = ".", include_dirs: bool = True) -> list:
+    """
+    Returns a hierarchical JSON-style list of files and directories, including SD card files if present at root.
+    """
     log("get_hierarchical_json")
     try:
         result = []
-        files = os.listdir(path)
-        files.sort()
+        # Special handling at root: merge internal and SD card files
+        if path == "." or path == "/":
+            try:
+                internal_files = os.listdir(".")
+                internal_files.sort()
+            except OSError as e:
+                internal_files = []
+                log(f"Error listing internal root: {e}")
+            # Check for SD card
+            sd_present = is_dir("/sd")
+            files = list(internal_files)
+            if sd_present and "sd" not in files:
+                files.append("sd")
+            files.sort()
+        else:
+            files = os.listdir(path)
+            files.sort()
 
         for file in files:
             full_path = path + "/" + file if path != "." else file
             try:
-                # Get file stats
                 stat = os.stat(full_path)
-                # Size in bytes
                 size = stat[6]
-                # Check if it's a directory
-                is_dir = (stat[0] & 0x4000) != 0
+                is_dir_flag = (stat[0] & 0x4000) != 0
 
-                # Create file entry
                 entry = {
                     "name": file,
                     "path": full_path,
-                    "is_dir": is_dir,
+                    "is_dir": is_dir_flag,
                     "size": size,
-                    "size_formatted": format_size(size) if not is_dir else "<DIR>",
+                    "size_formatted": format_size(size) if not is_dir_flag else "<DIR>",
                 }
 
-                # Add children for directories
-                if is_dir:
+                if is_dir_flag:
                     if include_dirs:
                         entry["children"] = get_hierarchical_json(
                             full_path, include_dirs
                         )
-                        result.append(entry)
+                    result.append(entry)
                 else:
-                    # It's a file
                     result.append(entry)
 
             except Exception as e:
-                # Error accessing file/directory
                 result.append({"name": file, "path": full_path, "error": str(e)})
 
         return result

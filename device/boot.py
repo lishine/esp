@@ -1,27 +1,21 @@
 import machine
-import uos  # Import uos for dupterm
 from log import log
 import rtc  # Import the new rtc module
 import time  # Import the new rtc module
+from init_sd import init_sd
 
-# --- Disable REPL on UART0 ---
-# This ensures UART0 is free for other uses (like GPS), especially if
-# the default console is the USB Serial/JTAG. Index 1 refers to UART0.
-# try:
-#     uos.dupterm(
-#         None, 1
-#     )  # Disable REPL on UART0 - No longer needed as GPS uses SoftUART
-#     log("REPL disabled on UART0.")
-# except Exception as e:
-#     log(f"Could not disable REPL on UART0: {e}")
+time.sleep(2)
+print("boot")
 
-# Adjust time using the dedicated function
-rtc.set_time_from_last_log()  # Set time based on last log entry
+init_sd()
 
 log("\n" + "=" * 40)
 log("ESP32 Boot Sequence Starting...")
 log("=" * 40)
-# Filesystem is automatically mounted by MicroPython (defaults to LittleFS v2 on recent builds)
+
+
+rtc.set_time_from_last_log()  # Set time based on last log entry
+
 
 reset_cause_val = machine.reset_cause()
 reset_causes = {
@@ -34,7 +28,7 @@ reset_causes = {
 cause_str = reset_causes.get(
     reset_cause_val, f"Unknown Reset Cause ({reset_cause_val})"
 )
-log(f"**** Reset Cause: {cause_str} ****")
 
+log(f"**** Reset Cause: {cause_str} ****")
 
 log("boot.py finished.")

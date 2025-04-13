@@ -44,3 +44,12 @@ This document summarizes the GPIO pin usage for this project based on the curren
 Please note that the ADC2_CH... analog functions (see Table 2-8 Analog Functions) cannot be used with Wi-Fi simul- taneously.
 
 36,37 - probably input only!
+
+| ESP32-S3 Pin (GPIO) | ESP32-S3 Signal (FSPI) | SD Card Pin Name |
+| :------------------ | :--------------------- | :--------------- |
+| GPIO 12             | FSPICLK                | CLK / SCLK       |
+| GPIO 11             | FSPID                  | MOSI / DI / CMD  |
+| GPIO 13             | FSPIQ                  | MISO / DO / DAT0 |
+| GPIO 10             | FSPICS0                | CS / SS          |
+| 3.3V                | Power                  | VDD              |
+| GND                 | Ground                 | VSS / GND        |

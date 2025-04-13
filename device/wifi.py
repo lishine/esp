@@ -4,6 +4,8 @@ import time
 import _thread
 from machine import Pin
 from log import log  # Import the log function
+import led
+import uasyncio as asyncio
 
 # Using log function now, assuming it's thread-safe or handles it internally
 # from log import log # Keep import if helper functions still use it
@@ -308,6 +310,42 @@ def get_current_network():
         return None
 
 
-# --- Remove old async functions ---
-# async def _try_connect(network_index): ...
-# async def manage_wifi_connection(): ...
+async def manage_wifi_led_status():
+    """Monitors wifi_state and updates LED accordingly."""
+    log("Starting WiFi LED Status Monitor task...")
+    last_led_state = None
+    while True:
+        try:
+            with wifi_state_lock:
+                current_led_state = wifi_state.get("led_state", "disconnected")
+
+            if current_led_state != last_led_state:
+                log(f"WiFi LED state changed: {last_led_state} -> {current_led_state}")
+                if current_led_state == "connected":
+                    # Slow blink for connected state
+                    led.start_continuous_blink(interval=3.0, on_percentage=0.01)
+                elif current_led_state == "connecting":
+                    # Faster blink for connecting state
+                    led.start_continuous_blink(interval=0.5, on_percentage=0.5)
+                elif current_led_state == "error":
+                    # Specific error blink sequence
+                    led.blink_sequence(count=5, on_time=0.5, off_time=0.5)
+                    # After sequence, maybe go back to disconnected state visually?
+                    # Or keep error blink? For now, sequence runs once.
+                    # Consider stopping continuous if it was running.
+                    led.stop_continuous_blink()  # Stop any previous continuous blink
+                elif current_led_state == "disconnected":
+                    # Ensure LED is off (or default state)
+                    led.stop_continuous_blink()
+                else:
+                    # Unknown state, default to off
+                    led.stop_continuous_blink()
+
+                last_led_state = current_led_state
+
+        except Exception as e:
+            log(f"Error in manage_wifi_led_status: {e}")
+            # Avoid fast loop on error
+            await asyncio.sleep(5)
+
+        await asyncio.sleep_ms(200)

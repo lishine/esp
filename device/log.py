@@ -1,26 +1,23 @@
 import utime
 import uos
 import gc
-import uasyncio as asyncio
-from uasyncio import TimeoutError
+import _thread
 
-# --- Configuration ---
-LOG_DIR = "logs"
+LOG_DIR = "/sd/logs"
 LOG_FILE_PREFIX = "log_"
 LOG_FILE_SUFFIX = ".txt"
 MAX_LOG_FILE_SIZE = 10000  # Bytes
 MAX_LOG_FILES = 200  # Limit the number of log files
 
-# --- Module State ---
 _current_log_index = -1  # Uninitialized by default, set by writer task
 _log_dir_checked = False  # Flag to check dir only once
-_log_queue = []  # In-memory queue for log messages (bytes)
-_MAX_QUEUE_SIZE = 200  # Max messages before dropping
-_WRITE_THRESHOLD = 50  # Number of messages to trigger a write
-_write_event = asyncio.Event()  # Event to signal the writer task
 
-# --- Reset Counter ---
-# --- Reset Counter ---
+_queue_lock = _thread.allocate_lock()
+_active_queue = []
+
+_WRITE_THRESHOLD = 10  # Number of messages to trigger a write
+_WRITE_TIMEOUT_MS = 5000  # 30 seconds timeout for forced flush
+_POLL_INTERVAL_MS = 1000  # 1 second polling interval
 
 _current_reset_count = None
 
@@ -145,8 +142,6 @@ def _get_next_reset_counter():
         return _current_reset_count
 
 
-# --- Statistics (Rolling Window) ---
-_ROLLING_WINDOW_SIZE = 5
 _last_write_times_us = []  # Stores the last N write durations in microseconds
 
 # --- Constants ---
@@ -174,7 +169,7 @@ def _ensure_log_dir():
         return
     try:
         uos.stat(LOG_DIR)
-        # print(f"Log directory '{LOG_DIR}' already exists.") # Debug
+        print(f"Log directory '{LOG_DIR}' already exists.")  # Debug
     except OSError as e:
         if e.args[0] == 2:
             try:
@@ -229,12 +224,7 @@ def _get_log_filepath(index):
     return f"{LOG_DIR}/{LOG_FILE_PREFIX}{index:03d}{LOG_FILE_SUFFIX}"
 
 
-# --- Logging Function ---
-
-
 def log(*args, **kwargs):
-
-    # 1. Format the message with timestamp
     ticks_now_ms = utime.ticks_ms()
     now = utime.localtime()
     ms = ticks_now_ms % 1000
@@ -242,148 +232,128 @@ def log(*args, **kwargs):
         now[2], _MONTH_ABBR[now[1] - 1], now[0], now[3], now[4], now[5], ms
     )
     message = " ".join(str(arg) for arg in args)
-    # Prepend the current reset count to the log message
     output = f"{_get_next_reset_counter()} {timestamp} {message}\n"
 
-    # 2. Always print to console
     print(output, end="", **kwargs)
-    return
-    # 3. Queue the message for the writer task
     output_bytes = output.encode("utf-8")
-
-    if len(_log_queue) >= _MAX_QUEUE_SIZE:
-        print(f"--- LOG QUEUE FULL (MAX {_MAX_QUEUE_SIZE}) - DROPPING MESSAGE ---")
-        print(output, end="")  # Print the dropped message content as well
-        print(f"--- END DROPPED MESSAGE ---")
-        return  # Do not queue or signal
-
-    _log_queue.append(output_bytes)
-
-    # 4. Signal the writer task if the threshold is met
-    if len(_log_queue) >= _WRITE_THRESHOLD:
-        _write_event.set()
+    _queue_lock.acquire()
+    try:
+        _active_queue.append(output_bytes)
+    finally:
+        _queue_lock.release()
 
 
-# --- Async Log Writer Task ---
-
-
-async def _log_writer_task():
+def _log_writer_thread_func():
     global _current_log_index
-    global _last_write_times_us  # Use the list for rolling window
+    global _last_write_times_us
+    global _active_queue
+    global _queue_lock
 
-    # Initialize log directory and find starting index
     _ensure_log_dir()
     _current_log_index = get_latest_log_index()
-    print(f"Log writer task started. Initial log index: {_current_log_index}")
+    print("Log writer thread started. Initial log index:", _current_log_index)
+
+    last_write_time_ms = utime.ticks_ms()
+    current_size = 0
+    current_filepath = _get_log_filepath(_current_log_index)
+    try:
+        stat = uos.stat(current_filepath)
+        current_size = stat[6]
+        print(
+            f"Log writer: Initial size for {current_filepath} is {current_size} bytes."
+        )
+    except OSError as e:
+        if e.args[0] == 2:  # ENOENT (File not found)
+            print(
+                f"Log writer: Initial log file {current_filepath} not found. Starting size 0."
+            )
+            # current_size remains 0
+        else:
+            print(
+                f"Log writer: Error stating initial log file {current_filepath}: {e}. Assuming size 0."
+            )
+            # current_size remains 0
 
     while True:
+        utime.sleep_ms(_POLL_INTERVAL_MS)
+        now_ms = utime.ticks_ms()
+        should_write = False
+        queue_size = 0
+
+        _queue_lock.acquire()
         try:
-            # Wait for the event or timeout after 3 seconds
+            queue_size = len(_active_queue)
+        finally:
+            _queue_lock.release()
+
+        if queue_size >= _WRITE_THRESHOLD:
+            should_write = True
+        elif (
+            queue_size > 0
+            and utime.ticks_diff(now_ms, last_write_time_ms) >= _WRITE_TIMEOUT_MS
+        ):
+            should_write = True
+
+        if should_write:
+            messages_to_write = None
+            # Swap queue under lock
+            _queue_lock.acquire()
             try:
-                await asyncio.wait_for_ms(_write_event.wait(), 3000)  # type: ignore
-                _write_event.clear()
-                # print("Log writer triggered by event.") # Debug
-            except TimeoutError:
-                pass  # Nothing specific to do on timeout itself
+                if _active_queue:
+                    messages_to_write = _active_queue
+                    _active_queue = []
+            finally:
+                _queue_lock.release()
 
-            # Process the queue if it has messages (either from event or timeout)
-            if _log_queue:
-                messages_to_write = _log_queue[:]  # Make a copy
-                _log_queue.clear()  # Clear the original queue
-
-                # print(f"Writing {len(messages_to_write)} log messages.") # Debug
-
+            if messages_to_write:
+                # Get the current filepath (might have changed due to rotation)
                 current_filepath = _get_log_filepath(_current_log_index)
-                current_size = 0
+                batch_bytes = b"".join(messages_to_write)
+                batch_size = len(batch_bytes)
+                bytes_written = None
+
+                if current_size > 0 and (current_size + batch_size) > MAX_LOG_FILE_SIZE:
+                    _current_log_index += 1
+
+                    current_filepath = _get_log_filepath(_current_log_index)
+                    current_size = 0  # Reset size for the new file
+                    print(f"Rotating log to new file: {current_filepath}")
+
                 try:
-                    # Get initial size of the current log file
-                    stat = uos.stat(current_filepath)
-                    current_size = stat[6]
-                except OSError as e:
-                    if e.args[0] != 2:  # Ignore ENOENT (file not found)
+                    t_write_start_us = utime.ticks_us()
+                    with open(current_filepath, "ab") as f:
+                        bytes_written = f.write(batch_bytes)
+                    t_write_end_us = utime.ticks_us()
+                    write_duration_us = utime.ticks_diff(
+                        t_write_end_us, t_write_start_us
+                    )
+                    print(
+                        f"LogT: Wrote batch ({len(messages_to_write)} msgs, {len(batch_bytes)} bytes) took {write_duration_us*1000} ms to {current_filepath}. Written: {bytes_written}"
+                    )
+
+                    if bytes_written is not None and bytes_written == len(batch_bytes):
+                        current_size += bytes_written
+                    elif bytes_written is not None:
+                        # Partial write - less likely in binary mode but handle defensively
                         print(
-                            f"Error stating log file '{current_filepath}' in writer: {e}"
+                            f"Warning: Partial write to log file '{current_filepath}'. Expected {len(batch_bytes)}, wrote {bytes_written}."
                         )
-                    # If file doesn't exist, current_size remains 0
-
-                # Process each message in the batch
-                for message_bytes in messages_to_write:
-                    # Check rotation *before* writing this message
-                    if (
-                        current_size > 0
-                        and (current_size + len(message_bytes)) > MAX_LOG_FILE_SIZE
-                    ):
-                        _current_log_index += 1
-
-                        # --- START: Log File Limit Logic ---
-                        # Check if we need to delete old log files to maintain the limit
-                        if _current_log_index >= MAX_LOG_FILES:
-                            # Calculate the oldest log file index that should be removed
-                            # For example, if MAX_LOG_FILES=2 and _current_log_index=2,
-                            # we should remove log_000.txt (index = 2 - 2 = 0)
-                            oldest_index = (
-                                _current_log_index - MAX_LOG_FILES
-                            )  # CORRECTED LINE
-                            oldest_filepath = _get_log_filepath(oldest_index)
-                            try:
-                                uos.remove(oldest_filepath)
-                                print(f"Removed oldest log file: {oldest_filepath}")
-                            except OSError as e:
-                                # Use print directly to avoid recursion if logging fails
-                                print(
-                                    f"Error removing oldest log file '{oldest_filepath}': {e}"
-                                )
-                        # --- END: Log File Limit Logic ---
-
-                        current_filepath = _get_log_filepath(_current_log_index)
-                        current_size = 0  # Reset size for the new file
-                        print(f"Rotating log to new file: {current_filepath}")
-                        gc.collect()
-
-                    # Write the message
-                    try:
-                        start_us = utime.ticks_us()
-                        with open(current_filepath, "ab") as f:
-                            bytes_written = f.write(message_bytes)
-                        end_us = utime.ticks_us()
-                        write_duration_us = utime.ticks_diff(end_us, start_us)
-
-                        # Update rolling window stats
-                        _last_write_times_us.append(write_duration_us)
-                        # Keep only the last N entries
-                        if len(_last_write_times_us) > _ROLLING_WINDOW_SIZE:
-                            _last_write_times_us.pop(0)  # Remove the oldest entry
-
-                        if bytes_written is not None:
-                            # If write returns None, try to get size again
-                            try:
-                                stat = uos.stat(current_filepath)
-                                current_size = stat[6]
-                            except OSError:
-                                # If stat fails after write, estimate based on what we tried to write
-                                current_size += len(message_bytes)
-                        else:
-                            # If write returns None, assume bytes_written is the length of message_bytes
-                            # This might happen on some MicroPython ports/versions
-                            current_size += len(message_bytes)
-
-                    except Exception as e:
+                        current_size += (
+                            bytes_written  # Still update with actual written
+                        )
+                    else:
+                        # f.write might return None on error or if 0 bytes written
                         print(
-                            f"Error writing to log file '{current_filepath}' in writer: {e}"
+                            f"Warning: f.write returned None for log file '{current_filepath}'. Estimating size increase."
                         )
-                        # Avoid potential tight loops on persistent write errors for this file
-                        await asyncio.sleep_ms(100)
-            # else: # Debug
-            # print("Log writer woke up, but queue is empty.")
+                        # Estimate size increase, though the file might be inconsistent
+                        current_size += len(batch_bytes)
 
-        except Exception as e:
-            print(f"Error in log writer task main loop: {e}")
-            # Avoid tight loop on unexpected errors in the task logic itself
-            await asyncio.sleep_ms(500)
-
-        # Yield control briefly even if no event occurred or no messages processed
-        # This prevents the task from potentially starving others if events fire rapidly
-        await asyncio.sleep_ms(10)
+                except Exception as e:
+                    print(f"Error writing batch to log file '{current_filepath}': {e}")
+                    # Consider if a sleep is still needed here after a batch failure
+                    utime.sleep_ms(100)
+                # --- END: Bulk Write Logic ---
 
 
 def read_log_file_content(file_index):
@@ -462,24 +432,3 @@ def clear_logs():
     except OSError as e:
         print(f"Error listing or accessing log directory '{LOG_DIR}' during clear: {e}")
         return False
-
-
-def get_log_write_stats():
-    """
-    Calculates and returns the log write time statistics based on a rolling window.
-
-    Returns:
-        dict: A dictionary containing 'log_write_time_max' (microseconds)
-              and 'log_write_time_avg' (microseconds) for the last N writes.
-              Returns 0 for both if no writes have occurred in the window.
-    """
-    if not _last_write_times_us:
-        avg_time_us = 0
-        max_time_us = 0
-    else:
-        total_time_us = sum(_last_write_times_us)
-        count = len(_last_write_times_us)
-        avg_time_us = float(total_time_us) / count
-        max_time_us = max(_last_write_times_us)
-
-    return {"log_write_time_max": max_time_us, "log_write_time_avg": avg_time_us}
