@@ -2,7 +2,9 @@ from machine import Pin
 import onewire
 import ds18x20
 import uasyncio as asyncio
+import time
 from log import log
+from . import data_log
 
 DS18B20_PIN = 4
 READ_INTERVAL_S = 2
@@ -70,15 +72,23 @@ async def _read_ds18b20_task():
                 except Exception as read_e:
                     # Log error for specific sensor, append None
                     rom_hex = "".join("{:02x}".format(x) for x in rom)
-                    log(f"Error reading DS18B20 sensor {i} (ROM {rom_hex}): {read_e}")
+                    err_msg = f"Sensor {i} (ROM {rom_hex}) read error: {read_e}"
                     temps.append(None)  # Indicate read failure for this sensor
+                    # Report error to data_log
+                    data_log.report_error("DS18B20", time.ticks_ms(), err_msg)
 
             ds18_temperatures = temps  # Update the global state atomically
+            # Report successful data to data_log
+            # Note: Reporting the list even if it contains None from individual sensor failures.
+            # Consider adding logic here to only report if all sensors were successful, if needed.
+            data_log.report_data("DS18B20", time.ticks_ms(), ds18_temperatures)
             # log("DS18B20 Temperatures:", ds18_temperatures) # Optional: Log readings
 
         except Exception as e:
             # Error during convert_temp or general task issue
-            log(f"Error in DS18B20 reader task: {e}")
+            err_msg = f"Error in DS18B20 reader task: {e}"
+            # Report task error to data_log
+            data_log.report_error("DS18B20", time.ticks_ms(), err_msg)
             # Reset temps to None if a major error occurred? Or keep last known?
             # For now, keep last known good values unless individual reads failed.
 

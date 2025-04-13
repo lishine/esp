@@ -18,7 +18,7 @@ import io_local.gps_reader as gps_reader
 import io_local.ds18b20 as ds18b20
 import io_local.motor_current_i2c as motor_current_i2c
 import io_local.throttle_reader as throttle_reader
-from io_local.data_log import data_log_task
+import io_local.data_log as data_log
 
 print("end loading modules at main")
 
@@ -45,7 +45,10 @@ async def main():
         asyncio.create_task(idle_task())
         asyncio.create_task(measure_cpu())
         asyncio.create_task(manage_wifi_led_status())
-        asyncio.create_task(data_log_task())
+        # Start the data logging tasks from the data_log module
+        asyncio.create_task(data_log.data_report_task())
+        asyncio.create_task(data_log.data_log_task())
+        asyncio.create_task(data_log.error_log_task())
         motor_current_i2c.start_rms_motor_current_i2c_reader()
         throttle_reader.start_throttle_reader()
 
