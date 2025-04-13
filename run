@@ -192,14 +192,18 @@ case "$COMMAND" in
 
   fs-list)
         check_sync_needed
-        # echo "Getting JSON file listing from ESP32 at $ESP_IP..." # Removed for cleaner JSON output for rm --visual
         make_request "http://$ESP_IP/fs-list"
         ;;
 
   free)
         check_sync_needed
         echo "Checking free memory on ESP32 at $ESP_IP..."
-        make_request "http://$ESP_IP/free"
+        response=$(make_request "http://$ESP_IP/free")
+        status_code=$?
+        if [ $status_code -eq 0 ]; then
+            check_jq
+            echo "$response" | jq .
+        fi
         ;;
 
   ping)

@@ -4,6 +4,7 @@ import machine
 import os
 import gc
 import esp
+import esp32  # Added for heap info
 import sys
 
 from log import (
@@ -246,30 +247,66 @@ def get_free_space(request):
         usage_percent = (used_kb / total_kb) * 100 if total_kb > 0 else 0
 
         # Flash stats
-        flash_total_bytes = esp.flash_size()
-        flash_total_kb = flash_total_bytes / 1024 if flash_total_bytes else 0
+        flash_total_bytes = esp.flash_size() or 0
+        flash_total_mb = flash_total_bytes / (1024 * 1024)
 
         # Implementation details
-        impl_name = sys.implementation.name  # type: ignore # Pylance might not know .name from stubs
+        impl_name = getattr(sys.implementation, "name", "N/A")  # Safer access
         impl_version = f"{sys.implementation.version[0]}.{sys.implementation.version[1]}.{sys.implementation.version[2]}"  # type: ignore # Pylance might not know .version from stubs
         impl_machine = getattr(
             sys.implementation, "_machine", "N/A"
         )  # getattr is safer for optional attributes
 
+        # --- Memory Heap Info ---
+        idf_total_free = 0
+        idf_max_block = 0
+        idf_regions = 0
+        upy_free = 0
+        try:
+            # Get IDF Heap Info
+            heap_info = esp32.idf_heap_info(
+                esp32.HEAP_DATA
+            )  # List of (total, free, largest_free, min_free)
+            idf_regions = len(heap_info)
+            for heap in heap_info:
+                idf_total_free += heap[1]
+                if heap[2] > idf_max_block:
+                    idf_max_block = heap[2]
+
+            # Get MicroPython Heap Info
+            upy_free = gc.mem_free()
+        except Exception as heap_err:
+            log(f"Error getting memory info within /free: {heap_err}")
+
+        # --- Format values for output ---
+        fs_free_mb = free_kb / 1024
+        fs_total_mb = total_kb / 1024
+        fs_used_mb = used_kb / 1024
+        idf_total_free_mb = idf_total_free / (1024 * 1024)
+        idf_max_alloc_mb = idf_max_block / (1024 * 1024)
+        upy_free_mb = upy_free / (1024 * 1024)
+
         data = {
-            "fs_free_kb": round(free_kb, 2),
-            "fs_total_kb": round(total_kb, 2),
-            "fs_used_kb": round(used_kb, 2),
-            "fs_usage_percent": round(usage_percent, 2),
-            "flash_total_kb": round(flash_total_kb, 2),
+            "fs_free": f"{fs_free_mb:.2f} MB",
+            "fs_total": f"{fs_total_mb:.2f} MB",
+            "fs_used": f"{fs_used_mb:.2f} MB",
+            "fs_usage": f"{usage_percent:.2f}%",
+            "flash_total": f"{flash_total_mb:.2f} MB",
             "implementation": {
                 "name": impl_name,
                 "version": impl_version,
                 "_machine": impl_machine,
             },
+            "memory": {
+                "idf_total_free": f"{idf_total_free_mb:.2f} MB",
+                "idf_max_alloc": f"{idf_max_alloc_mb:.2f} MB",
+                "idf_regions": idf_regions,
+                "upy_free": f"{upy_free_mb:.2f} MB",
+            },
         }
         return Response(
-            body=json.dumps(data), headers={"Content-Type": "application/json"}
+            body=json.dumps(data),  # ujson doesn't support indent
+            headers={"Content-Type": "application/json"},
         )
 
     except Exception as e:
