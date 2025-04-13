@@ -1,20 +1,22 @@
+print("loading modules at boot")
 import machine
 from log import log
 import rtc  # Import the new rtc module
 import time  # Import the new rtc module
 from init_sd import init_sd
 
-time.sleep(2)
+print("end loading modules at main")
+
+time.sleep(1)
 print("boot")
 
 init_sd()
 
+rtc.set_time_from_last_log()  # Set time based on last log entry
+
 log("\n" + "=" * 40)
 log("ESP32 Boot Sequence Starting...")
 log("=" * 40)
-
-
-rtc.set_time_from_last_log()  # Set time based on last log entry
 
 
 reset_cause_val = machine.reset_cause()

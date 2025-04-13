@@ -4,14 +4,12 @@ import ds18x20
 import uasyncio as asyncio
 from log import log
 
-# --- Configuration ---
-DS18B20_PIN = 4  # GPIO9 (Pinout Table)
-READ_INTERVAL_S = 2  # How often to read the sensors
+DS18B20_PIN = 4
+READ_INTERVAL_S = 2
 
-# --- State ---
 ds_sensor = None
-roms = []  # List of detected sensor ROM addresses (bytearrays)
-ds18_temperatures = []  # List to store the latest temperatures
+roms = []
+ds18_temperatures = []
 _reader_task = None
 
 

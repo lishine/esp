@@ -3,7 +3,7 @@ import network
 import time
 import _thread
 from machine import Pin
-from log import log  # Import the log function
+from log import log
 import led
 import uasyncio as asyncio
 
@@ -30,7 +30,14 @@ wifi_state = {
     "error": None,
     "led_state": "disconnected",  # Add state for LED: 'disconnected', 'connecting', 'connected', 'error'
 }
-wifi_state_lock = _thread.allocate_lock()
+wifi_lock = None
+
+
+def get_wifi_lock():
+    global wifi_lock
+    if not wifi_lock:
+        wifi_lock = _thread.allocate_lock()
+    return wifi_lock
 
 
 # --- Configuration Loading/Saving (Keep as is) ---
@@ -86,7 +93,7 @@ def _try_connect_sync(network_index, config):
     log(f"WiFi Thread: Attempting connection to network {network_index}: '{ssid}'")
     try:
         # Update state: Connecting
-        with wifi_state_lock:
+        with get_wifi_lock():
             wifi_state["connecting"] = True
             wifi_state["connected"] = False
             wifi_state["error"] = None
@@ -107,7 +114,7 @@ def _try_connect_sync(network_index, config):
                 )
                 sta.disconnect()  # Ensure disconnect on timeout
                 time.sleep(1)  # Give time for disconnect
-                with wifi_state_lock:
+                with get_wifi_lock():
                     wifi_state["connecting"] = False
                     wifi_state["error"] = f"Timeout connecting to {ssid}"
                     wifi_state["current_network_index"] = -1
@@ -132,7 +139,7 @@ WiFi Thread: Connected successfully to '{ssid}':
             """
         )
         # Update state: Connected
-        with wifi_state_lock:
+        with get_wifi_lock():
             wifi_state["connected"] = True
             wifi_state["connecting"] = False
             wifi_state["ssid"] = ssid
@@ -153,7 +160,7 @@ WiFi Thread: Connected successfully to '{ssid}':
         except Exception as disconnect_e:
             log(f"WiFi Thread: Error during disconnect after failure: {disconnect_e}")
         # Update state: Error
-        with wifi_state_lock:
+        with get_wifi_lock():
             wifi_state["connected"] = False
             wifi_state["connecting"] = False
             wifi_state["error"] = error_msg
@@ -174,7 +181,7 @@ def wifi_thread_manager():
             # --- Check Connection Status ---
             current_connected_status = sta.isconnected()
 
-            with wifi_state_lock:
+            with get_wifi_lock():
                 # Update connection status if it changed unexpectedly
                 if wifi_state["connected"] != current_connected_status:
                     log(
@@ -211,7 +218,7 @@ def wifi_thread_manager():
                 wifi_config = load_wifi_config()
 
                 # Reset state before attempts
-                with wifi_state_lock:
+                with get_wifi_lock():
                     wifi_state["current_network_index"] = -1
                     wifi_state["error"] = None
 
@@ -262,7 +269,7 @@ def wifi_thread_manager():
         except Exception as e:
             log(f"WiFi Thread: Error in main loop: {e}")
             # Reset state potentially
-            with wifi_state_lock:
+            with get_wifi_lock():
                 wifi_state["connected"] = False
                 wifi_state["connecting"] = False
                 wifi_state["error"] = f"Main loop error: {e}"
@@ -275,7 +282,7 @@ def wifi_thread_manager():
 # --- Helper Functions (Read from Shared State) ---
 def get_ip():
     """Get the current IP address from the shared state"""
-    with wifi_state_lock:
+    with get_wifi_lock():
         if wifi_state["connected"]:
             return wifi_state["ip"]
         else:
@@ -291,7 +298,7 @@ def get_ip():
 
 def is_connected():
     """Check if WiFi is connected based on shared state"""
-    with wifi_state_lock:
+    with get_wifi_lock():
         # Also check the actual interface status for robustness, though state should be primary
         # return wifi_state["connected"] and sta.isconnected()
         # Simpler: rely on the state updated by the thread
@@ -300,7 +307,7 @@ def is_connected():
 
 def get_current_network():
     """Get the currently connected network information from shared state"""
-    with wifi_state_lock:
+    with get_wifi_lock():
         if wifi_state["connected"] and wifi_state["current_network_index"] != -1:
             return {
                 "index": wifi_state["current_network_index"],
@@ -316,7 +323,7 @@ async def manage_wifi_led_status():
     last_led_state = None
     while True:
         try:
-            with wifi_state_lock:
+            with get_wifi_lock():
                 current_led_state = wifi_state.get("led_state", "disconnected")
 
             if current_led_state != last_led_state:

@@ -1,22 +1,12 @@
-# Centralized data logging task for IO components
-
 import uasyncio as asyncio
 from log import log
 
-# Import specific IO modules from this directory
 from . import esc_telemetry
 from . import ds18b20
 
-# from . import ina226 # Keep file but don't log
 from . import gps_reader
 
-# Buzzer doesn't typically have data to log continuously
-
-# --- Constants ---
-DATA_LOG_INTERVAL_S = 10
-
-# --- Data Gathering Functions (Optional Abstraction) ---
-# These could be simple wrappers or add formatting
+DATA_LOG_INTERVAL_S = 5
 
 
 def _log_esc_telemetry():
@@ -50,13 +40,13 @@ async def data_log_task():
             # Gather data using helper functions
             # mc_str = _log_motor_current() # Commented out
             # esc_str = _log_esc_telemetry()  # Commented out
-            # ds_str = _log_ds18b20() # Commented out
+            ds_str = _log_ds18b20()  # Commented out
             # ina_str = _log_ina226() # Commented out
             # gps_str = _log_gps()  # REMOVED - Logging now handled within gps_reader.py
 
             # Format log message (concise)
+            log(f"DATA | {ds_str}")
             # log(f"DATA | {mc_str} | {esc_str} | {ds_str} | {ina_str} | {gps_str}")
-            # log(f"DATA | {gps_str}") # REMOVED - Logging now handled within gps_reader.py
             pass  # No logging from here for now, other components are commented out
 
         except Exception as e:

@@ -1,8 +1,8 @@
+print("start loading modules at main")
 import uasyncio as asyncio
 import sys
 import time
 import _thread
-
 
 from log import log, _log_writer_thread_func
 import led
@@ -18,8 +18,11 @@ import io_local.gps_reader as gps_reader
 import io_local.ds18b20 as ds18b20
 import io_local.motor_current_i2c as motor_current_i2c
 import io_local.throttle_reader as throttle_reader
+from io_local.data_log import data_log_task
 
-time.sleep(2)
+print("end loading modules at main")
+
+time.sleep(1)
 print("main")
 
 
@@ -42,6 +45,7 @@ async def main():
         asyncio.create_task(idle_task())
         asyncio.create_task(measure_cpu())
         asyncio.create_task(manage_wifi_led_status())
+        asyncio.create_task(data_log_task())
         motor_current_i2c.start_rms_motor_current_i2c_reader()
         throttle_reader.start_throttle_reader()
 

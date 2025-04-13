@@ -320,15 +320,17 @@ def _log_writer_thread_func():
                     print(f"Rotating log to new file: {current_filepath}")
 
                 try:
-                    t_write_start_us = utime.ticks_us()
+                    t_write_start_ms = utime.ticks_ms()
                     with open(current_filepath, "ab") as f:
                         bytes_written = f.write(batch_bytes)
-                    t_write_end_us = utime.ticks_us()
-                    write_duration_us = utime.ticks_diff(
-                        t_write_end_us, t_write_start_us
+                    t_write_end_ms = utime.ticks_ms()
+                    write_duration_ms = utime.ticks_diff(
+                        t_write_end_ms, t_write_start_ms
                     )
-                    print(
-                        f"LogT: Wrote batch ({len(messages_to_write)} msgs, {len(batch_bytes)} bytes) took {write_duration_us*1000} ms to {current_filepath}. Written: {bytes_written}"
+                    from log import log
+
+                    log(
+                        f"LogT: Wrote batch ({len(messages_to_write)} msgs, {len(batch_bytes)} bytes) took {write_duration_ms} ms to {current_filepath}"
                     )
 
                     if bytes_written is not None and bytes_written == len(batch_bytes):
