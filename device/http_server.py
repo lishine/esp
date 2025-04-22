@@ -611,7 +611,7 @@ def clear_log_files(request):
 @app.route("/log/add-test-entries", methods=["POST"])
 def add_test_log_entries(request):
     try:
-        count = 2000
+        count = 200000
         log(f"Adding {count} test log entries...")
         for i in range(count):
             log(f"Test log entry {i+1}/{count}")

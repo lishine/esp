@@ -1,13 +1,15 @@
+import time  # Import the new rtc module
+
+time.sleep(3)
 print("loading modules at boot")
 import machine
 from log import log
 import rtc  # Import the new rtc module
-import time  # Import the new rtc module
 from init_sd import init_sd
 
 print("end loading modules at main")
 
-time.sleep(1)
+time.sleep(4)
 print("boot")
 
 init_sd()

@@ -1,3 +1,5 @@
+import uos
+
 import os
 import time
 from log import log

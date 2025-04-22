@@ -1,13 +1,11 @@
 import utime
 import uos
-import gc
 import _thread
 
-LOG_DIR = "/sd/logs"
+LOG_DIR = "/sd/lb/logs"
 LOG_FILE_PREFIX = "log_"
 LOG_FILE_SUFFIX = ".txt"
-MAX_LOG_FILE_SIZE = 10000  # Bytes
-MAX_LOG_FILES = 200  # Limit the number of log files
+MAX_LOG_FILE_SIZE = 4000  # Bytes
 
 _current_log_index = -1  # Uninitialized by default, set by writer task
 _log_dir_checked = False  # Flag to check dir only once
@@ -15,9 +13,9 @@ _log_dir_checked = False  # Flag to check dir only once
 _queue_lock = _thread.allocate_lock()
 _active_queue = []
 
-_WRITE_THRESHOLD = 10  # Number of messages to trigger a write
-_WRITE_TIMEOUT_MS = 5000  # 30 seconds timeout for forced flush
-_POLL_INTERVAL_MS = 1000  # 1 second polling interval
+_WRITE_THRESHOLD = 60  # Number of messages to trigger a write
+_WRITE_TIMEOUT_MS = 60000
+_POLL_INTERVAL_MS = 5000  # 1 second polling interval
 
 _current_reset_count = None
 
@@ -163,23 +161,88 @@ _MONTH_ABBR = (
 # --- Helper Functions ---
 
 
+def recursive_mkdir(path: str):
+    """Creates a directory and all parent directories if they don't exist.
+    Uses print for internal status messages during creation.
+    Returns True on success, False on failure.
+    """
+    # Use print internally as log might not be initialized when this is first called
+    print(f"FS: Attempting to recursively create directory: {path}")
+    if not path:
+        print("FS: recursive_mkdir called with empty path.")
+        return False
+
+    # Handle paths starting with / correctly
+    parts = path.strip("/").split("/")
+    current_path = "/" if path.startswith("/") else ""
+
+    for part in parts:
+        if not part:  # Handle potential double slashes //
+            continue
+
+        # Ensure trailing slash for concatenation if current_path is not empty or just "/"
+        if current_path and not current_path.endswith("/"):
+            current_path += "/"
+
+        # Avoid double slash if root path is "/"
+        if current_path != "/" or part:
+            current_path += part
+
+        try:
+            uos.stat(current_path)
+            # print(f"FS: Path component exists: {current_path}") # Optional debug
+        except OSError as e:
+            if e.args[0] == 2:  # ENOENT - Directory/file does not exist
+                try:
+                    uos.mkdir(current_path)
+                    print(f"FS: Created directory component: {current_path}")
+                except OSError as mkdir_e:
+                    print(
+                        f"FS: Error creating directory component '{current_path}': {mkdir_e}"
+                    )
+                    return False  # Signal failure
+            else:
+                # Other stat error (e.g., permission denied)
+                print(f"FS: Error checking path component '{current_path}': {e}")
+                return False  # Signal failure
+
+    print(f"FS: Successfully ensured directory exists: {path}")
+    return True  # Signal success
+
+
+# Removed _recursive_mkdir helper function, will be moved to fs.py
 def _ensure_log_dir():
     global _log_dir_checked
     if _log_dir_checked:
         return
     try:
         uos.stat(LOG_DIR)
-        print(f"Log directory '{LOG_DIR}' already exists.")  # Debug
+        # Use print initially, log might not be ready.
+        print(f"Log directory '{LOG_DIR}' already exists.")
     except OSError as e:
-        if e.args[0] == 2:
+        if e.args[0] == 2:  # ENOENT - Directory doesn't exist
+            # Attempt recursive creation using the function from fs.py
+            # fs.recursive_mkdir uses print internally for its steps.
+            print(
+                f"Log directory '{LOG_DIR}' not found. Attempting recursive creation..."
+            )
             try:
-                uos.mkdir(LOG_DIR)
-                print(f"Created log directory: {LOG_DIR}")
-            except OSError as mkdir_e:
-                print(f"Error creating log directory '{LOG_DIR}': {mkdir_e}")
-                # If we can't create the dir, logging to file will fail
+                success = recursive_mkdir(LOG_DIR)
+                if success:
+                    # Use print, log might not be ready.
+                    print(f"Successfully created log directory structure: {LOG_DIR}")
+                else:
+                    # fs.recursive_mkdir already printed the specific error
+                    print(f"Failed to create log directory structure: {LOG_DIR}")
+                    # Logging to file will likely fail.
+            except Exception as mkdir_e:
+                # Catch any unexpected error from recursive_mkdir itself
+                print(
+                    f"Unexpected error during recursive directory creation for '{LOG_DIR}': {mkdir_e}"
+                )
+
         else:
-            # Other stat error
+            # Other stat error (permissions, etc.)
             print(f"Error checking log directory '{LOG_DIR}': {e}")
     _log_dir_checked = True
 
@@ -292,6 +355,7 @@ def _log_writer_thread_func():
             queue_size > 0
             and utime.ticks_diff(now_ms, last_write_time_ms) >= _WRITE_TIMEOUT_MS
         ):
+            last_write_time_ms = utime.ticks_ms()
             should_write = True
 
         if should_write:
@@ -320,17 +384,17 @@ def _log_writer_thread_func():
                     print(f"Rotating log to new file: {current_filepath}")
 
                 try:
-                    # t_write_start_ms = utime.ticks_ms()
+                    t_write_start_ms = utime.ticks_ms()
                     with open(current_filepath, "ab") as f:
                         bytes_written = f.write(batch_bytes)
-                    # t_write_end_ms = utime.ticks_ms()
-                    # write_duration_ms = utime.ticks_diff(
-                    # t_write_end_ms, t_write_start_ms
-                    # )
+                    t_write_end_ms = utime.ticks_ms()
+                    write_duration_ms = utime.ticks_diff(
+                        t_write_end_ms, t_write_start_ms
+                    )
 
-                    # log(
-                    #     f"LogT: Wrote batch ({len(messages_to_write)} msgs, {len(batch_bytes)} bytes) took {write_duration_ms} ms to {current_filepath}"
-                    # )
+                    log(
+                        f"LogT: Wrote batch ({len(messages_to_write)} msgs, {len(batch_bytes)} bytes) took {write_duration_ms} ms to {current_filepath}"
+                    )
 
                     if bytes_written is not None and bytes_written == len(batch_bytes):
                         current_size += bytes_written
@@ -343,7 +407,6 @@ def _log_writer_thread_func():
                             bytes_written  # Still update with actual written
                         )
                     else:
-                        # f.write might return None on error or if 0 bytes written
                         print(
                             f"Warning: f.write returned None for log file '{current_filepath}'. Estimating size increase."
                         )
