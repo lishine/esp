@@ -13,6 +13,7 @@ _i2c = None
 _reader_task = None
 
 SENSOR_NAME = "motor current"
+FACTOR = 0.2
 
 
 def init_rms_motor_current_i2c() -> None:
@@ -54,7 +55,7 @@ async def _rms_motor_current_i2c_task() -> None:
                 data = _i2c.readfrom(I2C_ADDR, 2)
                 if len(data) == 2:
                     rms_mv = data[0] | (data[1] << 8)
-                    data_log.report_data(SENSOR_NAME, time.ticks_ms(), rms_mv)
+                    data_log.report_data(SENSOR_NAME, time.ticks_ms(), rms_mv * FACTOR)
                 else:
                     data_log.report_error(
                         SENSOR_NAME,
