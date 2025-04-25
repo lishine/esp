@@ -29,7 +29,7 @@ def get_file_details(path="."):
                 size = stat[6]
                 # Modification time (if available)
                 try:
-                    mtime = time.localtime(stat[8])
+                    mtime = time.gmtime(stat[8])
                     date_str = f"{mtime[0]}-{mtime[1]:02d}-{mtime[2]:02d} {mtime[3]:02d}:{mtime[4]:02d}"
                 except:
                     date_str = "N/A"

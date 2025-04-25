@@ -6,6 +6,7 @@ import _thread
 
 from log import log, _log_writer_thread_func
 import led
+from led import set_green_led
 import wifi
 from wifi import manage_wifi_led_status
 import ap
@@ -32,13 +33,14 @@ async def main():
         init_io.init_io()
 
         log("Starting threads")
+        asyncio.create_task(led.led_task())
         ap.start_ap(essid="DDDEV", password="")
+        set_green_led(True)
         _thread.start_new_thread(wifi.wifi_thread_manager, ())
         _thread.start_new_thread(_log_writer_thread_func, ())
         start_server()
 
         log("Starting async tasks")
-        asyncio.create_task(led.led_task())
         esc_telemetry.start_esc_reader()
         ds18b20.start_ds18b20_reader()
         gps_reader.start_gps_reader()

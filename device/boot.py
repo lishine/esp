@@ -14,7 +14,7 @@ print("boot")
 
 init_sd()
 
-rtc.set_time_from_last_log()  # Set time based on last log entry
+# rtc.set_time_from_last_log()  # Set time based on last log entry
 
 log("\n" + "=" * 40)
 log("ESP32 Boot Sequence Starting...")

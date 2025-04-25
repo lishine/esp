@@ -76,14 +76,14 @@ def start_ap(essid="DDDEV", password=""):
     # Ensure IP is static as defined
     ap.ifconfig((AP_IP, "255.255.255.0", AP_IP, AP_IP))
     ap.config(essid=essid, password=password)
-    try:
-        blink_sequence(count=2)
-    except Exception as e:
-        log(f"Error during AP start blink: {e}")
+    # try:
+    #     blink_sequence(count=2)
+    # except Exception as e:
+    #     log(f"Error during AP start blink: {e}")
     log(f"AP mode activated: {essid}")
     log(f"AP IP address: {ap.ifconfig()[0]}")
     # Start DNS server in a new thread
-    _thread.start_new_thread(dns_server, ())
+    # _thread.start_new_thread(dns_server, ())
 
 
 def get_ap_ip():

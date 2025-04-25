@@ -330,10 +330,10 @@ async def manage_wifi_led_status():
                 log(f"WiFi LED state changed: {last_led_state} -> {current_led_state}")
                 if current_led_state == "connected":
                     # Slow blink for connected state
-                    led.start_continuous_blink(interval=3.0, on_percentage=0.01)
+                    led.start_continuous_blink(interval=3.0, duty_cycle=0.03)
                 elif current_led_state == "connecting":
                     # Faster blink for connecting state
-                    led.start_continuous_blink(interval=0.5, on_percentage=0.5)
+                    led.start_continuous_blink(interval=0.5, duty_cycle=0.5)
                 elif current_led_state == "error":
                     # Specific error blink sequence
                     led.blink_sequence(count=5, on_time=0.5, off_time=0.5)

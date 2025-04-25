@@ -29,7 +29,7 @@ def init_io():
         pin_obj = Pin(led.NEOPIXEL_PIN, Pin.OUT)
         led.np_obj = NeoPixel(pin_obj, led.NUM_PIXELS)
         # Initialize LED to off
-        led.np_obj.fill(led.OFF_COLOR)
+        led.np_obj.fill(led.BASE_OFF_COLOR)
         led.np_obj.write()
         log(f"NeoPixel LED initialized on Pin {led.NEOPIXEL_PIN}")
     except Exception as e:

@@ -3,6 +3,7 @@ import uasyncio as asyncio
 import time
 import machine  # Added machine
 from log import log
+from rtc import set_rtc_from_gmtime_tuple
 from . import data_log
 
 _JERUSALEM_TZ_OFFSET_HOURS = 3  # Jerusalem Timezone Offset (UTC+3 for IDT)
@@ -171,9 +172,7 @@ def _parse_gprmc(parts):
                         rtc = machine.RTC()
                         rtc_tuple = time.gmtime(gps_epoch)
                         rtc.datetime(rtc_tuple)
-                        _rtc_needs_initial_sync = (
-                            False  # Mark initial sync attempt done
-                        )
+                        _rtc_needs_initial_sync = False
                         log_time_str = f"{rtc_tuple[0]}-{rtc_tuple[1]:02d}-{rtc_tuple[2]:02d} {rtc_tuple[4]:02d}:{rtc_tuple[5]:02d}:{rtc_tuple[6]:02d}"
                         log(f"RTC updated (initial sync): {log_time_str} UTC")
                     except Exception as e:
@@ -190,14 +189,14 @@ def _parse_gprmc(parts):
         # --- Update RTC on Fix (The definitive sync) ---
         if gps_fix and parsed_epoch_this_run and gps_epoch is not None:
             try:
-                rtc = machine.RTC()
-                rtc_tuple = time.gmtime(gps_epoch)
-                rtc.datetime(rtc_tuple)
+                gmtime_tuple = time.gmtime(gps_epoch)
                 if not _rtc_synced_by_fix:  # Log only the first time
-                    log_time_str = f"{rtc_tuple[0]}-{rtc_tuple[1]:02d}-{rtc_tuple[2]:02d} {rtc_tuple[4]:02d}:{rtc_tuple[5]:02d}:{rtc_tuple[6]:02d}"
-                    log(f"RTC updated (fix acquired): {log_time_str} UTC")
-                _rtc_needs_initial_sync = False  # Ensure this is false
-                _rtc_synced_by_fix = True  # Mark RTC as definitively synced
+                    if set_rtc_from_gmtime_tuple(gmtime_tuple):
+                        log_time_str = f"{gmtime_tuple[0]}-{gmtime_tuple[1]:02d}-{gmtime_tuple[2]:02d} {gmtime_tuple[3]:02d}:{gmtime_tuple[4]:02d}:{gmtime_tuple[5]:02d}"
+                        log(f"RTC updated via GPS using helper: {log_time_str} UTC")
+                    _rtc_needs_initial_sync = False
+                _rtc_needs_initial_sync = False
+                _rtc_synced_by_fix = True
             except Exception as e:
                 log(f"Error setting RTC on fix: {e}")
 
@@ -236,8 +235,8 @@ def _parse_gpgsv(parts):
     """
     global _seen_satellite_prns
     try:
-        num_msgs = int(parts[1])
-        msg_num = int(parts[2])
+        # num_msgs = int(parts[1])
+        # msg_num = int(parts[2])
         # sats_in_view = int(parts[3]) # Total sats in view (can be used for validation)
 
         # If this is the first message of a potential sequence, clear the set?
