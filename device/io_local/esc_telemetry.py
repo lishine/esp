@@ -6,7 +6,7 @@ from . import data_log
 
 # --- Configuration ---
 ESC_UART_ID = 2
-ESC_TX_PIN = 13
+ESC_TX_PIN = 3
 ESC_RX_PIN = 14
 ESC_BAUDRATE = 115200
 MOTOR_POLE_PAIRS = 12 // 2  # Assuming 12 poles (6 pairs) for RPM calculation
@@ -124,6 +124,11 @@ async def _read_esc_telemetry_task():
     log("Starting ESC telemetry reader task (user timing logic)...")
     reader = asyncio.StreamReader(uart)
 
+    data_count = 0
+    parsed_count = 0
+    log_interval_ms = 5000
+    last_log_time = time.ticks_ms()
+
     while True:
         data = None  # Reset data
         parsed_data = None  # Reset parsed_data
@@ -134,7 +139,7 @@ async def _read_esc_telemetry_task():
                 _ = uart.read(uart.any())
 
             # 2. Short Delay
-            await asyncio.sleep_ms(10)
+            await asyncio.sleep_ms(18)
 
             # 3. Check Buffer Again
             if not uart.any():
@@ -161,6 +166,7 @@ async def _read_esc_telemetry_task():
                     continue  # Go to start of loop
 
                 if data:
+                    data_count += 1  # Increment successful read count
                     # 5. Parse Data
                     parsed_data = _parse_kiss_telemetry(data)
                     if parsed_data:
@@ -181,8 +187,8 @@ async def _read_esc_telemetry_task():
                                 mah=esc_consumption,
                             ),
                         )
-                        await asyncio.sleep_ms(350)
-                        continue
+                        parsed_count += 1  # Increment successful parse count
+                        await asyncio.sleep_ms(150)
                     else:
                         data_log.report_error(
                             SENSOR_NAME,
@@ -202,8 +208,17 @@ async def _read_esc_telemetry_task():
             log(f"Error in ESC telemetry task logic: {e}")
             await asyncio.sleep_ms(500)  # Wait after unexpected error
 
-        # 8. Short Yield (if 1s sleep didn't happen)
-        await asyncio.sleep_ms(25)
+        # Check if it's time to log counts
+        current_time = time.ticks_ms()
+        if time.ticks_diff(current_time, last_log_time) >= log_interval_ms:
+            log(
+                f"ESC Telemetry Stats (1s): Reads={data_count*(1000/log_interval_ms):.0f}, Parsed={parsed_count*(1000/log_interval_ms):.0f}"
+            )
+            data_count = 0
+            parsed_count = 0
+            last_log_time = current_time
+
+        # await asyncio.sleep_ms(1)  # Small yield to prevent blocking
 
 
 def start_esc_reader():
