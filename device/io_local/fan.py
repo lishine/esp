@@ -1,6 +1,6 @@
 from machine import Pin
 
-FAN_PIN_NUM = 10
+FAN_PIN_NUM = 8
 _fan_pin: Pin | None = None
 
 
