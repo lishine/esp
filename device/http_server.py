@@ -38,6 +38,7 @@ from io_local.buzzer import register_buzzer_routes
 from io_local import adc as adc_module  # Import the ADC module (device/ is root)
 from io_local import ds18b20 as ds18b20_module  # Import the DS18B20 module
 from io_local import fan
+from io_local.data_log import get_current_data_log_file_path  # For /api/data
 
 HTTP_OK = 200
 HTTP_BAD_REQUEST = 400
@@ -490,6 +491,55 @@ def post_read_live_data(request: Request):
         )
         return Response(
             body=body, status=status, headers={"Content-Type": "application/json"}
+        )
+
+
+@app.route("/api/data", methods=["POST"])
+def api_get_data_log_file(request: Request):
+    """
+    Returns the content of the current JSONL data log file.
+    The request body is ignored in this version but may be used for future enhancements
+    (e.g., specifying date ranges or specific filenames).
+    """
+    try:
+        current_file_path = get_current_data_log_file_path()
+
+        # Removed explicit check for file existence as per feedback.
+        # open() will raise OSError if file not found or path is None.
+
+        if (
+            not current_file_path
+        ):  # Still check if path itself is None (e.g. data_log init failed)
+            return Response(
+                body=json.dumps(
+                    {"success": False, "error": "Data log path not configured."}
+                ),
+                status=HTTP_INTERNAL_ERROR,  # Or HTTP_NOT_FOUND, depending on desired semantics
+                headers={"Content-Type": "application/json"},
+            )
+
+        # Read the entire file content. For very large files, chunked transfer would be better.
+        with open(current_file_path, "rb") as f:  # Read as binary
+            content = f.read()
+
+        filename_only = current_file_path.split("/")[-1]
+
+        return Response(
+            body=content,
+            status=HTTP_OK,
+            headers={
+                "Content-Type": "application/jsonl",  # Standard MIME type for JSON Lines
+                "Content-Disposition": f'attachment; filename="{filename_only}"',
+            },
+        )
+    except Exception as e:
+        log(
+            f"Error in POST /api/data: {e}"
+        )  # Ensure 'log' is available (it is, from top of file)
+        return Response(
+            body=json.dumps({"success": False, "error": f"Server error: {str(e)}"}),
+            status=HTTP_INTERNAL_ERROR,
+            headers={"Content-Type": "application/json"},
         )
 
 

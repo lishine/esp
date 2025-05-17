@@ -541,3 +541,9 @@ def get_gps_satellites_seen():
     """Returns the count of unique satellites seen in the last cycle."""
     # Note: This value is updated periodically by the logger task based on _seen_satellite_prns
     return gps_satellites_seen
+
+
+def is_rtc_synced() -> bool:
+    """Returns True if the RTC has been synced by a GPS fix."""
+    global _rtc_synced_by_fix
+    return _rtc_synced_by_fix
