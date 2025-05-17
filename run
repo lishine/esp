@@ -53,7 +53,8 @@ show_usage() {
     echo "  log                    - View device logs"
     echo "  clear-log              - Clear the log file on the device"
     echo "  log-add-test           - Add 1000 test log entries"
-    echo "  la/ls                  - List all files on the device"
+    echo "  la/ls                  - List all files on the device (internal flash only)"
+    echo "  la-data                - List files in /sd/data only"
     echo "  fs-list                - Get JSON file listing for visual tools"
     echo "  free                   - Show free memory on the device"
     echo "  ping                   - Check if the device is responding"
@@ -188,6 +189,16 @@ case "$COMMAND" in
           echo "Listing all files on ESP32 at $ESP_IP..."
           make_request "http://$ESP_IP/la"
         fi
+        ;;
+
+  la-data)
+        check_sync_needed
+        # This command does not have an mpremote equivalent, HTTP only
+        if [ "$USE_MPREMOTE" = true ]; then
+          echo "Warning: 'la-data' command does not support --mpremote. Using HTTP API." >&2
+        fi
+        echo "Listing /sd/data contents on ESP32 at $ESP_IP..."
+        make_request "http://$ESP_IP/la-data"
         ;;
 
   fs-list)

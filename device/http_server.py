@@ -28,7 +28,9 @@ from fs import (
     exists,
     remove_if_empty_or_file,
     remove_empty_parents,
+    is_dir,  # Added for /la-data
 )
+from sd import SD_MOUNT_POINT  # Added for /la-data
 from netutils import get_client_ip, get_device_info
 from upload import handle_upload
 
@@ -110,6 +112,40 @@ def list_files_hierarchical(request):
         log(f"Error listing files for /la: {e}")
         return Response(
             body=f"Error listing files: {str(e)}", status=HTTP_INTERNAL_ERROR
+        )
+
+
+@app.route("/la-data")
+def list_sd_data_files(request):
+    """Lists only the contents of /sd/data."""
+    sd_data_path = "unknown (init error)"  # Initialize for except block
+    try:
+        sd_data_path = f"{SD_MOUNT_POINT}/data"
+        log(f"HTTP_SERVER: /la-data requested. Targeting path: {sd_data_path}")
+        if not is_dir(sd_data_path):
+            log(f"HTTP_SERVER: /la-data - Directory not found: {sd_data_path}")
+            return Response(
+                body=f"Error: Directory '{sd_data_path}' not found.",
+                status=HTTP_NOT_FOUND,
+                headers={"Content-Type": "text/plain; charset=utf-8"},
+            )
+
+        # Call get_hierarchical_list_with_sizes, starting directly at /sd/data
+        # The prefix will be empty, treating /sd/data as the root for this listing.
+        files = get_hierarchical_list_with_sizes(
+            path=sd_data_path, prefix="", _initial_files=None, _depth=0
+        )
+        return Response(
+            body="\n".join(files), headers={"Content-Type": "text/plain; charset=utf-8"}
+        )
+    except Exception as e:
+        log(f"Error listing files for /la-data ({sd_data_path}): {e}")
+        # Be careful about exposing sd_data_path if it wasn't defined due to an early error.
+        error_path_info = sd_data_path if "sd_data_path" in locals() else "SD data path"
+        return Response(
+            body=f"Error listing files for {error_path_info}: {str(e)}",
+            status=HTTP_INTERNAL_ERROR,
+            headers={"Content-Type": "text/plain; charset=utf-8"},
         )
 
 

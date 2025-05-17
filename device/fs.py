@@ -53,10 +53,14 @@ def get_file_details(path="."):
 
 
 def get_hierarchical_list_with_sizes(
-    path: str = ".", prefix: str = "", _initial_files: list | None = None
+    path: str = ".",
+    prefix: str = "",
+    _initial_files: list | None = None,
+    _depth: int = 0,
 ) -> list:
     """
     Returns a hierarchical list of files and directories with sizes, including SD card files if present at root.
+    The _depth parameter is added here to fix a TypeError during recursion.
     """
     current_dir_name = path.split("/")[-1] if "/" in path else path
     try:
@@ -64,26 +68,65 @@ def get_hierarchical_list_with_sizes(
         files_to_process = []
         is_truncated_list = False
 
-        # Special handling at root: merge internal and SD card files
+        # Standard handling for root path or pre-supplied files
         if (path == "." or path == "/") and _initial_files is None:
-            # List internal files
+            log(
+                f"FS_DEBUG: Root path detected. Listing internal flash, excluding 'sd'."
+            )
             try:
-                internal_files = os.listdir(".")
+                internal_files = os.listdir(".")  # List actual root
                 internal_files.sort()
             except OSError as e:
                 internal_files = []
                 log(f"Error listing internal root: {e}")
-            # Check for SD card
-            sd_present = is_dir(SD_MOUNT_POINT)
-            # Merge: add "sd" if present and not already in internal_files
-            files_to_process = list(internal_files)
-            if sd_present and "sd" not in files_to_process:
-                files_to_process.append("sd")
-            files_to_process.sort()
+
+            # Explicitly filter out "sd" for the /la command's root view
+            sd_dir_name_to_exclude = SD_MOUNT_POINT.strip("/")  # Should be "sd"
+            files_to_process = [
+                f for f in internal_files if f != sd_dir_name_to_exclude
+            ]
+            log(
+                f"FS_DEBUG: Root files for /la (excluding '{sd_dir_name_to_exclude}'): {files_to_process[:5]}"
+            )
+            # No need to change 'path' or 'prefix' here for /la root.
+            # current_dir_name is already set correctly from the original 'path'.
+
         elif _initial_files is not None:
             files_to_process = _initial_files
             is_truncated_list = True
-        else:
+            log(
+                f"FS_DEBUG: Processing pre-supplied list for '{path}', count={len(files_to_process)}"
+            )
+
+        # Special handling if the current path IS the SD_MOUNT_POINT (e.g. called with path="/sd")
+        # This is for the new /la-data which will call with path="/sd/data", or if user navigates to /sd
+        elif path == SD_MOUNT_POINT:
+            log(
+                f"FS_DEBUG: Path is SD_MOUNT_POINT ('{path}'). Listing only 'data' if present, or empty."
+            )
+            files_to_process = []
+            data_subdir_full_path = f"{SD_MOUNT_POINT}/data"
+            if is_dir(data_subdir_full_path):
+                # We want to process "data" so it can be listed and then recursed into if path was "/sd"
+                files_to_process = ["data"]
+                log(
+                    f"FS_DEBUG: '{data_subdir_full_path}' exists. Will process 'data' entry under '{path}'."
+                )
+            else:
+                log(
+                    f"FS_DEBUG: '{data_subdir_full_path}' does not exist. '{path}' will appear empty."
+                )
+
+        # If path is specifically /sd/data (for /la-data command)
+        elif path == f"{SD_MOUNT_POINT}/data":
+            log(f"FS_DEBUG: Path is '{path}'. Listing its contents directly.")
+            try:
+                files_to_process = os.listdir(path)
+                files_to_process.sort()
+            except OSError as e:
+                log(f"Error listing directory '{path}': {e}")
+                return [f"{prefix}└── Error listing contents: {e}"]
+        else:  # Original logic for any other directory path
             try:
                 files_to_process = os.listdir(path)
                 files_to_process.sort()
