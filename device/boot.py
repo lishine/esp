@@ -5,7 +5,7 @@ print("loading modules at boot")
 import machine
 from log import log
 import rtc  # Import the new rtc module
-from init_sd import init_sd
+from sd import init_sd
 
 print("end loading modules at main")
 

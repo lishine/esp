@@ -3,6 +3,7 @@ import uos
 import os
 import time
 from log import log
+from sd import SD_MOUNT_POINT
 
 
 def format_size(size):
@@ -73,7 +74,7 @@ def get_hierarchical_list_with_sizes(
                 internal_files = []
                 log(f"Error listing internal root: {e}")
             # Check for SD card
-            sd_present = is_dir("/sd")
+            sd_present = is_dir(SD_MOUNT_POINT)
             # Merge: add "sd" if present and not already in internal_files
             files_to_process = list(internal_files)
             if sd_present and "sd" not in files_to_process:
@@ -293,7 +294,7 @@ def get_hierarchical_json(path: str = ".", include_dirs: bool = True) -> list:
                 internal_files = []
                 log(f"Error listing internal root: {e}")
             # Check for SD card
-            sd_present = is_dir("/sd")
+            sd_present = is_dir(SD_MOUNT_POINT)
             files = list(internal_files)
             if sd_present and "sd" not in files:
                 files.append("sd")

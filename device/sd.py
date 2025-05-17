@@ -1,9 +1,10 @@
 import uos, machine
 
+SD_MOUNT_POINT = "/sd"  # Changed mount point name
+
 
 def init_sd():
     # --- SD Card Initialization ---
-    SD_MOUNT_POINT = "/sd"  # Changed mount point name
     sd_mounted = False
     sd = None  # Initialize sd variable
 
@@ -57,7 +58,9 @@ def init_sd():
             print(f"Failed to mount SD card: {e}")
             if e.args[0] == 1 or e.args[0] == 19:  # Common errors for no card/issue
                 print("No SD card detected or error during mount.")
-            elif e.args[0] == 16:  # EEXIST - Mount point exists but couldn't mount device
+            elif (
+                e.args[0] == 16
+            ):  # EEXIST - Mount point exists but couldn't mount device
                 print(
                     f"Mount point {SD_MOUNT_POINT} exists, but mount failed. Filesystem issue?"
                 )
