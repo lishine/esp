@@ -2,7 +2,7 @@
   "python.languageServer": "Pylance",
   //   "python.analysis.ignore": ["*"],
   "python.analysis.diagnosticMode": "openFilesOnly",
-  "python.analysis.extraPaths": ["typings"],
+  "python.analysis.extraPaths": ["typings","device"],
   "python.analysis.stubPath": "typings",
   "python.analysis.typeshedPaths": ["typings"],
   "python.analysis.useLibraryCodeForTypes": true,
@@ -24,5 +24,6 @@
   ],
   "python.analysis.inlayHints.functionReturnTypes": true,
   "python.analysis.inlayHints.variableTypes": true,
-  "python.analysis.typeCheckingMode": "standard"
+"python.analysis.typeCheckingMode": "standard",
+"cmake.sourceDirectory": "/Users/p/dev/esp/idf"
 }
