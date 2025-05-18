@@ -169,9 +169,15 @@ async def data_report_task():
                                         f"{current_utc_tuple[0]:04d}-{current_utc_tuple[1]:02d}-{current_utc_tuple[2]:02d}_"
                                         f"{current_utc_tuple[3]:02d}-{current_utc_tuple[4]:02d}-{current_utc_tuple[5]:02d}"
                                     )
-                                    new_filename_only = f"{timestamp_str}.jsonl"
-                                    new_full_path = f"{SD_DATA_DIR}/{new_filename_only}"
                                     old_full_path = current_log_file_path
+                                    # Extract reset count from the current filename
+                                    old_filename_only = old_full_path.split("/")[-1]
+                                    reset_count_for_rename = old_filename_only.split(
+                                        "."
+                                    )[0]
+
+                                    new_filename_only = f"{reset_count_for_rename}_{timestamp_str}.jsonl"  # Include reset count
+                                    new_full_path = f"{SD_DATA_DIR}/{new_filename_only}"
 
                                     if old_full_path != new_full_path:
                                         log(
