@@ -710,6 +710,31 @@ def clear_log_files(request):
         )
 
 
+@app.route("/data/clear", methods=["POST"])
+def clear_data_log_files(request):
+    try:
+        # Import clear_data_logs locally to avoid circular import at module level if data_log imports http_server
+        from io_local.data_log import clear_data_logs
+
+        if clear_data_logs():
+            log("Data log files cleared successfully via endpoint.")
+            return Response(
+                body="All data log files cleared successfully.", status=HTTP_OK
+            )
+        else:
+            log("Data log clearing function reported an error.")
+            return Response(
+                body="Error occurred during data log clearing.",
+                status=HTTP_INTERNAL_ERROR,
+            )
+    except Exception as e:
+        log(f"Unexpected error in /data/clear endpoint: {e}")
+        return Response(
+            body=f"Unexpected error clearing data log files: {e}",
+            status=HTTP_INTERNAL_ERROR,
+        )
+
+
 @app.route("/log/add-test-entries", methods=["POST"])
 def add_test_log_entries(request):
     try:
