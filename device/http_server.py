@@ -151,25 +151,41 @@ def list_sd_data_files(request):
 
 @app.route("/view/", methods=["GET"])
 def view_file(request: Request):
+    log("ENTER /view/ handler")
     filename = None
     route_prefix = "/view/"
     if request.path.startswith(route_prefix):
         filename = request.path[len(route_prefix) :]
+    log(f"/view/ requested. Raw path: {request.path}, extracted filename: '{filename}'")
 
     if not filename:
+        log("/view/: Missing filename in URL")
         return Response(body="Missing filename in URL", status=HTTP_BAD_REQUEST)
 
-    if not exists(filename):
+    file_exists = exists(filename)
+    log(f"/view/: exists('{filename}') = {file_exists}")
+    if not file_exists:
         return Response(body=f"File not found: {filename}", status=HTTP_NOT_FOUND)
 
     try:
+        # Log file size before reading
+        try:
+            stat = os.stat(filename)
+            log(f"/view/: File '{filename}' size: {stat[6]} bytes")
+        except Exception as stat_e:
+            log(f"/view/: Could not stat file '{filename}': {stat_e}")
+
         # Read the entire file content (buffered)
         with open(filename, "rb") as f:
             content = f.read()
+        log(f"/view/: Read {len(content)} bytes from '{filename}'")
 
+        log(f"/view/: Returning response with {len(content)} bytes for '{filename}'")
         return Response(body=content, status=HTTP_OK, headers={"Content-Type": ""})
     except Exception as e:
-        log(f"Error reading file for view {filename}: {e}")
+        import sys
+
+        log(f"Error reading file for view {filename}: {e} ")
         return Response(
             body=f"Error reading file: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -720,28 +736,28 @@ def index(request: Request):
 
     # Simplified check for captive portal based on Microdot example
     # This might need adjustment based on specific device/client behavior
-    is_captive_trigger = (
-        "captive.apple.com" in host or "connectivitycheck" in request.path
-    )
+    # is_captive_trigger = (
+    #     "captive.apple.com" in host or "connectivitycheck" in request.path
+    # )
 
-    if is_captive_trigger:
-        log(
-            f"Detected potential captive portal trigger. Host: {host}, Path: {request.path}"
-        )
-        # Redirect to settings page, assuming device IP is 192.168.4.1 in AP mode
-        # Or use the actual device IP if known and in STA mode
-        device_ip = get_ip() or "192.168.4.1"  # Fallback IP
-        settings_url = f"http://{device_ip}/settings"
-        log(f"Redirecting captive portal request to {settings_url}")
-        return Response.redirect(settings_url)  # Use the redirect helper
+    # if is_captive_trigger:
+    #     log(
+    #         f"Detected potential captive portal trigger. Host: {host}, Path: {request.path}"
+    #     )
+    #     # Redirect to settings page, assuming device IP is 192.168.4.1 in AP mode
+    #     # Or use the actual device IP if known and in STA mode
+    #     device_ip = get_ip() or "192.168.4.1"  # Fallback IP
+    #     settings_url = f"http://{device_ip}/settings"
+    #     log(f"Redirecting captive portal request to {settings_url}")
+    #     return Response.redirect(settings_url)  # Use the redirect helper
 
     # Default action for root: redirect to settings
     return Response.redirect("/settings")
 
 
-from captive import register_captive_portal_routes
+# from captive import register_captive_portal_routes
 
-register_captive_portal_routes(app)
+# register_captive_portal_routes(app)
 register_buzzer_routes(app)
 
 
