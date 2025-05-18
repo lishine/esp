@@ -13,7 +13,7 @@ MAX_PULSE_US = 2000
 # Timeout for time_pulse_us (microseconds) - should be > max period (e.g., 20ms = 20000us)
 PULSE_TIMEOUT_US = 50000
 # Polling interval (milliseconds)
-POLL_INTERVAL_MS = 350
+POLL_INTERVAL_MS = 500
 # Log rate limit (seconds)
 LOG_RATE_LIMIT_S = 1
 
@@ -23,7 +23,7 @@ _reader_task = None  # type: asyncio.Task | None
 _last_value_us = None  # type: int | None # Store raw microseconds
 _last_log_time = 0  # type: int
 
-SENSOR_NAME = "throttle"
+SENSOR_NAME = "th"
 
 
 def init_throttle_reader() -> None:

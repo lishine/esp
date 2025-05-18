@@ -14,7 +14,7 @@ roms = []
 ds18_temperatures = []
 _reader_task = None
 
-SENSOR = "DS"
+SENSOR = "ds"
 
 
 def init_ds18b20():
@@ -80,7 +80,15 @@ async def _read_ds18b20_task():
             # Report successful data to data_log
             # Note: Reporting the list even if it contains None from individual sensor failures.
             # Consider adding logic here to only report if all sensors were successful, if needed.
-            data_log.report_data(SENSOR, time.ticks_ms(), ds18_temperatures)
+            data_log.report_data(
+                SENSOR,
+                time.ticks_ms(),
+                dict(
+                    a=ds18_temperatures[0],
+                    b=ds18_temperatures[1],
+                    c=ds18_temperatures[2],
+                ),
+            )
             # log("DS18B20 Temperatures:", ds18_temperatures) # Optional: Log readings
 
         except Exception as e:

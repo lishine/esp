@@ -12,7 +12,7 @@ I2C_ADDR = 0x08
 _i2c = None
 _reader_task = None
 
-SENSOR_NAME = "motor current"
+SENSOR_NAME = "mc"
 FACTOR = 0.2
 
 
@@ -69,7 +69,7 @@ async def _rms_motor_current_i2c_task() -> None:
                 time.ticks_ms(),
                 "no data",
             )
-        await asyncio.sleep(0.35)
+        await asyncio.sleep(0.9)
 
 
 def start_rms_motor_current_i2c_reader() -> None:

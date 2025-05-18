@@ -437,13 +437,13 @@ async def _log_gps_status_task():
                     SENSOR_NAME,
                     time.ticks_ms(),
                     dict(
-                        Fix=True,
-                        Lat=gps_latitude,
-                        Lon=gps_longitude,
-                        Alt=gps_altitude,
-                        Spd=gps_speed_knots,
-                        Seen=gps_satellites_seen,
-                        Active=gps_satellites,
+                        fix=True,
+                        lat=gps_latitude,
+                        lon=gps_longitude,
+                        alt=gps_altitude,
+                        speed=gps_speed_knots,
+                        seen=gps_satellites_seen,
+                        active=gps_satellites,
                     ),
                 )
 
@@ -451,7 +451,7 @@ async def _log_gps_status_task():
                 data_log.report_data(
                     SENSOR_NAME,
                     time.ticks_ms(),
-                    dict(Fix=False, Seen=gps_satellites_seen, Active=gps_satellites),
+                    dict(fix=False, seen=gps_satellites_seen, active=gps_satellites),
                 )
 
         except asyncio.CancelledError:

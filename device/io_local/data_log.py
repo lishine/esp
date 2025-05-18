@@ -15,7 +15,7 @@ import sd  # For SD_MOUNT_POINT
 
 # --- Configuration ---
 DATA_REPORT_INTERVAL_MS: int = (
-    500  # How often data_report_task runs (also for JSONL writes)
+    300  # How often data_report_task runs (also for JSONL writes)
 )
 DATA_LOG_INTERVAL_S: int = 5  # For the reinstated summary log task
 ERROR_LOG_INTERVAL_S: int = 30
@@ -200,9 +200,7 @@ async def data_report_task():
                             )
 
                     # --- Proceed with Writing JSONL Data ---
-                    sensor_values = (
-                        data if isinstance(data, dict) else {"raw_value": data}
-                    )
+                    sensor_values = data
 
                     # Generate timestamp with milliseconds for the 't' field
                     current_ticks_ms_for_t = time.ticks_ms()
@@ -217,8 +215,8 @@ async def data_report_task():
 
                     entry_dict = {
                         "t": formatted_t_stamp,  # Use the new formatted timestamp with correct milliseconds
-                        "name": sensor_name,
-                        "values": sensor_values,
+                        "n": sensor_name,
+                        "v": sensor_values,
                     }
                     json_string = json.dumps(entry_dict)
                     try:
