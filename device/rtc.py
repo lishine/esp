@@ -28,6 +28,64 @@ def set_rtc_from_gmtime_tuple(gmtime_tuple: tuple) -> bool:
         return False
 
 
+def update_rtc_if_needed(gmtime_tuple_from_gps: tuple) -> bool:
+    """Checks if RTC needs update from GPS time and performs it."""
+    if not isinstance(gmtime_tuple_from_gps, tuple) or len(gmtime_tuple_from_gps) < 8:
+        log("RTC: Invalid gmtime_tuple_from_gps format or length.")
+        return False
+
+    if gmtime_tuple_from_gps[0] < 2023:  # Year validation
+        log("RTC: GPS year invalid.")
+        return False
+
+    try:
+        # Convert GPS time to epoch seconds
+        # mktime expects (year, month, day, hour, minute, second, weekday, yearday)
+        gps_epoch_seconds = time.mktime(gmtime_tuple_from_gps)  # type: ignore
+    except OverflowError:
+        # Ensure gmtime_tuple_from_gps has enough elements for slicing before logging
+        year, month, day = (
+            gmtime_tuple_from_gps[0],
+            gmtime_tuple_from_gps[1],
+            gmtime_tuple_from_gps[2],
+        )
+        log(f"RTC: GPS date {year:04d}-{month:02d}-{day:02d} out of range for mktime.")
+        return False
+    except Exception as e:
+        log(f"RTC: Error converting GPS time to epoch: {e}")
+        return False
+
+    # Get current RTC time
+    current_rtc_epoch_seconds = time.time()
+
+    if gps_epoch_seconds > current_rtc_epoch_seconds:
+        if set_rtc_from_gmtime_tuple(gmtime_tuple_from_gps):
+            # Ensure gmtime_tuple_from_gps has enough elements for string formatting
+            year, month, day, hour, minute, second = (
+                gmtime_tuple_from_gps[0],
+                gmtime_tuple_from_gps[1],
+                gmtime_tuple_from_gps[2],
+                gmtime_tuple_from_gps[3],
+                gmtime_tuple_from_gps[4],
+                gmtime_tuple_from_gps[5],
+            )
+            log(
+                f"RTC: Updated by GPS time: {year}-{month:02d}-{day:02d} "
+                f"{hour:02d}:{minute:02d}:{second:02d} UTC"
+            )
+            return True
+        else:
+            log(
+                "RTC: Update attempt with GPS time failed (set_rtc_from_gmtime_tuple returned False)."
+            )
+            return False
+    else:
+        log(
+            f"RTC: GPS time {gps_epoch_seconds} not newer than current RTC {current_rtc_epoch_seconds}. No update."
+        )
+        return False
+
+
 # def _read_last_line(filepath):
 #     """Reads the last line of a file in binary mode."""
 #     try:
