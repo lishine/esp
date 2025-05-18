@@ -4,6 +4,9 @@ import time  # Keep time for sleep in the reading loop for now
 from log import log
 from . import data_log
 
+ZERO_RPM_LOG_INTERVAL_MS: int = 5000
+REGULAR_LOG_INTERVAL_MS: int = 500
+
 # --- Configuration ---
 ESC_UART_ID = 2
 ESC_TX_PIN = 3
@@ -25,22 +28,22 @@ SENSOR_NAME = "esc"
 
 
 # --- CRC Calculation ---
-def _update_crc8(crc, crc_seed):
+def _update_crc8(crc: int, crc_seed: int) -> int:
     crc_u = crc ^ crc_seed
     for _ in range(8):
         crc_u = (0x07 ^ (crc_u << 1)) if (crc_u & 0x80) else (crc_u << 1)
     return crc_u & 0xFF
 
 
-def _get_crc8(buf, buflen):
+def _get_crc8(buf: bytes, buflen: int) -> int:
     crc = 0
     for i in range(buflen):
-        crc = _update_crc8(buf[i], crc)
+        crc = _update_crc8(crc, buf[i])
     return crc
 
 
 # --- Telemetry Parsing ---
-def _parse_kiss_telemetry(data):
+def _parse_kiss_telemetry(data: bytes) -> dict | None:
     """Parses KISS telemetry data packet."""
     # KISS protocol frame structure (10 bytes):
     # 0: Temperature (°C)
@@ -80,14 +83,13 @@ def _parse_kiss_telemetry(data):
                 "erpm": erpm,  # Include ERPM for potential debugging
             }
         except Exception as e:
-            log(f"Error parsing ESC telemetry: {e}")  # Changed log.log to log
+            log(f"Error parsing ESC telemetry: {e}")
             return None
-    # log(f"Short ESC packet received: len={len(data) if data else 0}") # Debug short packets # Changed log.log to log
     return None
 
 
 # --- Initialization ---
-def init_esc_telemetry():
+def init_esc_telemetry() -> bool:
     """Initializes the UART for ESC telemetry."""
     global uart
     try:
@@ -101,20 +103,20 @@ def init_esc_telemetry():
             rx=ESC_RX_PIN,
             timeout=1000,
         )
-        log(  # Changed log.log to log
+        log(
             f"ESC Telemetry UART({ESC_UART_ID}) initialized on TX={ESC_TX_PIN}, RX={ESC_RX_PIN}"
         )
         return True
     except Exception as e:
-        log(
-            f"Error initializing ESC Telemetry UART({ESC_UART_ID}): {e}"
-        )  # Changed log.log to log
+        log(f"Error initializing ESC Telemetry UART({ESC_UART_ID}): {e}")
         uart = None
         return False
 
 
 async def _read_esc_telemetry_task():
     """Asynchronous task implementing user-specified timing logic for ESC telemetry."""
+    last_zero_rpm_log_time_ms: int = 0
+    last_regular_log_time_ms: int = 0
     global esc_voltage, esc_rpm, esc_temp, esc_current, esc_consumption, uart
 
     if uart is None:
@@ -176,19 +178,56 @@ async def _read_esc_telemetry_task():
                         esc_temp = parsed_data["temperature"]
                         esc_current = parsed_data["current"]
                         esc_consumption = parsed_data["consumption"]
-                        data_log.report_data(
-                            SENSOR_NAME,
-                            time.ticks_ms(),
-                            dict(
-                                v=esc_voltage,
-                                c=esc_current,
-                                rpm=esc_rpm,
-                                t=esc_temp,
-                                mah=esc_consumption,
-                            ),
-                        )
-                        parsed_count += 1  # Increment successful parse count
-                        await asyncio.sleep_ms(150)
+
+                        # THIS IS THE SECTION TO MODIFY FOR CONDITIONAL LOGGING
+                        current_ticks: int = time.ticks_ms()
+                        if esc_rpm != 0:
+                            if (
+                                time.ticks_diff(current_ticks, last_regular_log_time_ms)
+                                >= REGULAR_LOG_INTERVAL_MS
+                            ):
+                                data_log.report_data(
+                                    SENSOR_NAME,
+                                    current_ticks,
+                                    dict(
+                                        v=esc_voltage,
+                                        c=esc_current,
+                                        rpm=esc_rpm,
+                                        t=esc_temp,
+                                        mah=esc_consumption,
+                                    ),
+                                )
+                                parsed_count += 1  # Increment successful parse count
+                                last_regular_log_time_ms = current_ticks
+                            # Else: Do not log if RPM is non-zero and interval hasn't passed
+                            # Update last_zero_rpm_log_time_ms even when RPM is not zero
+                            # to ensure the interval starts from the last log time.
+                            last_zero_rpm_log_time_ms = current_ticks  # This ensures the 5s timer resets when RPM becomes non-zero
+                        else:  # esc_rpm is zero
+                            if (
+                                time.ticks_diff(
+                                    current_ticks, last_zero_rpm_log_time_ms
+                                )
+                                >= ZERO_RPM_LOG_INTERVAL_MS
+                            ):
+                                data_log.report_data(
+                                    SENSOR_NAME,
+                                    current_ticks,
+                                    dict(
+                                        v=esc_voltage,
+                                        c=esc_current,
+                                        rpm=esc_rpm,
+                                        t=esc_temp,
+                                        mah=esc_consumption,
+                                    ),
+                                )
+                                parsed_count += 1  # Increment successful parse count
+                                last_zero_rpm_log_time_ms = current_ticks
+                            # Else: Do not log if RPM is zero and interval hasn't passed
+                            # Update last_regular_log_time_ms even when RPM is zero
+                            # to ensure the interval starts from the last log time.
+                            last_regular_log_time_ms = current_ticks  # This ensures the 0.5s timer resets when RPM becomes zero
+
                     else:
                         data_log.report_error(
                             SENSOR_NAME,
@@ -218,26 +257,28 @@ async def _read_esc_telemetry_task():
             parsed_count = 0
             last_log_time = current_time
 
-        # await asyncio.sleep_ms(1)  # Small yield to prevent blocking
+        await asyncio.sleep_ms(
+            150
+        )  # This sleep dictates the fastest possible read cycle
 
 
-def start_esc_reader():
+def start_esc_reader() -> bool:
     """Starts the asynchronous ESC telemetry reader task."""
     global _reader_task
     if uart is None:
-        log("Cannot start ESC reader: UART not initialized.")  # Changed log.log to log
+        log("Cannot start ESC reader: UART not initialized.")
         return False
     if _reader_task is None:
         _reader_task = asyncio.create_task(_read_esc_telemetry_task())
-        log("ESC telemetry reader task created.")  # Changed log.log to log
+        log("ESC telemetry reader task created.")
         return True
     else:
-        log("ESC telemetry reader task already running.")  # Changed log.log to log
+        log("ESC telemetry reader task already running.")
         return False
 
 
 # --- Data Access Functions ---
-def get_esc_data():
+def get_esc_data() -> dict:
     """Returns the latest ESC telemetry data."""
     return {
         "voltage": esc_voltage,
@@ -248,21 +289,21 @@ def get_esc_data():
     }
 
 
-def get_esc_voltage():
+def get_esc_voltage() -> float:
     return esc_voltage
 
 
-def get_esc_rpm():
+def get_esc_rpm() -> int:
     return esc_rpm
 
 
-def get_esc_temp():
+def get_esc_temp() -> int:
     return esc_temp
 
 
-def get_esc_current():
+def get_esc_current() -> float:
     return esc_current
 
 
-def get_esc_consumption():
+def get_esc_consumption() -> int:
     return esc_consumption

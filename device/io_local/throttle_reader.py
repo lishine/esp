@@ -16,6 +16,8 @@ PULSE_TIMEOUT_US = 50000
 POLL_INTERVAL_MS = 500
 # Log rate limit (seconds)
 LOG_RATE_LIMIT_S = 1
+# Low throttle logging interval (milliseconds)
+LOW_THROTTLE_LOG_INTERVAL_MS: int = 5000
 
 # Module state
 _throttle_pin = None  # type: machine.Pin | None
@@ -47,6 +49,7 @@ async def _throttle_reader_task() -> None:
 
     log("Throttle PWM reader task started using time_pulse_us")
     signal_lost_logged = False
+    last_low_throttle_log_time_ms: int = 0
 
     while True:
         current_value_us = 0  # Default to 0 if error or no pulse
@@ -60,15 +63,21 @@ async def _throttle_reader_task() -> None:
 
         if current_value_us > 0:  # Got a valid pulse reading
             signal_lost_logged = False  # Reset lost signal flag
-            if _last_value_us is None or current_value_us != _last_value_us:
-                now_s = utime.ticks_ms() // 1000
-                if now_s - _last_log_time >= LOG_RATE_LIMIT_S:
-                    # Optional: Scale value to 0.0-1.0 if needed elsewhere
-                    # scaled_value = (current_value_us - MIN_PULSE_US) / (MAX_PULSE_US - MIN_PULSE_US)
-                    # scaled_value = max(0.0, min(1.0, scaled_value)) # Clamp
-                    data_log.report_data(SENSOR_NAME, time.ticks_ms(), current_value_us)
-                    _last_log_time = now_s
-                _last_value_us = current_value_us
+            current_ticks: int = time.ticks_ms()
+            if current_value_us < 1000:
+                if (
+                    time.ticks_diff(current_ticks, last_low_throttle_log_time_ms)
+                    >= LOW_THROTTLE_LOG_INTERVAL_MS
+                ):
+                    data_log.report_data(SENSOR_NAME, current_ticks, current_value_us)
+                    last_low_throttle_log_time_ms = current_ticks
+            else:  # current_value_us >= 1000
+                data_log.report_data(SENSOR_NAME, current_ticks, current_value_us)
+
+            _last_value_us = current_value_us
+            _last_log_time = (
+                current_ticks  # Keep this updated, though its original use is removed
+            )
         else:
             data_log.report_error(
                 SENSOR_NAME,

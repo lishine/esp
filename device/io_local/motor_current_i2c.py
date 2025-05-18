@@ -15,6 +15,8 @@ _reader_task = None
 SENSOR_NAME = "mc"
 FACTOR = 0.2
 
+LOW_CURRENT_LOG_INTERVAL_MS: int = 5000
+
 
 def init_rms_motor_current_i2c() -> None:
     """Initialize I2C for RMS motor current reading and check device presence."""
@@ -43,6 +45,8 @@ async def _rms_motor_current_i2c_task() -> None:
     global _i2c
     import time
 
+    last_low_current_log_time_ms: int = 0
+
     while True:
         try:
             if _i2c is None:
@@ -55,7 +59,22 @@ async def _rms_motor_current_i2c_task() -> None:
                 data = _i2c.readfrom(I2C_ADDR, 2)
                 if len(data) == 2:
                     rms_mv = data[0] | (data[1] << 8)
-                    data_log.report_data(SENSOR_NAME, time.ticks_ms(), rms_mv * FACTOR)
+                    motor_current = rms_mv * FACTOR
+                    current_ticks: int = time.ticks_ms()
+
+                    if motor_current >= 2:
+                        data_log.report_data(SENSOR_NAME, current_ticks, motor_current)
+                    else:  # motor_current < 2
+                        if (
+                            time.ticks_diff(current_ticks, last_low_current_log_time_ms)
+                            >= LOW_CURRENT_LOG_INTERVAL_MS
+                        ):
+                            data_log.report_data(
+                                SENSOR_NAME, current_ticks, motor_current
+                            )
+                            last_low_current_log_time_ms = current_ticks
+                        # else: do nothing, skip logging
+
                 else:
                     data_log.report_error(
                         SENSOR_NAME,
