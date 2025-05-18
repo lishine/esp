@@ -4,7 +4,7 @@ import _thread
 
 from sd import SD_MOUNT_POINT
 
-LOG_DIR = f"{SD_MOUNT_POINT}/lb/logs"
+LOG_DIR = f"{SD_MOUNT_POINT}/lc/logs"
 LOG_FILE_PREFIX = "log_"
 LOG_FILE_SUFFIX = ".txt"
 MAX_LOG_FILE_SIZE = 4000  # Bytes
