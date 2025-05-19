@@ -227,7 +227,7 @@ async def _read_esc_telemetry_task():
                             # Update last_regular_log_time_ms even when RPM is zero
                             # to ensure the interval starts from the last log time.
                             last_regular_log_time_ms = current_ticks  # This ensures the 0.5s timer resets when RPM becomes zero
-
+                        await asyncio.sleep_ms(150)
                     else:
                         data_log.report_error(
                             SENSOR_NAME,
@@ -256,10 +256,6 @@ async def _read_esc_telemetry_task():
             data_count = 0
             parsed_count = 0
             last_log_time = current_time
-
-        await asyncio.sleep_ms(
-            150
-        )  # This sleep dictates the fastest possible read cycle
 
 
 def start_esc_reader() -> bool:
