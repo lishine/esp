@@ -31,6 +31,11 @@ def set_rtc_from_gmtime_tuple(gmtime_tuple: tuple) -> bool:
 rtc_set_with_time = False
 
 
+def get_rtc_set_with_time() -> bool:
+    """Returns the status of whether RTC was set with time."""
+    return rtc_set_with_time
+
+
 def update_rtc_if_needed(
     gmtime_tuple_from_gps: tuple | None = None, from_settings: bool = False
 ) -> bool:

@@ -10,7 +10,7 @@ from file_utils import (
     get_synced_timestamp,
 )
 
-DATA_REPORT_INTERVAL_MS = 300
+DATA_REPORT_INTERVAL_MS = 500
 DATA_LOG_INTERVAL_S = 5
 ERROR_LOG_INTERVAL_S = 30
 QUEUE_SIZE = 500
@@ -22,9 +22,6 @@ is_log_file_renamed_this_session = False
 _raw_data_queue_instance = None
 _log_data_queue_instance = None
 _error_queue_instance = None
-
-
-# _format_timestamp removed, will use from file_utils
 
 
 from fs import recursive_mkdir, remove_file, clear_directory
@@ -117,14 +114,15 @@ def report_error(sensor_name: str, timestamp: int, error_msg: str) -> None:
         log.log(f"DataLog: Error queue full. Dropping error from {sensor_name}")
 
 
+# DOES NOT WORK CURRENTLY
 def rename_file_if_rtc_updated() -> bool:
     """Renames the log file if RTC has been updated from GPS during this session.
     Only attempts rename once per session."""
     global current_log_file_path, is_log_file_renamed_this_session
-    from rtc import rtc_set_with_time
+    from rtc import get_rtc_set_with_time
 
     if (
-        not rtc_set_with_time
+        not get_rtc_set_with_time()
         or not current_log_file_path
         or is_log_file_renamed_this_session
     ):
