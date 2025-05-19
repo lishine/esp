@@ -1,9 +1,8 @@
 from machine import UART, Pin, RTC  # Added RTC
 import uasyncio as asyncio
 import time
-import machine  # Added machine
-from log import log
-from rtc import set_rtc_from_gmtime_tuple, update_rtc_if_needed
+import rtc
+import log
 from . import data_log
 
 _JERUSALEM_TZ_OFFSET_HOURS = 3  # Jerusalem Timezone Offset (UTC+3 for IDT)
@@ -164,18 +163,10 @@ def _parse_gprmc(parts: list[str]):
                     )  # weekday and yearday are 0
                     gps_epoch = time.mktime(utc_tuple)  # type: ignore
                     gmtime_tuple_current = time.gmtime(gps_epoch)
-                    update_rtc_if_needed(gmtime_tuple_current)
+                    rtc.update_rtc_if_needed(gmtime_tuple_current)
                     _rtc_synced = True
-                    log("GPS: RTC synced on first fix.")
-                    # --- Call rtc.set_time_baseline ---
-                    # try:
-                    # import rtc as rtc
+                    log.log("GPS: RTC synced on first fix.")
                 #
-                # rtc.set_time_baseline(gps_epoch, time.ticks_ms())
-                # Log message for baseline set is now in rtc.set_time_baseline
-                # except Exception as e_baseline:
-                # log(f"GPS: Error calling rtc.set_time_baseline: {e_baseline}")
-                # --- End call rtc.set_time_baseline ---
                 except (ValueError, IndexError, TypeError) as e:
                     data_log.report_error(
                         SENSOR_NAME,
@@ -248,7 +239,7 @@ def _parse_gpgsv(parts):
 def init_gps_reader():
     """Initializes UART1 for the GPS module using the configured pins."""
     global uart
-    log(
+    log.log(
         f"Attempting to initialize NEO-7M GPS on UART({GPS_UART_ID}) TX={GPS_TX_PIN}, RX={GPS_RX_PIN}"
     )
     try:
@@ -260,11 +251,11 @@ def init_gps_reader():
             rxbuf=10000,
             timeout=10,
         )
-        log(f"GPS UART({GPS_UART_ID}) initialized.")
+        log.log(f"GPS UART({GPS_UART_ID}) initialized.")
         return True
     except Exception as e:
-        log(f"Error initializing GPS UART({GPS_UART_ID}): {e}")
-        log("-> Check pin assignments and connections.")
+        log.log(f"Error initializing GPS UART({GPS_UART_ID}): {e}")
+        log.log("-> Check pin assignments and connections.")
         uart = None
         return False
 
@@ -273,10 +264,10 @@ def init_gps_reader():
 async def _read_gps_task():
     """Asynchronous task to continuously read and parse NMEA sentences from GPS."""
     if uart is None:
-        log("GPS UART not initialized. Cannot start reader task.")
+        log.log("GPS UART not initialized. Cannot start reader task.")
         return
 
-    log("Starting GPS NMEA reader task...")
+    log.log("Starting GPS NMEA reader task...")
     reader = asyncio.StreamReader(uart)
     _reader_enabled_event.set()  # Ensure reader starts enabled
 
@@ -284,13 +275,15 @@ async def _read_gps_task():
         try:
             # --- Check if Enabled ---
             if not _reader_enabled_event.is_set():
-                log("GPS Reader: Disabled by user. Waiting...")
+                log.log("GPS Reader: Disabled by user. Waiting...")
                 await _reader_enabled_event.wait()  # type: ignore # Wait until enabled
-                log("GPS Reader: Re-enabled by user.")
+                log.log("GPS Reader: Re-enabled by user.")
                 # Optional: Flush buffer after re-enabling?
                 if uart.any():
                     flushed = uart.read(uart.any())
-                    log(f"GPS Reader: Flushed {len(flushed)} bytes after re-enable.")
+                    log.log(
+                        f"GPS Reader: Flushed {len(flushed)} bytes after re-enable."
+                    )
 
             # --- Normal Read Operation (No Lock Needed) ---
             line_bytes = await reader.readline()  # type: ignore
@@ -336,7 +329,7 @@ async def _read_gps_task():
                             f"GPS Malformed NMEA (no checksum?): {line}",
                         )
 
-                        log(f"GPS Invalid checksum format: {parts_checksum[1]}")
+                        log.log(f"GPS Invalid checksum format: {parts_checksum[1]}")
                         continue
                 else:
                     data_log.report_error(
@@ -377,11 +370,11 @@ async def _read_gps_task():
                 _gps_processed_sentence_count += 1
 
         except asyncio.CancelledError:
-            log("GPS Reader: Task cancelled.")
+            log.log("GPS Reader: Task cancelled.")
             _reader_enabled_event.set()
             raise
         except Exception as e:
-            log(f"Error in GPS reader task loop: {e}")
+            log.log(f"Error in GPS reader task loop: {e}")
             _reader_enabled_event.set()  # Ensure enabled on error exit
             await asyncio.sleep_ms(500)
 
@@ -446,10 +439,10 @@ async def _log_gps_status_task():
                     last_no_fix_log_time_ms = current_ticks  # Update log time
 
         except asyncio.CancelledError:
-            log("GPS Logger: Task cancelled.")
+            log.log("GPS Logger: Task cancelled.")
             raise
         except Exception as e:
-            log(f"Error in GPS logger task loop: {e}")
+            log.log(f"Error in GPS logger task loop: {e}")
             await asyncio.sleep_ms(1000)
 
 
@@ -457,31 +450,31 @@ def start_gps_reader():
     """Starts the GPS reader and logger tasks if not already running."""
     global _reader_task, _logger_task
     if uart is None:
-        log("Cannot start GPS reader: UART not initialized.")
+        log.log("Cannot start GPS reader: UART not initialized.")
         return False
 
     reader_started = False
     if _reader_task is None or _reader_task.done():  # type: ignore
         _reader_enabled_event.set()  # Ensure reader starts enabled
         _reader_task = asyncio.create_task(_read_gps_task())
-        log("GPS NMEA reader task created/restarted.")
+        log.log("GPS NMEA reader task created/restarted.")
         reader_started = True
     else:
         # If already running, ensure it's enabled
         if not _reader_enabled_event.is_set():
             _reader_enabled_event.set()
-            log("GPS NMEA reader task was paused, re-enabling.")
+            log.log("GPS NMEA reader task was paused, re-enabling.")
         else:
-            log("GPS NMEA reader task already running.")
+            log.log("GPS NMEA reader task already running.")
         reader_started = True  # Consider it success if already running
 
     logger_started = False
     if _logger_task is None or _logger_task.done():  # type: ignore
         _logger_task = asyncio.create_task(_log_gps_status_task())
-        log("GPS Status logger task created/restarted.")
+        log.log("GPS Status logger task created/restarted.")
         logger_started = True
     else:
-        log("GPS Status logger task already running.")
+        log.log("GPS Status logger task already running.")
         logger_started = True
 
     return reader_started and logger_started

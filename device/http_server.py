@@ -7,12 +7,7 @@ import esp
 import esp32  # Added for heap info
 import sys
 
-from log import (
-    log,
-    read_log_file_content,
-    get_latest_log_index,
-    clear_logs,
-)
+import log
 
 from wifi import (
     is_connected,
@@ -78,7 +73,7 @@ def upload_file(request: Request):
         )
 
     except Exception as e:
-        log(f"Unhandled error during upload processing for {target_path}: {e}")
+        log.log(f"Unhandled error during upload processing for {target_path}: {e}")
         body, status = error_response(
             f"Server error during upload processing: {str(e)}", HTTP_INTERNAL_ERROR
         )
@@ -108,7 +103,7 @@ def list_files_hierarchical(request):
             body="\n".join(files), headers={"Content-Type": "text/plain; charset=utf-8"}
         )
     except Exception as e:
-        log(f"Error listing files for /la: {e}")
+        log.log(f"Error listing files for /la: {e}")
         return Response(
             body=f"Error listing files: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -120,9 +115,9 @@ def list_sd_data_files(request):
     sd_data_path = "unknown (init error)"  # Initialize for except block
     try:
         sd_data_path = f"{SD_MOUNT_POINT}/data"
-        log(f"HTTP_SERVER: /la-data requested. Targeting path: {sd_data_path}")
+        log.log(f"HTTP_SERVER: /la-data requested. Targeting path: {sd_data_path}")
         if not is_dir(sd_data_path):
-            log(f"HTTP_SERVER: /la-data - Directory not found: {sd_data_path}")
+            log.log(f"HTTP_SERVER: /la-data - Directory not found: {sd_data_path}")
             return Response(
                 body=f"Error: Directory '{sd_data_path}' not found.",
                 status=HTTP_NOT_FOUND,
@@ -138,7 +133,7 @@ def list_sd_data_files(request):
             body="\n".join(files), headers={"Content-Type": "text/plain; charset=utf-8"}
         )
     except Exception as e:
-        log(f"Error listing files for /la-data ({sd_data_path}): {e}")
+        log.log(f"Error listing files for /la-data ({sd_data_path}): {e}")
         # Be careful about exposing sd_data_path if it wasn't defined due to an early error.
         error_path_info = sd_data_path if "sd_data_path" in locals() else "SD data path"
         return Response(
@@ -150,19 +145,21 @@ def list_sd_data_files(request):
 
 @app.route("/view/", methods=["GET"])
 def view_file(request: Request):
-    log("ENTER /view/ handler")
+    log.log("ENTER /view/ handler")
     filename = None
     route_prefix = "/view/"
     if request.path.startswith(route_prefix):
         filename = request.path[len(route_prefix) :]
-    log(f"/view/ requested. Raw path: {request.path}, extracted filename: '{filename}'")
+    log.log(
+        f"/view/ requested. Raw path: {request.path}, extracted filename: '{filename}'"
+    )
 
     if not filename:
-        log("/view/: Missing filename in URL")
+        log.log("/view/: Missing filename in URL")
         return Response(body="Missing filename in URL", status=HTTP_BAD_REQUEST)
 
     file_exists = exists(filename)
-    log(f"/view/: exists('{filename}') = {file_exists}")
+    log.log(f"/view/: exists('{filename}') = {file_exists}")
     if not file_exists:
         return Response(body=f"File not found: {filename}", status=HTTP_NOT_FOUND)
 
@@ -170,21 +167,23 @@ def view_file(request: Request):
         # Log file size before reading
         try:
             stat = os.stat(filename)
-            log(f"/view/: File '{filename}' size: {stat[6]} bytes")
+            log.log(f"/view/: File '{filename}' size: {stat[6]} bytes")
         except Exception as stat_e:
-            log(f"/view/: Could not stat file '{filename}': {stat_e}")
+            log.log(f"/view/: Could not stat file '{filename}': {stat_e}")
 
         # Read the entire file content (buffered)
         with open(filename, "rb") as f:
             content = f.read()
-        log(f"/view/: Read {len(content)} bytes from '{filename}'")
+        log.log(f"/view/: Read {len(content)} bytes from '{filename}'")
 
-        log(f"/view/: Returning response with {len(content)} bytes for '{filename}'")
+        log.log(
+            f"/view/: Returning response with {len(content)} bytes for '{filename}'"
+        )
         return Response(body=content, status=HTTP_OK, headers={"Content-Type": ""})
     except Exception as e:
         import sys
 
-        log(f"Error reading file for view {filename}: {e} ")
+        log.log(f"Error reading file for view {filename}: {e} ")
         return Response(
             body=f"Error reading file: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -207,7 +206,7 @@ def get_settings(request):
             headers={"Content-Type": "text/html; charset=utf-8"},
         )
     except Exception as e:
-        log(f"Error reading {settings_file}: {e}")
+        log.log(f"Error reading {settings_file}: {e}")
         return Response(
             body=f"Error reading settings page: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -223,13 +222,13 @@ def save_settings(request: Request):
             or "networks" not in config_data
             or not isinstance(config_data["networks"], list)
         ):
-            log(f"Invalid settings save format: {config_data}")
+            log.log(f"Invalid settings save format: {config_data}")
             raise ValueError("Invalid JSON data format: Expected {'networks': [...]} ")
 
         # Assuming config_data is {"networks": [{"ssid": "...", "password": "..."}, ...]}
         # settings_manager.set_wifi_networks expects just the list.
         if not settings_manager.set_wifi_networks(config_data["networks"]):
-            log("Failed to save wifi settings via settings_manager")
+            log.log("Failed to save wifi settings via settings_manager")
             raise Exception("Failed to save WiFi settings")
 
         return Response(
@@ -239,14 +238,14 @@ def save_settings(request: Request):
         )
 
     except ValueError as e:
-        log(f"Error parsing JSON for settings save: {e}")
+        log.log(f"Error parsing JSON for settings save: {e}")
         return Response(
             body=json.dumps({"success": False, "error": f"Invalid JSON data: {e}"}),
             status=HTTP_BAD_REQUEST,
             headers={"Content-Type": "application/json"},
         )
     except Exception as e:
-        log(f"Error saving wifi config: {e}")
+        log.log(f"Error saving wifi config: {e}")
         return Response(
             body=json.dumps(
                 {"success": False, "error": f"Error saving settings: {str(e)}"}
@@ -273,7 +272,7 @@ def remove_file(request: Request):
                 status=HTTP_NOT_FOUND,
             )
 
-        log(f"Attempting to remove: {target_path}")
+        log.log(f"Attempting to remove: {target_path}")
         if not remove_if_empty_or_file(target_path):
             return Response(
                 body=f"Failed to remove '{target_path}'. It might be a non-empty directory.",
@@ -282,11 +281,11 @@ def remove_file(request: Request):
 
         remove_empty_parents(target_path)
 
-        log(f"Successfully removed {target_path}")
+        log.log(f"Successfully removed {target_path}")
         return Response(body=f"Successfully removed {target_path}", status=HTTP_OK)
 
     except Exception as e:
-        log(f"Error in remove endpoint for {target_path}: {e}")
+        log.log(f"Error in remove endpoint for {target_path}: {e}")
         return Response(
             body=f"Error removing target: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -337,7 +336,7 @@ def get_free_space(request):
             # Get MicroPython Heap Info
             upy_free = gc.mem_free()
         except Exception as heap_err:
-            log(f"Error getting memory info within /free: {heap_err}")
+            log.log(f"Error getting memory info within /free: {heap_err}")
 
         # --- Format values for output ---
         fs_free_mb = free_kb / 1024
@@ -371,7 +370,7 @@ def get_free_space(request):
         )
 
     except Exception as e:
-        log(f"Error getting free space: {e}")
+        log.log(f"Error getting free space: {e}")
         return Response(
             body=f"Error getting free space: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -386,7 +385,7 @@ def list_files_json(request):
             body=json.dumps(files), headers={"Content-Type": "application/json"}
         )
     except Exception as e:
-        log(f"Error getting file list JSON: {e}")
+        log.log(f"Error getting file list JSON: {e}")
         return Response(
             body=f"Error getting file list: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -413,7 +412,7 @@ def get_settings_data(request):
             body=json.dumps(data), headers={"Content-Type": "application/json"}
         )
     except Exception as e:
-        log(f"Error getting settings data: {e}")
+        log.log(f"Error getting settings data: {e}")
         return Response(
             body=f"Error getting settings data: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -437,7 +436,7 @@ def get_gps_settings_page(request):
             headers={"Content-Type": "text/html; charset=utf-8"},
         )
     except Exception as e:
-        log(f"Error reading {gps_settings_file}: {e}")
+        log.log(f"Error reading {gps_settings_file}: {e}")
         return Response(
             body=f"Error reading GPS settings page: {str(e)}",
             status=HTTP_INTERNAL_ERROR,
@@ -449,7 +448,7 @@ def handle_gps_settings_data_route(request: Request):
     try:
         return gps_config.handle_gps_settings_data(request)
     except Exception as e:
-        log(f"Error processing GPS settings data: {e}")
+        log.log(f"Error processing GPS settings data: {e}")
         try:
             error_body = json.dumps({"success": False, "error": str(e)})
             return Response(
@@ -476,7 +475,7 @@ def status(request):
             body=json.dumps(response_data), headers={"Content-Type": "application/json"}
         )
     except Exception as e:
-        log(f"Error getting device status: {e}")
+        log.log(f"Error getting device status: {e}")
         return Response(
             body=f"Error getting status: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -502,16 +501,16 @@ def get_live_data_page(request: Request):
         )
     except OSError as e:
         if e.args[0] == 2:  # ENOENT - File not found
-            log(f"Live data HTML file not found: {live_data_html_path}")
+            log.log(f"Live data HTML file not found: {live_data_html_path}")
             return Response(body="Live Data page not found.", status=HTTP_NOT_FOUND)
         else:
-            log(f"Error accessing {live_data_html_path}: {e}")
+            log.log(f"Error accessing {live_data_html_path}: {e}")
             return Response(
                 body=f"Error accessing Live Data page: {str(e)}",
                 status=HTTP_INTERNAL_ERROR,
             )
     except Exception as e:
-        log(f"Error reading {live_data_html_path}: {e}")
+        log.log(f"Error reading {live_data_html_path}: {e}")
         return Response(
             body=f"Error reading Live Data page: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -546,7 +545,7 @@ def post_read_live_data(request: Request):
             headers={"Content-Type": "application/json"},
         )
     except Exception as e:
-        log(f"Error getting live data for API: {e}")
+        log.log(f"Error getting live data for API: {e}")
         # Use the framework's error response helper if available, otherwise construct manually
         body, status = error_response(
             f"Error getting live data: {str(e)}", HTTP_INTERNAL_ERROR
@@ -595,7 +594,7 @@ def api_get_data_log_file(request: Request):
             },
         )
     except Exception as e:
-        log(
+        log.log(
             f"Error in POST /api/data: {e}"
         )  # Ensure 'log' is available (it is, from top of file)
         return Response(
@@ -620,7 +619,7 @@ def log_viewer(request):
             headers={"Content-Type": "text/html; charset=utf-8"},
         )
     except Exception as e:
-        log(f"Error reading {log_viewer_file}: {e}")
+        log.log(f"Error reading {log_viewer_file}: {e}")
         return Response(
             body=f"Error reading log viewer page: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -628,75 +627,44 @@ def log_viewer(request):
 
 @app.route("/api/log/chunk")
 def api_log_chunk_file(request: Request):
-    target_index = -1
-    file_index_str = request.query_params.get("file_index")  # type: ignore
+    current_log_file = log.get_current_log_filename()
 
-    log("file_index_str", file_index_str)
-
-    if file_index_str is not None:
-        # Parameter was found, try to parse it
-        try:
-            target_index = int(file_index_str)
-        except ValueError:
-            log(f"Invalid file_index parameter value: '{file_index_str}'")
-            return Response(
-                body="Invalid file_index parameter value", status=HTTP_BAD_REQUEST
-            )
-    else:
-        # Parameter was not found, fetch the latest log index (no warning needed)
-        try:
-            target_index = get_latest_log_index()
-        except Exception as e:
-            log(f"Error getting latest log index: {e}")
-            return Response(
-                body="Server error getting latest log index", status=HTTP_INTERNAL_ERROR
-            )
-
-    log(f"Request for log chunk, target index: {target_index}")
-
-    if target_index < 0:
-        log(f"No log files found or invalid index requested ({target_index}).")
+    if not current_log_file:
+        log.log("No current log file available.")
         return Response(
-            body="", status=HTTP_NOT_FOUND, headers={"X-Log-File-Index": "-1"}
+            body="", status=HTTP_NOT_FOUND, headers={"X-Log-File-Name": "None"}
         )
 
-    try:
-        log("read_log_file_content1")
-        log_content = read_log_file_content(target_index)
-        log("read_log_file_content2")
+    log.log(f"Request for log chunk, target file: {current_log_file}")
 
-        if log_content is None:
-            log(f"Log file index {target_index} not found.")
+    try:
+        with open(current_log_file, "rb") as f:
+            log_content_bytes = f.read()
+
+        # Send raw bytes
+        headers = {
+            "Content-Type": "application/octet-stream",  # Indicate binary data
+            "X-Log-File-Name": current_log_file.split("/")[-1],
+            "Content-Disposition": f'attachment; filename="{current_log_file.split("/")[-1]}"',  # Suggest download
+        }
+
+        return Response(body=log_content_bytes, headers=headers)
+
+    except OSError as e:
+        if e.args[0] == 2:  # ENOENT - File not found
+            log.log(f"Log file not found: {current_log_file}")
             return Response(
                 body="",
                 status=HTTP_NOT_FOUND,
-                headers={"X-Log-File-Index": str(target_index)},
+                headers={"X-Log-File-Name": current_log_file.split("/")[-1]},
             )
-
-        headers = {
-            "Content-Type": "text/plain; charset=utf-8",
-            "X-Log-File-Index": str(target_index),
-        }
-        # Ensure log_content is string before passing to Response with text/plain
-        if isinstance(log_content, bytes):
-            try:
-                log_content_str = log_content.decode("utf-8")
-            except UnicodeError:
-                log(
-                    f"Warning: Log content for index {target_index} contains non-UTF8 data. Sending as lossy string."
-                )
-                log_content_str = log_content.decode(
-                    "utf-8", "replace"
-                )  # Replace invalid chars
-        elif not isinstance(log_content, str):
-            log_content_str = str(log_content)  # Fallback conversion for other types
         else:
-            log_content_str = log_content  # Already a string
-
-        return Response(body=log_content_str, headers=headers)
-
+            log.log(f"OSError reading log file {current_log_file}: {e}")
+            return Response(
+                body=f"Error reading log file: {str(e)}", status=HTTP_INTERNAL_ERROR
+            )
     except Exception as e:
-        log(f"Error reading log content for index {target_index}: {e}")
+        log.log(f"Error reading log content for {current_log_file}: {e}")
         return Response(
             body=f"Error reading log content: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -705,16 +673,16 @@ def api_log_chunk_file(request: Request):
 @app.route("/log/clear", methods=["POST"])
 def clear_log_files(request):
     try:
-        if clear_logs():
-            log("Log files cleared successfully via endpoint.")
+        if log.clear_logs():
+            log.log("Log files cleared successfully via endpoint.")
             return Response(body="All log files cleared successfully.", status=HTTP_OK)
         else:
-            log("Log clearing function reported an error.")
+            log.log("Log clearing function reported an error.")
             return Response(
                 body="Error occurred during log clearing.", status=HTTP_INTERNAL_ERROR
             )
     except Exception as e:
-        log(f"Unexpected error in /log/clear endpoint: {e}")
+        log.log(f"Unexpected error in /log/clear endpoint: {e}")
         return Response(
             body=f"Unexpected error clearing log files: {e}", status=HTTP_INTERNAL_ERROR
         )
@@ -727,18 +695,18 @@ def clear_data_log_files(request):
         from io_local.data_log import clear_data_logs
 
         if clear_data_logs():
-            log("Data log files cleared successfully via endpoint.")
+            log.log("Data log files cleared successfully via endpoint.")
             return Response(
                 body="All data log files cleared successfully.", status=HTTP_OK
             )
         else:
-            log("Data log clearing function reported an error.")
+            log.log("Data log clearing function reported an error.")
             return Response(
                 body="Error occurred during data log clearing.",
                 status=HTTP_INTERNAL_ERROR,
             )
     except Exception as e:
-        log(f"Unexpected error in /data/clear endpoint: {e}")
+        log.log(f"Unexpected error in /data/clear endpoint: {e}")
         return Response(
             body=f"Unexpected error clearing data log files: {e}",
             status=HTTP_INTERNAL_ERROR,
@@ -749,16 +717,16 @@ def clear_data_log_files(request):
 def add_test_log_entries(request):
     try:
         count = 200000
-        log(f"Adding {count} test log entries...")
+        log.log(f"Adding {count} test log entries...")
         for i in range(count):
-            log(f"Test log entry {i+1}/{count}")
+            log.log(f"Test log entry {i+1}/{count}")
             # time.sleep_ms(1) # Optional delay
-        log(f"Finished adding {count} test log entries.")
+        log.log(f"Finished adding {count} test log entries.")
         return Response(
             body=f"Successfully added {count} test log entries.", status=HTTP_OK
         )
     except Exception as e:
-        log(f"Error adding test log entries: {e}")
+        log.log(f"Error adding test log entries: {e}")
         return Response(
             body=f"Error adding test log entries: {e}", status=HTTP_INTERNAL_ERROR
         )
@@ -767,7 +735,7 @@ def add_test_log_entries(request):
 @app.route("/")
 def index(request: Request):
     host = request.headers.get("Host", "")
-    log(f"Root Request: {request.method} {request.path} Host: {host}")
+    log.log(f"Root Request: {request.method} {request.path} Host: {host}")
 
     # Simplified check for captive portal based on Microdot example
     # This might need adjustment based on specific device/client behavior
@@ -776,14 +744,14 @@ def index(request: Request):
     # )
 
     # if is_captive_trigger:
-    #     log(
+    #     log.log(
     #         f"Detected potential captive portal trigger. Host: {host}, Path: {request.path}"
     #     )
     #     # Redirect to settings page, assuming device IP is 192.168.4.1 in AP mode
     #     # Or use the actual device IP if known and in STA mode
     #     device_ip = get_ip() or "192.168.4.1"  # Fallback IP
     #     settings_url = f"http://{device_ip}/settings"
-    #     log(f"Redirecting captive portal request to {settings_url}")
+    #     log.log(f"Redirecting captive portal request to {settings_url}")
     #     return Response.redirect(settings_url)  # Use the redirect helper
 
     # Default action for root: redirect to settings
@@ -807,7 +775,7 @@ def control_page(request: Request):
             headers={"Content-Type": "text/html; charset=utf-8"},
         )
     except Exception as e:
-        log(f"Error in /control: {e}")
+        log.log(f"Error in /control: {e}")
         return Response(
             body=f"Error reading control page: {str(e)}", status=HTTP_INTERNAL_ERROR
         )
@@ -833,7 +801,7 @@ def api_control(request: Request):
             headers={"Content-Type": "application/json"},
         )
     except Exception as e:
-        log(f"Error in /api/control: {e}")
+        log.log(f"Error in /api/control: {e}")
         return Response(
             body=json.dumps({"success": False, "error": str(e)}),
             status=HTTP_INTERNAL_ERROR,
@@ -843,4 +811,4 @@ def api_control(request: Request):
 
 def start_server():
     _thread.start_new_thread(lambda: app.run(port=80), ())
-    log("Web server started")
+    log.log("Web server started")

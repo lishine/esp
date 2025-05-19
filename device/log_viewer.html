@@ -68,7 +68,7 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const fileIndexHeader = response.headers.get('X-Log-File-Index');
-                const fileIndex = fileIndexHeader ? parseInt(fileIndexHeader, 10) : -1;
+                const fileIndex = fileIndexHeader ? parseInt(fileIndexHeader, 10) : 0;
                 const logText = await response.text();
                 const lines = logText.trim().split('\n');
                 return { lines, fileIndex };

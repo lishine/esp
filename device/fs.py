@@ -2,7 +2,7 @@ import uos
 
 import os
 import time
-from log import log
+import log
 from globals import SD_MOUNT_POINT  # Import from globals
 
 
@@ -48,7 +48,7 @@ def get_file_details(path="."):
 
         return result
     except Exception as e:
-        log(f"Error getting file details: {e}")
+        log.log(f"Error getting file details: {e}")
         return [f"Error listing files: {str(e)}"]
 
 
@@ -70,7 +70,7 @@ def get_hierarchical_list_with_sizes(
 
         # Standard handling for root path or pre-supplied files
         if (path == "." or path == "/") and _initial_files is None:
-            log(
+            log.log(
                 f"FS_DEBUG: Root path detected. Listing internal flash, excluding 'sd'."
             )
             try:
@@ -78,14 +78,14 @@ def get_hierarchical_list_with_sizes(
                 internal_files.sort()
             except OSError as e:
                 internal_files = []
-                log(f"Error listing internal root: {e}")
+                log.log(f"Error listing internal root: {e}")
 
             # Explicitly filter out "sd" for the /la command's root view
             sd_dir_name_to_exclude = SD_MOUNT_POINT.strip("/")  # Should be "sd"
             files_to_process = [
                 f for f in internal_files if f != sd_dir_name_to_exclude
             ]
-            log(
+            log.log(
                 f"FS_DEBUG: Root files for /la (excluding '{sd_dir_name_to_exclude}'): {files_to_process[:5]}"
             )
             # No need to change 'path' or 'prefix' here for /la root.
@@ -94,14 +94,14 @@ def get_hierarchical_list_with_sizes(
         elif _initial_files is not None:
             files_to_process = _initial_files
             is_truncated_list = True
-            log(
+            log.log(
                 f"FS_DEBUG: Processing pre-supplied list for '{path}', count={len(files_to_process)}"
             )
 
         # Special handling if the current path IS the SD_MOUNT_POINT (e.g. called with path="/sd")
         # This is for the new /la-data which will call with path="/sd/data", or if user navigates to /sd
         elif path == SD_MOUNT_POINT:
-            log(
+            log.log(
                 f"FS_DEBUG: Path is SD_MOUNT_POINT ('{path}'). Listing only 'data' if present, or empty."
             )
             files_to_process = []
@@ -109,29 +109,29 @@ def get_hierarchical_list_with_sizes(
             if is_dir(data_subdir_full_path):
                 # We want to process "data" so it can be listed and then recursed into if path was "/sd"
                 files_to_process = ["data"]
-                log(
+                log.log(
                     f"FS_DEBUG: '{data_subdir_full_path}' exists. Will process 'data' entry under '{path}'."
                 )
             else:
-                log(
+                log.log(
                     f"FS_DEBUG: '{data_subdir_full_path}' does not exist. '{path}' will appear empty."
                 )
 
         # If path is specifically /sd/data (for /la-data command)
         elif path == f"{SD_MOUNT_POINT}/data":
-            log(f"FS_DEBUG: Path is '{path}'. Listing its contents directly.")
+            log.log(f"FS_DEBUG: Path is '{path}'. Listing its contents directly.")
             try:
                 files_to_process = os.listdir(path)
                 files_to_process.sort()
             except OSError as e:
-                log(f"Error listing directory '{path}': {e}")
+                log.log(f"Error listing directory '{path}': {e}")
                 return [f"{prefix}└── Error listing contents: {e}"]
         else:  # Original logic for any other directory path
             try:
                 files_to_process = os.listdir(path)
                 files_to_process.sort()
             except OSError as e:
-                log(f"Error listing directory '{path}': {e}")
+                log.log(f"Error listing directory '{path}': {e}")
                 return [f"{prefix}└── Error listing contents: {e}"]
 
         count = len(files_to_process)
@@ -211,7 +211,9 @@ def get_hierarchical_list_with_sizes(
 
         return result
     except Exception as e:
-        log(f"General error in get_hierarchical_list_with_sizes for path '{path}': {e}")
+        log.log(
+            f"General error in get_hierarchical_list_with_sizes for path '{path}': {e}"
+        )
         return [f"{prefix}└── Error processing directory '{current_dir_name}': {e}"]
 
 
@@ -257,7 +259,7 @@ def get_file_list(path=".", prefix="", is_last=True):
 
         return result
     except Exception as e:
-        log(f"Error listing files: {e}")
+        log.log(f"Error listing files: {e}")
         return ["Error listing files"]
 
 
@@ -292,7 +294,7 @@ def remove_if_empty_or_file(path):
             os.remove(path)
             return True
     except Exception as e:
-        log(f"Error removing {path}: {e}")
+        log.log(f"Error removing {path}: {e}")
         return False
 
 
@@ -317,7 +319,7 @@ def remove_empty_parents(path):
 
         return True
     except Exception as e:
-        log(f"Error removing parent directories for {path}: {e}")
+        log.log(f"Error removing parent directories for {path}: {e}")
         return False
 
 
@@ -325,7 +327,7 @@ def get_hierarchical_json(path: str = ".", include_dirs: bool = True) -> list:
     """
     Returns a hierarchical JSON-style list of files and directories, including SD card files if present at root.
     """
-    log("get_hierarchical_json")
+    log.log("get_hierarchical_json")
     try:
         result = []
         # Special handling at root: merge internal and SD card files
@@ -335,7 +337,7 @@ def get_hierarchical_json(path: str = ".", include_dirs: bool = True) -> list:
                 internal_files.sort()
             except OSError as e:
                 internal_files = []
-                log(f"Error listing internal root: {e}")
+                log.log(f"Error listing internal root: {e}")
             # Check for SD card
             sd_present = is_dir(SD_MOUNT_POINT)
             files = list(internal_files)
@@ -375,5 +377,89 @@ def get_hierarchical_json(path: str = ".", include_dirs: bool = True) -> list:
 
         return result
     except Exception as e:
-        log(f"Error creating JSON file list: {e}")
+        log.log(f"Error creating JSON file list: {e}")
         return []
+
+
+def recursive_mkdir(path: str) -> bool:
+    """Creates a directory and all parent directories if they don't exist.
+    Uses print for internal status messages during creation.
+    Returns True on success, False on failure.
+    """
+    print(f"FS: Attempting to recursively create directory: {path}")
+    if not path:
+        print("FS: recursive_mkdir called with empty path.")
+        return False
+
+    # Handle paths starting with / correctly
+    parts = path.strip("/").split("/")
+    current_path = "/" if path.startswith("/") else ""
+
+    for part in parts:
+        if not part:  # Handle potential double slashes //
+            continue
+
+        # Ensure trailing slash for concatenation if current_path is not empty or just "/"
+        if current_path and not current_path.endswith("/"):
+            current_path += "/"
+
+        # Avoid double slash if root path is "/"
+        if current_path != "/" or part:
+            current_path += part
+
+        try:
+            uos.stat(current_path)
+        except OSError as e:
+            if e.args[0] == 2:  # ENOENT - Directory/file does not exist
+                try:
+                    uos.mkdir(current_path)
+                    print(f"FS: Created directory component: {current_path}")
+                except OSError as mkdir_e:
+                    print(
+                        f"FS: Error creating directory component '{current_path}': {mkdir_e}"
+                    )
+                    return False  # Signal failure
+            else:
+                print(f"FS: Error checking path component '{current_path}': {e}")
+                return False  # Signal failure
+
+    print(f"FS: Successfully ensured directory exists: {path}")
+    return True  # Signal success
+
+
+def remove_file(path: str) -> bool:
+    """Removes a file and logs the result.
+    Returns True on success, False on failure."""
+    try:
+        uos.remove(path)
+        log.log(f"FS: Removed {path}")
+        return True
+    except OSError as e:
+        log.log(f"FS: Error removing {path}: {e}")
+        return False
+
+
+def clear_directory(dir_path: str, file_extension: str | None = None) -> bool:
+    """Clears all files (or files with specific extension) from a directory.
+    Returns True if all files were cleared successfully, False otherwise."""
+    if not exists(dir_path):
+        return True
+
+    try:
+        entries = list(uos.ilistdir(dir_path))
+        log.log(f"FS: Found {len(entries)} entries in {dir_path}")
+
+        errors = 0
+        for entry in entries:
+            filename = entry[0]
+            file_type = entry[1]
+            if file_type == 32768:  # File on SD card (0x8000)
+                if file_extension is None or filename.endswith(f".{file_extension}"):
+                    if not remove_file(f"{dir_path}/{filename}"):
+                        errors += 1
+
+        return errors == 0
+
+    except Exception as e:
+        log.log(f"FS: Clear directory error: {e}")
+        return False
