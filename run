@@ -170,6 +170,11 @@ case "$COMMAND" in
         echo "Clearing logs on ESP32 at $ESP_IP..."
         make_request "http://$ESP_IP/log/clear" "POST"
         ;;
+clear-data)
+        check_sync_needed
+        echo "Clearing data logs on ESP32 at $ESP_IP..."
+        make_request "http://$ESP_IP/data/clear" "POST"
+        ;;
 
   log-add-test)
        check_sync_needed

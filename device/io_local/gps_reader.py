@@ -167,6 +167,15 @@ def _parse_gprmc(parts: list[str]):
                     update_rtc_if_needed(gmtime_tuple_current)
                     _rtc_synced = True
                     log("GPS: RTC synced on first fix.")
+                    # --- Call rtc.set_time_baseline ---
+                    # try:
+                    # import rtc as rtc
+                #
+                # rtc.set_time_baseline(gps_epoch, time.ticks_ms())
+                # Log message for baseline set is now in rtc.set_time_baseline
+                # except Exception as e_baseline:
+                # log(f"GPS: Error calling rtc.set_time_baseline: {e_baseline}")
+                # --- End call rtc.set_time_baseline ---
                 except (ValueError, IndexError, TypeError) as e:
                     data_log.report_error(
                         SENSOR_NAME,

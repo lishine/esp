@@ -4,6 +4,12 @@ from log import log, _get_log_filepath, get_latest_log_index, _MONTH_ABBR
 
 import uos
 
+# --- Synced Timestamp Utilities ---
+_baseline_epoch_s: int | None = None
+_baseline_ticks_ms: int | None = None
+_is_synced: bool = False  # Tracks if a valid baseline has been set
+# --- End Synced Timestamp Utilities ---
+
 
 def set_rtc_from_gmtime_tuple(gmtime_tuple: tuple) -> bool:
     """Set the RTC from a standard time.gmtime() tuple (year, month, mday, hour, minute, second, weekday, yearday).
@@ -85,6 +91,91 @@ def update_rtc_if_needed(gmtime_tuple_from_gps: tuple) -> bool:
         )
         return False
 
+
+# --- Synced Timestamp Utility Functions ---
+
+
+def set_time_baseline(epoch_seconds: int, current_ticks_ms: int) -> None:
+    """
+    Sets the baseline for synchronized time calculations.
+    This should be called when the system time (RTC) is known to be accurate.
+    """
+    global _baseline_epoch_s, _baseline_ticks_ms, _is_synced
+    _baseline_epoch_s = epoch_seconds
+    _baseline_ticks_ms = current_ticks_ms
+    _is_synced = True
+    # Using print for this critical setup message as log system might depend on this module.
+    log(
+        f"RTC: TimeUtils baseline set - Epoch: {epoch_seconds}, Ticks: {current_ticks_ms}"
+    )  # Changed print to log
+
+
+def is_time_synced() -> bool:
+    """Returns True if a time baseline has been established."""
+    global _is_synced
+    return _is_synced
+
+
+def get_synced_timestamp_components() -> (
+    tuple[tuple[int, int, int, int, int, int, int, int], int]
+):
+    """
+    Calculates the current UTC time components (gmtime tuple) and milliseconds
+    based on the established baseline and monotonic ticks.
+
+    If not synced, falls back to using time.time() and time.ticks_ms() % 1000
+    for a best-effort timestamp.
+
+    Returns:
+        tuple: (gmtime_tuple, milliseconds_part)
+               gmtime_tuple is (year, month, mday, hour, minute, second, weekday, yearday)
+    """
+    global _baseline_epoch_s, _baseline_ticks_ms, _is_synced
+
+    if not _is_synced or _baseline_epoch_s is None or _baseline_ticks_ms is None:
+        # Fallback: Use current system time directly if not synced.
+        fallback_s = time.time()
+        fallback_ms_part = time.ticks_ms() % 1000
+        return time.gmtime(fallback_s), fallback_ms_part
+
+    current_ticks = time.ticks_ms()
+    elapsed_ms = time.ticks_diff(current_ticks, _baseline_ticks_ms)
+
+    current_total_ms_from_baseline_epoch_start = (_baseline_epoch_s * 1000) + elapsed_ms
+
+    calculated_epoch_s = current_total_ms_from_baseline_epoch_start // 1000
+    calculated_ms_part = int(current_total_ms_from_baseline_epoch_start % 1000)
+
+    return time.gmtime(calculated_epoch_s), calculated_ms_part
+
+
+def format_timestamp_iso_ms(
+    utc_tuple: tuple[int, int, int, int, int, int, int, int], milliseconds: int
+) -> str:
+    """
+    Formats the timestamp as "YYYY-MM-DD_HH-MM-SS_mmm".
+    utc_tuple is (year, month, mday, hour, minute, second, weekday, yearday)
+    """
+    return (
+        f"{utc_tuple[0]:04d}-{utc_tuple[1]:02d}-{utc_tuple[2]:02d}_"
+        f"{utc_tuple[3]:02d}-{utc_tuple[4]:02d}-{utc_tuple[5]:02d}_{milliseconds:03d}"
+    )
+
+
+def get_formatted_synced_timestamp() -> str:
+    """
+    Returns a formatted timestamp string "YYYY-MM-DD_HH-MM-SS_mmm".
+    Uses synced time if available, otherwise falls back.
+    """
+    utc_tuple, ms_part = get_synced_timestamp_components()
+    return format_timestamp_iso_ms(utc_tuple, ms_part)
+
+
+# Initial status message - using log as it's available in this module
+log(
+    "RTC: Synced timestamp utilities loaded. Call set_time_baseline() after RTC/NTP sync."
+)
+# --- End Synced Timestamp Utility Functions ---
 
 # def _read_last_line(filepath):
 #     """Reads the last line of a file in binary mode."""

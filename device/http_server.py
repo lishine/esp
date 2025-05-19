@@ -30,7 +30,7 @@ from fs import (
     remove_empty_parents,
     is_dir,  # Added for /la-data
 )
-from sd import SD_MOUNT_POINT  # Added for /la-data
+from globals import SD_MOUNT_POINT  # Import from globals
 from netutils import get_client_ip, get_device_info
 from upload import handle_upload
 

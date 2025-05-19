@@ -2,9 +2,9 @@ import utime
 import uos
 import _thread
 
-from sd import SD_MOUNT_POINT
+from globals import SD_MOUNT_POINT  # Import from globals
 
-LOG_DIR = f"{SD_MOUNT_POINT}/lc/logs"
+LOG_DIR = f"{SD_MOUNT_POINT}/lc/logs"  # Initialize directly
 LOG_FILE_PREFIX = "log_"
 LOG_FILE_SUFFIX = ".txt"
 MAX_LOG_FILE_SIZE = 4000  # Bytes
@@ -290,11 +290,9 @@ def _get_log_filepath(index):
 
 
 def log(*args, **kwargs):
-    ticks_now_ms = utime.ticks_ms()
     now = utime.gmtime()
-    ms = ticks_now_ms % 1000
-    timestamp = "{:02d}-{}-{:04d} {:02d}:{:02d}:{:02d}.{:03d}".format(
-        now[2], _MONTH_ABBR[now[1] - 1], now[0], now[3], now[4], now[5], ms
+    timestamp = "{:02d}-{}-{:04d} {:02d}:{:02d}:{:02d}".format(
+        now[2], _MONTH_ABBR[now[1] - 1], now[0], now[3], now[4], now[5]
     )
     message = " ".join(str(arg) for arg in args)
     output = f"{_get_next_reset_counter()} {timestamp} {message}\n"

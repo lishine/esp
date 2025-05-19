@@ -1,6 +1,5 @@
 import uos, machine
-
-SD_MOUNT_POINT = "/sd"  # Changed mount point name
+from globals import SD_MOUNT_POINT  # Import from globals
 
 
 def init_sd():

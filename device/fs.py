@@ -3,7 +3,7 @@ import uos
 import os
 import time
 from log import log
-from sd import SD_MOUNT_POINT
+from globals import SD_MOUNT_POINT  # Import from globals
 
 
 def format_size(size):
