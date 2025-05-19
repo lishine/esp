@@ -5,7 +5,7 @@ import json
 
 from log import log, _get_next_reset_counter  # Use log directly
 from lib.queue import Queue, QueueEmpty, QueueFull  # Use the custom queue
-import sd  # For SD_MOUNT_POINT
+from globals import SD_MOUNT_POINT  # Import from globals
 
 # import io_local.gps_reader as gps_reader # Defer this import
 
@@ -22,7 +22,7 @@ ERROR_LOG_INTERVAL_S: int = 30
 QUEUE_SIZE: int = 500
 
 # --- Module-Level Globals and One-Time Setup ---
-SD_DATA_DIR: str = f"{sd.SD_MOUNT_POINT}/data"
+SD_DATA_DIR: str = f"{SD_MOUNT_POINT}/data"  # Use imported SD_MOUNT_POINT
 current_log_file_path: str | None = None  # For JSONL file
 is_log_file_renamed_this_session: bool = False
 
@@ -208,15 +208,11 @@ async def data_report_task():
                     # --- Proceed with Writing JSONL Data ---
                     sensor_values = data
 
-                    # Generate timestamp with milliseconds for the 't' field
-                    current_ticks_ms_for_t = time.ticks_ms()
-                    current_epoch_s_for_t = current_ticks_ms_for_t // 1000
-                    milliseconds_for_t = current_ticks_ms_for_t % 1000
-                    current_utc_tuple_for_t = time.gmtime(current_epoch_s_for_t)
+                    current_utc_tuple_for_t = time.gmtime()
 
                     formatted_t_stamp = (
                         f"{current_utc_tuple_for_t[0]:04d}-{current_utc_tuple_for_t[1]:02d}-{current_utc_tuple_for_t[2]:02d}_"
-                        f"{current_utc_tuple_for_t[3]:02d}-{current_utc_tuple_for_t[4]:02d}-{current_utc_tuple_for_t[5]:02d}_{milliseconds_for_t:03d}"
+                        f"{current_utc_tuple_for_t[3]:02d}-{current_utc_tuple_for_t[4]:02d}-{current_utc_tuple_for_t[5]:02d}"
                     )
 
                     entry_dict = {
@@ -353,3 +349,65 @@ def get_current_data_log_file_path() -> str | None:
     """Returns the full path of the current JSONL data log file."""
     global current_log_file_path
     return current_log_file_path
+
+
+def clear_data_logs() -> bool:
+    """Removes all data log files from the data directory."""
+    global current_log_file_path, is_log_file_renamed_this_session, SD_DATA_DIR
+    log(f"DataLog: Attempting to clear data logs in '{SD_DATA_DIR}'...")
+    cleared_count = 0
+    error_count = 0
+    try:
+        # Ensure the directory exists before listing
+        try:
+            uos.stat(SD_DATA_DIR)
+        except OSError as e:
+            if e.args[0] == 2:  # ENOENT
+                log(
+                    f"DataLog: Data directory '{SD_DATA_DIR}' not found. Nothing to clear."
+                )
+                return True  # Consider it successful if directory doesn't exist
+            else:
+                log(f"DataLog: Error checking data directory {SD_DATA_DIR}: {e}")
+                return False
+
+        entries = list(uos.ilistdir(SD_DATA_DIR))
+        log(
+            f"DataLog: Found {len(entries)} entries in '{SD_DATA_DIR}'"
+        )  # Log number of entries
+        for entry in entries:
+            filename = entry[0]
+            file_type = entry[1]  # 0 for file, 1 for directory
+            log(
+                f"DataLog: Processing entry: filename='{filename}', file_type={file_type}"
+            )  # Log entry details
+            full_path = f"{SD_DATA_DIR}/{filename}"
+
+            if file_type == 32768:  # It's a file on SD card (0x8000)
+                log(f"DataLog: Entry is a file: {full_path}")  # Log if entry is a file
+                try:
+                    uos.remove(full_path)
+                    log(f"DataLog: Removed file: {full_path}")
+                    cleared_count += 1
+                except OSError as e:
+                    log(f"DataLog: Error removing file {full_path}: {e}")
+                    error_count += 1
+            else:
+                log(
+                    f"DataLog: Entry is not a file (type {file_type}): {full_path}"
+                )  # Log if entry is not a file
+            # We are not recursively removing directories here, only files at the top level of SD_DATA_DIR
+
+        log(
+            f"DataLog: Finished clearing data logs. Removed {cleared_count} files, {error_count} errors."
+        )
+
+        # Reset module-level state related to the current log file
+        current_log_file_path = None
+        is_log_file_renamed_this_session = False
+        _setup_data_logging()  # Re-run setup to create a new initial log file
+
+        return error_count == 0
+    except Exception as e:
+        log(f"DataLog: Unexpected error during data log clearing: {e}")
+        return False
