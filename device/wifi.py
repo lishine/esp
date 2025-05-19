@@ -1,4 +1,3 @@
-import json
 import network
 import time
 import _thread
@@ -6,6 +5,7 @@ from machine import Pin
 from log import log
 import led
 import uasyncio as asyncio
+import settings_manager
 
 # Using log function now, assuming it's thread-safe or handles it internally
 # from log import log # Keep import if helper functions still use it
@@ -40,29 +40,9 @@ def get_wifi_lock():
     return wifi_lock
 
 
-# --- Configuration Loading/Saving (Keep as is) ---
-def load_wifi_config():
-    """Load WiFi configuration from wifi.json file"""
-    try:
-        with open("wifi.json", "r") as f:
-            return json.loads(f.read())
-    except Exception as e:
-        log(f"Error loading wifi.json: {e}. Creating default.")
-        config = {
-            "networks": [{"ssid": "", "password": ""}, {"ssid": "", "password": ""}]
-        }
-        save_wifi_config(config)
-        return config
-
-
-def save_wifi_config(config):
-    """Save WiFi configuration to wifi.json file"""
-    try:
-        with open("wifi.json", "w") as f:
-            f.write(json.dumps(config))
-    except Exception as e:
-        log(f"Error saving wifi.json: {e}")
-
+# --- Configuration Loading/Saving (REMOVED - Now handled by settings_manager) ---
+# def load_wifi_config(): ...
+# def save_wifi_config(config): ...
 
 # --- Network Interface Setup (Keep as is) ---
 sta = network.WLAN(network.STA_IF)
@@ -215,9 +195,44 @@ def wifi_thread_manager():
                     )
 
                 # Reload config before attempting connection
-                wifi_config = load_wifi_config()
+                # wifi_config = load_wifi_config() # OLD WAY
+                networks_list = settings_manager.get_wifi_networks()
+                if (
+                    not networks_list
+                ):  # Ensure there's a default if settings are somehow empty
+                    log(
+                        "WiFi Thread: No networks found in settings_manager, using emergency default."
+                    )
+                    networks_list = [
+                        {"ssid": "", "password": ""},
+                        {"ssid": "", "password": ""},
+                    ]
+                wifi_config = {
+                    "networks": networks_list
+                }  # Adapt to expected format for _try_connect_sync
+                log(
+                    f"WiFi Thread: Loaded networks from settings_manager: {len(networks_list)} networks."
+                )
 
-                # Reset state before attempts
+                # Check if any valid SSID is configured
+                has_valid_ssid = any(
+                    isinstance(net, dict) and net.get("ssid") for net in networks_list
+                )
+
+                if not has_valid_ssid:
+                    log(
+                        "WiFi Thread: All configured SSIDs are empty. Skipping connection attempts."
+                    )
+                    with get_wifi_lock():
+                        wifi_state["connecting"] = False
+                        wifi_state["error"] = "No SSIDs configured"
+                        wifi_state["led_state"] = (
+                            "disconnected"  # Or a specific 'no_config' state if added
+                        )
+                    time.sleep(RETRY_DELAY_AFTER_FAIL)  # Wait before re-checking config
+                    continue  # Skip the connection attempts and go to the next loop iteration
+
+                # Reset state before attempts (only if we are proceeding with attempts)
                 with get_wifi_lock():
                     wifi_state["current_network_index"] = -1
                     wifi_state["error"] = None

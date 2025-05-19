@@ -190,7 +190,6 @@ def register_buzzer_routes(app: HTTPServer):
     @app.route("/buzzer", methods=["GET"])
     def serve_buzzer_page(request: Request):
         """Serves the buzzer control HTML page."""
-        # Correct path for the device's root filesystem
         html_file = "/io_local/buzzer.html"
         # We need 'exists' here. Ensure it's imported or passed if necessary.
         # For now, assume 'exists' is available in this scope via http_server.

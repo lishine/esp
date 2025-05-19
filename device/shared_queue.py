@@ -1,4 +1,3 @@
-# device/shared_queue.py
 import uasyncio as asyncio  # Keep asyncio alias for Event if needed by queue.py
 from lib.queue import Queue, QueueFull, QueueEmpty  # Import custom queue and exceptions
 from log import log  # Optional: for logging queue creation if desired

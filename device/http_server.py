@@ -17,10 +17,9 @@ from log import (
 from wifi import (
     is_connected,
     get_ip,
-    save_wifi_config,
-    load_wifi_config,  # Import the function instead of the variable
     get_current_network,
 )
+import settings_manager
 
 from fs import (
     get_hierarchical_list_with_sizes,
@@ -218,11 +217,20 @@ def get_settings(request):
 def save_settings(request: Request):
     """Saves WiFi configuration received as JSON."""
     try:
-        config = json.loads(request.body)
-        if not isinstance(config, dict):
-            raise ValueError("Invalid JSON data format")
+        config_data = json.loads(request.body)  # Renamed to avoid confusion
+        if (
+            not isinstance(config_data, dict)
+            or "networks" not in config_data
+            or not isinstance(config_data["networks"], list)
+        ):
+            log(f"Invalid settings save format: {config_data}")
+            raise ValueError("Invalid JSON data format: Expected {'networks': [...]} ")
 
-        save_wifi_config(config)
+        # Assuming config_data is {"networks": [{"ssid": "...", "password": "..."}, ...]}
+        # settings_manager.set_wifi_networks expects just the list.
+        if not settings_manager.set_wifi_networks(config_data["networks"]):
+            log("Failed to save wifi settings via settings_manager")
+            raise Exception("Failed to save WiFi settings")
 
         return Response(
             body=json.dumps({"success": True, "message": "Settings saved"}),
@@ -388,16 +396,18 @@ def list_files_json(request):
 def get_settings_data(request):
     try:
         current_network = get_current_network()
-        # Load the config directly when the API is called
-        loaded_config = load_wifi_config()
+        # Load the config using settings_manager
+        networks_list = settings_manager.get_wifi_networks()
+        if (
+            not networks_list
+        ):  # Provide a default if empty, similar to old load_wifi_config
+            networks_list = [{"ssid": "", "password": ""}, {"ssid": "", "password": ""}]
+
         data = {
             "is_connected": is_connected(),
             "ip_address": get_ip(),
             "current_ssid": current_network["ssid"] if current_network else "",
-            "networks": loaded_config.get(
-                "networks",
-                [{"ssid": "", "password": ""}, {"ssid": "", "password": ""}],
-            ),
+            "networks": networks_list,  # Directly use the list from settings_manager
         }
         return Response(
             body=json.dumps(data), headers={"Content-Type": "application/json"}

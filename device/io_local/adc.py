@@ -1,8 +1,7 @@
-# device/io_local/adc.py
 import machine
 import uasyncio
 import time
-from log import log  # Assuming log module is in device/log.py
+from log import log
 
 # --- Constants ---
 ADC_PIN: int = 5

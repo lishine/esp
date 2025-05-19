@@ -2,8 +2,9 @@ import uasyncio as asyncio
 import uos
 import time
 import json
+import settings_manager  # Import settings_manager
 
-from log import log, _get_next_reset_counter  # Use log directly
+from log import log  # Use log directly
 from lib.queue import Queue, QueueEmpty, QueueFull  # Use the custom queue
 from globals import SD_MOUNT_POINT  # Import from globals
 
@@ -87,7 +88,7 @@ def _setup_data_logging():
 
     # 2. Set initial filename and flags
     is_log_file_renamed_this_session = False
-    reset_count = _get_next_reset_counter()  # Fetch current reset count
+    reset_count = settings_manager.get_reset_counter()  # Fetch current reset count
     initial_filename_only = (
         f"{reset_count:04d}.jsonl"  # e.g., 0001.jsonl (removed temp_)
     )
@@ -95,6 +96,42 @@ def _setup_data_logging():
     log(
         f"DataLog: Initial data log file set to: {current_log_file_path}"
     )  # Use log directly
+
+    # Check if the log file already exists. If not, write the configuration header.
+    try:
+        uos.stat(current_log_file_path)
+        # File exists, do nothing regarding header
+        log(
+            f"DataLog: File {current_log_file_path} already exists. Not writing config header."
+        )
+    except OSError as e:
+        if e.args[0] == 2:  # ENOENT - File does not exist
+            log(
+                f"DataLog: File {current_log_file_path} does not exist. Writing config header."
+            )
+            # Ensure settings_manager.load_settings() has been called prior to this module's import for actual config
+            config_to_write = settings_manager.get_setting("configuration")
+            if config_to_write is not None:
+                try:
+                    with open(
+                        current_log_file_path, "w"
+                    ) as f:  # Use "w" to create/overwrite for the header
+                        f.write(json.dumps(config_to_write) + "\n")
+                    log(
+                        f"DataLog: Successfully wrote config header to {current_log_file_path}"
+                    )
+                except Exception as write_e:
+                    log(
+                        f"DataLog: Error writing config header to {current_log_file_path}: {write_e}"
+                    )
+            else:
+                log(
+                    "DataLog: Could not retrieve 'configuration' from settings_manager to write header."
+                )
+        else:  # Other OSError
+            log(
+                f"DataLog: Error stating file {current_log_file_path} before writing header: {e}"
+            )
 
 
 _setup_data_logging()  # Execute this setup when data_log.py is imported
@@ -215,12 +252,20 @@ async def data_report_task():
                         f"{current_utc_tuple_for_t[3]:02d}-{current_utc_tuple_for_t[4]:02d}-{current_utc_tuple_for_t[5]:02d}"
                     )
 
-                    entry_dict = {
-                        "t": formatted_t_stamp,  # Use the new formatted timestamp with correct milliseconds
-                        "n": sensor_name,
-                        "v": sensor_values,
-                    }
-                    json_string = json.dumps(entry_dict)
+                    reset_counter_val = settings_manager.get_reset_counter()
+
+                    # Manually construct JSON string to ensure key order
+                    t_val_str = formatted_t_stamp
+                    r_val_str = f"{reset_counter_val:04d}"
+                    n_val_str = sensor_name  # sensor_name is already a string
+                    v_val_json_str = json.dumps(
+                        sensor_values
+                    )  # sensor_values is 'data'
+
+                    # Ensure sensor_name (n_val_str) is properly quoted if it's not already part of a pre-formatted string
+                    # json.dumps on sensor_name would add quotes, but here we are building the string.
+                    # Since sensor_name is expected to be a simple string, we'll add quotes.
+                    json_string = f'{{"t":"{t_val_str}","r":"{r_val_str}","n":"{n_val_str}","v":{v_val_json_str}}}'
                     try:
                         with open(current_log_file_path, "a") as f:
                             f.write(json_string + "\n")

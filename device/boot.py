@@ -6,6 +6,7 @@ print("loading modules at boot")
 import machine
 from sd_utils import init_sd
 from log import log
+import settings_manager
 
 print("end loading modules at main")
 
@@ -13,6 +14,12 @@ time.sleep(4)
 print("boot")
 
 init_sd()
+
+# Initialize settings manager and increment reset counter
+settings_manager.load_settings()
+settings_manager.increment_reset_counter()
+log(f"Settings loaded. Reset counter: {settings_manager.get_reset_counter()}")
+
 
 # rtc.set_time_from_last_log()  # Set time based on last log entry
 

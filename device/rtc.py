@@ -1,7 +1,7 @@
 import time
 import machine
 from log import log, _get_log_filepath, get_latest_log_index, _MONTH_ABBR
-
+import settings_manager
 import uos
 
 # --- Synced Timestamp Utilities ---
@@ -79,6 +79,20 @@ def update_rtc_if_needed(gmtime_tuple_from_gps: tuple) -> bool:
                 f"RTC: Updated by GPS time: {year}-{month:02d}-{day:02d} "
                 f"{hour:02d}:{minute:02d}:{second:02d} UTC"
             )
+            # Save the successful GPS time tuple to settings
+            # Ensure it's an 8-element tuple of integers for settings_manager
+            try:
+                date_to_save: tuple = tuple(
+                    int(gmtime_tuple_from_gps[i]) for i in range(8)
+                )
+                if settings_manager.set_last_date(date_to_save):
+                    log("RTC: Last sensible date (from GPS) saved to settings.")
+                else:
+                    log(
+                        "RTC: Failed to save last sensible date (from GPS) to settings."
+                    )
+            except (IndexError, ValueError, TypeError) as e_conv:
+                log(f"RTC: Could not convert GPS time tuple for saving: {e_conv}")
             return True
         else:
             log(
