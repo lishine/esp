@@ -7,6 +7,7 @@ import machine
 from sd_utils import init_sd
 from log import log
 import settings_manager
+import rtc  # Import the rtc module
 
 print("end loading modules at main")
 
@@ -20,6 +21,8 @@ settings_manager.load_settings()
 settings_manager.increment_reset_counter()
 log(f"Settings loaded. Reset counter: {settings_manager.get_reset_counter()}")
 
+# Attempt to set RTC from stored settings
+rtc.update_rtc_if_needed(from_settings=True)
 
 # rtc.set_time_from_last_log()  # Set time based on last log entry
 

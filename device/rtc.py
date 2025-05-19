@@ -34,74 +34,113 @@ def set_rtc_from_gmtime_tuple(gmtime_tuple: tuple) -> bool:
         return False
 
 
-def update_rtc_if_needed(gmtime_tuple_from_gps: tuple) -> bool:
-    """Checks if RTC needs update from GPS time and performs it."""
-    if not isinstance(gmtime_tuple_from_gps, tuple) or len(gmtime_tuple_from_gps) < 8:
-        log("RTC: Invalid gmtime_tuple_from_gps format or length.")
-        return False
+def update_rtc_if_needed(
+    gmtime_tuple_from_gps: tuple | None = None, from_settings: bool = False
+) -> bool:
+    """
+    Checks if RTC needs update and performs it.
+    Can be called with GPS time or to set time from stored settings.
+    """
+    if from_settings:
+        log("RTC: Attempting to set time from stored settings.")
+        last_date_from_settings = settings_manager.get_last_date()
+        if (
+            last_date_from_settings
+        ):  # settings_manager.get_last_date() should return a valid 8-int tuple or None
+            # The tuple from get_last_date should already be suitable for set_rtc_from_gmtime_tuple
+            if set_rtc_from_gmtime_tuple(last_date_from_settings):
+                log(f"RTC: Successfully set from settings: {last_date_from_settings}")
+                return True
+            else:
+                # set_rtc_from_gmtime_tuple would have logged its own error
+                log(
+                    f"RTC: Failed to set RTC from settings using date: {last_date_from_settings}"
+                )
+                return False
+        else:
+            log(
+                "RTC: No 'last_date' found in settings or it was invalid. Cannot set RTC from settings."
+            )
+            return False
+    elif gmtime_tuple_from_gps is not None:
+        # Existing logic for updating from GPS
+        if (
+            not isinstance(gmtime_tuple_from_gps, tuple)
+            or len(gmtime_tuple_from_gps) < 8
+        ):
+            log("RTC: Invalid gmtime_tuple_from_gps format or length.")
+            return False
 
-    if gmtime_tuple_from_gps[0] < 2023:  # Year validation
-        log("RTC: GPS year invalid.")
-        return False
+        if gmtime_tuple_from_gps[0] < 2023:  # Year validation
+            log("RTC: GPS year invalid.")
+            return False
 
-    try:
-        # Convert GPS time to epoch seconds
-        # mktime expects (year, month, day, hour, minute, second, weekday, yearday)
-        gps_epoch_seconds = time.mktime(gmtime_tuple_from_gps)  # type: ignore
-    except OverflowError:
-        # Ensure gmtime_tuple_from_gps has enough elements for slicing before logging
-        year, month, day = (
-            gmtime_tuple_from_gps[0],
-            gmtime_tuple_from_gps[1],
-            gmtime_tuple_from_gps[2],
-        )
-        log(f"RTC: GPS date {year:04d}-{month:02d}-{day:02d} out of range for mktime.")
-        return False
-    except Exception as e:
-        log(f"RTC: Error converting GPS time to epoch: {e}")
-        return False
-
-    # Get current RTC time
-    current_rtc_epoch_seconds = time.time()
-
-    if gps_epoch_seconds > current_rtc_epoch_seconds:
-        if set_rtc_from_gmtime_tuple(gmtime_tuple_from_gps):
-            # Ensure gmtime_tuple_from_gps has enough elements for string formatting
-            year, month, day, hour, minute, second = (
+        try:
+            gps_epoch_seconds = time.mktime(gmtime_tuple_from_gps)  # type: ignore
+        except OverflowError:
+            year, month, day = (
                 gmtime_tuple_from_gps[0],
                 gmtime_tuple_from_gps[1],
                 gmtime_tuple_from_gps[2],
-                gmtime_tuple_from_gps[3],
-                gmtime_tuple_from_gps[4],
-                gmtime_tuple_from_gps[5],
             )
             log(
-                f"RTC: Updated by GPS time: {year}-{month:02d}-{day:02d} "
-                f"{hour:02d}:{minute:02d}:{second:02d} UTC"
+                f"RTC: GPS date {year:04d}-{month:02d}-{day:02d} out of range for mktime."
             )
-            # Save the successful GPS time tuple to settings
-            # Ensure it's an 8-element tuple of integers for settings_manager
-            try:
-                date_to_save: tuple = tuple(
-                    int(gmtime_tuple_from_gps[i]) for i in range(8)
+            return False
+        except Exception as e:
+            log(f"RTC: Error converting GPS time to epoch: {e}")
+            return False
+
+        current_rtc_epoch_seconds = time.time()
+
+        if gps_epoch_seconds > current_rtc_epoch_seconds:
+            if set_rtc_from_gmtime_tuple(gmtime_tuple_from_gps):
+                year, month, day, hour, minute, second = (
+                    gmtime_tuple_from_gps[0],
+                    gmtime_tuple_from_gps[1],
+                    gmtime_tuple_from_gps[2],
+                    gmtime_tuple_from_gps[3],
+                    gmtime_tuple_from_gps[4],
+                    gmtime_tuple_from_gps[5],
                 )
-                if settings_manager.set_last_date(date_to_save):
-                    log("RTC: Last sensible date (from GPS) saved to settings.")
-                else:
-                    log(
-                        "RTC: Failed to save last sensible date (from GPS) to settings."
+                log(
+                    f"RTC: Updated by GPS time: {year}-{month:02d}-{day:02d} "
+                    f"{hour:02d}:{minute:02d}:{second:02d} UTC"
+                )
+                try:
+                    date_to_save: tuple = tuple(
+                        int(gmtime_tuple_from_gps[i]) for i in range(8)
                     )
-            except (IndexError, ValueError, TypeError) as e_conv:
-                log(f"RTC: Could not convert GPS time tuple for saving: {e_conv}")
-            return True
+                    # Only save if it's different from what might have been set from settings
+                    stored_last_date = settings_manager.get_last_date()
+                    if stored_last_date is None or date_to_save != stored_last_date:
+                        if settings_manager.set_last_date(date_to_save):
+                            log("RTC: Last sensible date (from GPS) saved to settings.")
+                        else:
+                            log(
+                                "RTC: Failed to save last sensible date (from GPS) to settings."
+                            )
+                    else:
+                        log(
+                            "RTC: GPS date is same as stored date. Not re-saving to settings."
+                        )
+                except (IndexError, ValueError, TypeError) as e_conv:
+                    log(f"RTC: Could not convert GPS time tuple for saving: {e_conv}")
+                return True
+            else:
+                log(
+                    "RTC: Update attempt with GPS time failed (set_rtc_from_gmtime_tuple returned False)."
+                )
+                return False
         else:
             log(
-                "RTC: Update attempt with GPS time failed (set_rtc_from_gmtime_tuple returned False)."
+                f"RTC: GPS time {gps_epoch_seconds} not newer than current RTC {current_rtc_epoch_seconds}. No update."
             )
             return False
     else:
+        # from_settings is False and gmtime_tuple_from_gps is None
         log(
-            f"RTC: GPS time {gps_epoch_seconds} not newer than current RTC {current_rtc_epoch_seconds}. No update."
+            "RTC: update_rtc_if_needed called without GPS data and not in from_settings mode."
         )
         return False
 
