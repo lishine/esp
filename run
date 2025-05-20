@@ -54,7 +54,6 @@ show_usage() {
     echo "  clear-log              - Clear the log file on the device"
     echo "  log-add-test           - Add 1000 test log entries"
     echo "  la/ls                  - List all files on the device (internal flash only)"
-    echo "  la-data                - List files in /sd/data only"
     echo "  fs-list                - Get JSON file listing for visual tools"
     echo "  free                   - Show free memory on the device"
     echo "  ping                   - Check if the device is responding"
@@ -184,26 +183,34 @@ clear-data)
 
   la|ls)
         check_sync_needed
-        if [ "$USE_MPREMOTE" = true ]; then # Renamed from USE_AMPY
+        FOLDER_ARG=""
+        if [ ${#ARGS[@]} -gt 0 ]; then
+            FOLDER_ARG="${ARGS[0]}"
+        fi
+
+        if [ "$USE_MPREMOTE" = true ]; then
           echo "Listing files on ESP32 using mpremote..."
-          # List root directory by default. Add path arg if needed: mpremote ls ":${ARGS[0]:-/}"
-          mpremote_cmd="mpremote ls :"
+          # If FOLDER_ARG is provided, use it, otherwise list root.
+          # Ensure path for mpremote starts with ':', remove leading '/' if present.
+          mpremote_path=":"
+          if [ -n "$FOLDER_ARG" ]; then
+              # Remove leading slash if present, as mpremote ls path is relative to root after ':'
+              mpremote_path=":${FOLDER_ARG#/}"
+          fi
+          mpremote_cmd="mpremote ls \"$mpremote_path\""
           echo "Running mpremote command: $mpremote_cmd"
           eval $mpremote_cmd
         else
-          echo "Listing all files on ESP32 at $ESP_IP..."
-          make_request "http://$ESP_IP/la"
+          if [ -n "$FOLDER_ARG" ]; then
+            echo "Listing files in '$FOLDER_ARG' on ESP32 at $ESP_IP..."
+            # URL encode the folder argument? For now, assume it's simple enough.
+            # The server-side Python code will handle leading slashes.
+            make_request "http://$ESP_IP/la?folder=$FOLDER_ARG"
+          else
+            echo "Listing all files on ESP32 at $ESP_IP..."
+            make_request "http://$ESP_IP/la"
+          fi
         fi
-        ;;
-
-  la-data)
-        check_sync_needed
-        # This command does not have an mpremote equivalent, HTTP only
-        if [ "$USE_MPREMOTE" = true ]; then
-          echo "Warning: 'la-data' command does not support --mpremote. Using HTTP API." >&2
-        fi
-        echo "Listing /sd/data contents on ESP32 at $ESP_IP..."
-        make_request "http://$ESP_IP/la-data"
         ;;
 
   fs-list)

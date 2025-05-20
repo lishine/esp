@@ -96,50 +96,28 @@ def reset(request):
 
 
 @app.route("/la")
-def list_files_hierarchical(request):
+def list_files_hierarchical(request: Request):
     try:
-        files = get_hierarchical_list_with_sizes()
+        folder_path = request.query_params.get("folder")
+        log.log(f"/la requested. Folder path: {folder_path}")
+
+        if folder_path:
+            if not folder_path.startswith("/"):
+                folder_path = "/" + folder_path
+
+            files = get_hierarchical_list_with_sizes(path=folder_path)
+        else:
+            files = get_hierarchical_list_with_sizes()
+
         return Response(
             body="\n".join(files), headers={"Content-Type": "text/plain; charset=utf-8"}
         )
     except Exception as e:
-        log.log(f"Error listing files for /la: {e}")
+        log.log(
+            f"Error listing files for /la (folder: {request.query_params.get('folder')}): {e}"
+        )
         return Response(
             body=f"Error listing files: {str(e)}", status=HTTP_INTERNAL_ERROR
-        )
-
-
-@app.route("/la-data")
-def list_sd_data_files(request):
-    """Lists only the contents of /sd/data."""
-    sd_data_path = "unknown (init error)"  # Initialize for except block
-    try:
-        sd_data_path = f"{SD_MOUNT_POINT}/data"
-        log.log(f"HTTP_SERVER: /la-data requested. Targeting path: {sd_data_path}")
-        if not is_dir(sd_data_path):
-            log.log(f"HTTP_SERVER: /la-data - Directory not found: {sd_data_path}")
-            return Response(
-                body=f"Error: Directory '{sd_data_path}' not found.",
-                status=HTTP_NOT_FOUND,
-                headers={"Content-Type": "text/plain; charset=utf-8"},
-            )
-
-        # Call get_hierarchical_list_with_sizes, starting directly at /sd/data
-        # The prefix will be empty, treating /sd/data as the root for this listing.
-        files = get_hierarchical_list_with_sizes(
-            path=sd_data_path, prefix="", _initial_files=None, _depth=0
-        )
-        return Response(
-            body="\n".join(files), headers={"Content-Type": "text/plain; charset=utf-8"}
-        )
-    except Exception as e:
-        log.log(f"Error listing files for /la-data ({sd_data_path}): {e}")
-        # Be careful about exposing sd_data_path if it wasn't defined due to an early error.
-        error_path_info = sd_data_path if "sd_data_path" in locals() else "SD data path"
-        return Response(
-            body=f"Error listing files for {error_path_info}: {str(e)}",
-            status=HTTP_INTERNAL_ERROR,
-            headers={"Content-Type": "text/plain; charset=utf-8"},
         )
 
 
