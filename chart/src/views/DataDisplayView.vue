@@ -25,11 +25,11 @@ const chartOptions = computed((): ECOption | null => {
 		{ id: 'yEscRpm', min: 0, max: 3000, seriesNames: ['ESC RPM'] },
 		{ id: 'yEscMah', min: 0, max: 15000, seriesNames: ['ESC mAh'] },
 		{ id: 'yEscTemp', min: 10, max: 120, seriesNames: ['ESC Temp'] },
-		{ id: 'yEscCurrent', min: 0, max: 200, seriesNames: ['ESC Current'] },
+		{ id: 'yEscCurrent', min: 0, max: 100, seriesNames: ['ESC Current'] },
 		{ id: 'yEscVoltage', min: 30, max: 55, seriesNames: ['ESC Voltage'] },
-		{ id: 'yDsTemps', min: 10, max: 60, seriesNamePrefix: 'DS Temp' }, // Catches DS Temp aq, DS Temp bq etc.
+		{ id: 'yDsTemps', min: 10, max: 120, seriesNamePrefix: 'DS Temp' }, // Catches DS Temp aq, DS Temp bq etc.
 		{ id: 'yThrottle', min: 990, max: 1500, seriesNames: ['Throttle'] },
-		{ id: 'yMotorCurrent', min: 0, max: 200, seriesNames: ['Motor Current'] },
+		{ id: 'yMotorCurrent', min: 0, max: 100, seriesNames: ['Motor Current'] },
 	]
 
 	const optionsToReturn = {
