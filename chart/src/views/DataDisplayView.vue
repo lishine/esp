@@ -67,13 +67,13 @@ const chartOptions = computed((): ECOption | null => {
 		legend: {
 			data: chartFormattedData.value.series.map((s: any) => s.name),
 			orient: 'horizontal',
-			bottom: 10,
+			bottom: 10, // Legend's bottom edge 10px from container bottom
 			type: 'scroll',
 		},
 		grid: {
 			left: '3%',
 			right: '4%',
-			bottom: '15%', // Adjusted to accommodate legend
+			bottom: '20%', // Adjusted to accommodate dataZoom and legend below it
 			containLabel: true,
 		},
 		xAxis: {
@@ -122,6 +122,7 @@ const chartOptions = computed((): ECOption | null => {
 				xAxisIndex: [0],
 				start: 0,
 				end: 100,
+				bottom: 50, // Position slider 50px from the bottom, above the legend
 				labelFormatter: (value: number) => {
 					const date = new Date(value)
 					if (isNaN(date.getTime())) {
