@@ -2,7 +2,7 @@
 import { onMounted, computed } from 'vue'
 import { useSessionDataStore } from '../stores/sessionData'
 import SensorChart from '../components/SensorChart.vue'
-import type { ECOption } from 'vue-echarts'
+import type { EChartsCoreOption as ECOption } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
 import { NSpin, NAlert, NCard, NButton, NSpace } from 'naive-ui'
 
 const sessionDataStore = useSessionDataStore()

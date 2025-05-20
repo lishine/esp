@@ -85,7 +85,7 @@ export default tseslint.config(
 	// Disable no-unsafe-assignment for .vue files and specific .ts files importing them
 	// where type resolution issues with Vue components are common.
 	{
-		files: ['**/*.vue', '**/*.ts'],
+		files: ['**/*.ts'],
 		rules: {
 			'@typescript-eslint/no-unsafe-assignment': 'off',
 			'@typescript-eslint/no-unsafe-argument': 'off',

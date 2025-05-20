@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import VChart, { type ECOption } from 'vue-echarts'
-import { use } from 'echarts/core'
+import VChart from 'vue-echarts'
+import { type EChartsCoreOption as ECOption, use } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart, BarChart } from 'echarts/charts' // Common chart types
 import {
