@@ -14,7 +14,7 @@ GPS_TX_PIN = 17  # ESP32 TX -> GPS RX
 GPS_RX_PIN = 18  # ESP32 RX <- GPS TX
 GPS_BAUDRATE = 9600  # Common default for NEO-xM modules
 COMM_TIMEOUT_MS = 5000  # 5 seconds timeout for communication status
-NO_FIX_LOG_INTERVAL_MS: int = 5000  # Interval for logging when no fix
+NO_FIX_LOG_INTERVAL_MS: int = 2000  # Interval for logging when no fix
 
 # --- State ---
 uart = None
@@ -103,11 +103,14 @@ def _parse_gpgga(parts):
         # Don't set global gps_fix to False here
 
 
+gps_fix_buzzed = False  # Default to no fix until we get a valid GGA or RMC
+
+
 def _parse_gprmc(parts: list[str]):
     """
     Parses GPRMC for Lat, Lon, Speed, Status, and performs a one-time RTC sync on first GPS fix.
     """
-    global gps_fix, gps_latitude, gps_longitude, gps_speed_knots, gps_heading_degrees, _rtc_synced, _seen_satellite_prns
+    global gps_fix, gps_latitude, gps_longitude, gps_speed_knots, gps_heading_degrees, _rtc_synced, _seen_satellite_prns, gps_fix_buzzed
 
     try:
         # Reset seen satellites at the start of a potential new cycle
@@ -119,8 +122,9 @@ def _parse_gprmc(parts: list[str]):
         current_fix = status == "A"
 
         # If fix was just achieved, play the GPS fixed sequence
-        if not prev_fix and current_fix:
+        if not prev_fix and current_fix and not gps_fix_buzzed:
             asyncio.create_task(control.gps_fixed())
+            gps_fix_buzzed = True
 
         gps_fix = current_fix
 

@@ -22,6 +22,7 @@ is_log_file_renamed_this_session = False
 _raw_data_queue_instance = None
 _log_data_queue_instance = None
 _error_queue_instance = None
+_live_sensor_data_cache: dict = {}  # ADDED
 
 
 from fs import recursive_mkdir, remove_file, clear_directory
@@ -150,14 +151,17 @@ def _write_jsonl_entry(
 
     try:
         timestamp_str, current_time = get_synced_timestamp()
-        entry = {
-            "t": timestamp_str,
-            "r": f"{settings_manager.get_reset_counter():04d}",
-            "n": sensor_name,
-            "v": data,
-        }
+        r_val = f"{settings_manager.get_reset_counter():04d}"
+        # Manually construct the JSON string to ensure key order: r, t, n, v.
+        # Each value is passed through json.dumps to ensure it's valid JSON (e.g., strings quoted, objects/arrays serialized).
+        entry_json_string = (
+            f'{{"r":{json.dumps(r_val)},'
+            f'"t":{json.dumps(timestamp_str)},'
+            f'"n":{json.dumps(sensor_name)},'
+            f'"v":{json.dumps(data)}}}'
+        )
         with open(current_log_file_path, "a") as f:
-            f.write(json.dumps(entry) + "\n")
+            f.write(entry_json_string + "\n")
         return True
     except Exception as e:
         log.log(f"DataLog: Write error for {sensor_name}: {e}")
@@ -176,8 +180,21 @@ async def data_report_task():
             try:
                 rename_file_if_rtc_updated()
                 sensor_name, data = raw_q.get_nowait()
+
+                # Get timestamp for this specific data point for the live cache
+                _timestamp_str_for_jsonl, current_sensor_time_for_cache = (
+                    get_synced_timestamp()
+                )
+
+                # _write_jsonl_entry will call get_synced_timestamp() again for its own needs for the file.
+                # This is acceptable; the critical part is that our cache uses a timely timestamp.
                 _write_jsonl_entry(sensor_name, data)
-                latest_data[sensor_name] = data
+
+                # Update latest_data with value and its specific timestamp
+                latest_data[sensor_name] = {
+                    "value": data,
+                    "timestamp": current_sensor_time_for_cache,
+                }
             except QueueEmpty:
                 break
             except Exception as e:
@@ -226,8 +243,18 @@ async def data_log_task() -> None:
                 break
 
         if data_buffer:
-            log_parts = [_format_value_for_log(k, v) for k, v in data_buffer.items()]
+            # Adjust formatting as v is now a dict {"value": ..., "timestamp": ...}
+            log_parts = [
+                _format_value_for_log(k, v.get("value"))
+                for k, v in data_buffer.items()
+                if isinstance(v, dict)  # Ensure v is a dictionary as expected
+            ]
             log.log(f"DATA | {' | '.join(log_parts)}")
+
+            global _live_sensor_data_cache  # ADDED
+            _live_sensor_data_cache = (
+                data_buffer.copy()
+            )  # ADDED - Update the live cache
 
         await asyncio.sleep(DATA_LOG_INTERVAL_S)
 
@@ -282,3 +309,9 @@ def clear_data_logs() -> bool:
         _setup_data_logging()
 
     return success
+
+
+def get_latest_live_data() -> dict:
+    """Returns a copy of the most recent live sensor data cache."""
+    global _live_sensor_data_cache
+    return _live_sensor_data_cache.copy()

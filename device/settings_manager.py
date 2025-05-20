@@ -25,7 +25,11 @@ def _default_settings() -> dict:
                 ]
             }
         },
-        "configuration": {"fan_enabled": False, "device_description": ""},
+        "configuration": {
+            "fan_enabled": False,
+            "device_description": "",
+            "ds_associations": [],
+        },
         "status": {
             "reset_counter": 0,
             "last_date": None,  # Stores 8-element datetime tuple or None
@@ -154,7 +158,7 @@ def get_setting(key_path: str, default_value=None):
             else:
                 # log(f"Invalid path or type in get_setting for key '{key}' in path '{key_path}'")
                 return default_value
-        return current_level
+        return current_level if current_level is not None else default_value
     except (KeyError, IndexError, TypeError):
         # log(f"Setting not found for path '{key_path}'. Returning default.")
         return default_value
@@ -295,6 +299,18 @@ def get_device_description() -> str:
     return str(val) if val is not None else ""
 
 
+def get_ds_associations() -> list:
+    """Retrieves DS18B20 sensor name associations."""
+    associations = get_setting("configuration.ds_associations", default_value=[])
+    if isinstance(associations, list):
+        # TODO: Optionally add validation for item structure here
+        return associations
+    log.log(
+        f"DS18B20 associations setting is not a list (type: {type(associations)}). Returning empty list."
+    )
+    return []
+
+
 # Specific Setters
 def set_wifi_networks(networks: list) -> bool:
     if not isinstance(networks, list):
@@ -347,6 +363,24 @@ def set_device_description(description: str) -> bool:
         log.log("set_device_description: description argument must be a string.")
         return False
     return update_setting("configuration.device_description", description)
+
+
+def set_ds_associations(associations: list) -> bool:
+    """Sets DS18B20 sensor name associations."""
+    if not isinstance(associations, list):
+        log.log("set_ds_associations: associations argument must be a list.")
+        return False
+    for item in associations:
+        if (
+            not isinstance(item, dict)
+            or not isinstance(item.get("name"), str)
+            or not isinstance(item.get("address"), str)
+        ):
+            log.log(
+                "set_ds_associations: Each item must be a dict with 'name' (str) and 'address' (str)."
+            )
+            return False
+    return update_setting("configuration.ds_associations", associations)
 
 
 # Initialize by loading settings when the module is imported.

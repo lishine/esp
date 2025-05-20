@@ -15,7 +15,7 @@ _reader_task = None
 SENSOR_NAME = "mc"
 FACTOR = 0.2
 
-LOW_CURRENT_LOG_INTERVAL_MS: int = 5000
+LOW_CURRENT_LOG_INTERVAL_MS: int = 2000
 
 
 def init_rms_motor_current_i2c() -> None:

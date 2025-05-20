@@ -5,6 +5,7 @@ import uasyncio as asyncio
 import time
 from log import log
 from . import data_log
+import settings_manager  # ADDED
 
 DS18B20_PIN = 4
 READ_INTERVAL_S = 2
@@ -78,18 +79,43 @@ async def _read_ds18b20_task():
 
             ds18_temperatures = temps  # Update the global state atomically
             # Report successful data to data_log
-            # Note: Reporting the list even if it contains None from individual sensor failures.
-            # Consider adding logic here to only report if all sensors were successful, if needed.
-            data_log.report_data(
-                SENSOR,
-                time.ticks_ms(),
-                dict(
-                    a=ds18_temperatures[0],
-                    b=ds18_temperatures[1],
-                    c=ds18_temperatures[2],
-                ),
-            )
-            # log("DS18B20 Temperatures:", ds18_temperatures) # Optional: Log readings
+
+            # Fetch DS associations to use custom names or ROM hex as keys
+            ds_associations = settings_manager.get_ds_associations()
+            rom_to_name_map = {
+                assoc["address"]: assoc["name"]
+                for assoc in ds_associations
+                if assoc.get("address") and assoc.get("name")
+            }
+
+            reported_temps_data = {}
+            for i, rom_bytearray in enumerate(roms):
+                if i < len(ds18_temperatures):  # Ensure temp exists for this rom
+                    temp_value = ds18_temperatures[i]
+                    # Ensure temp_value is not None before trying to use it,
+                    # or handle None appropriately if data_log expects numbers
+                    if temp_value is not None:
+                        rom_hex = "".join("{:02x}".format(x) for x in rom_bytearray)
+                        sensor_key = rom_to_name_map.get(
+                            rom_hex, rom_hex
+                        )  # Custom name or ROM hex
+                        reported_temps_data[sensor_key] = temp_value
+                    # else: # Sensor read failed, temp_value is None, optionally report this
+                    #     rom_hex = "".join("{:02x}".format(x) for x in rom_bytearray)
+                    #     sensor_key = rom_to_name_map.get(rom_hex, rom_hex)
+                    #     reported_temps_data[sensor_key] = None # Or skip
+                else:
+                    # This case should ideally not be reached if roms and ds18_temperatures are kept in sync
+                    rom_hex = "".join("{:02x}".format(x) for x in rom_bytearray)
+                    log(
+                        f"DS18B20: Temperature data missing for ROM {rom_hex} during report_data prep."
+                    )
+
+            if reported_temps_data:  # Only report if there's valid data
+                data_log.report_data(
+                    SENSOR, time.ticks_ms(), reported_temps_data  # SENSOR is "ds"
+                )
+            # log("DS18B20 Temperatures reported:", reported_temps_data) # Optional: Log readings
 
         except Exception as e:
             # Error during convert_temp or general task issue
