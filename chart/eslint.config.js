@@ -2,9 +2,9 @@ import globals from 'globals'
 import pluginJs from '@eslint/js'
 import tseslint from 'typescript-eslint'
 import pluginVue from 'eslint-plugin-vue'
-import eslintConfigPrettier from 'eslint-config-prettier' // Used to disable conflicting rules
+import eslintConfigPrettier from 'eslint-config-prettier'
 
-export default [
+export default tseslint.config(
 	{
 		// Global ignores
 		ignores: [
@@ -19,16 +19,50 @@ export default [
 			'eslint.config.js', // Ignore self
 		],
 	},
-	// Base JavaScript/ESLint recommended rules
-	pluginJs.configs.recommended,
+	pluginJs.configs.recommended, // Base JS rules
 
-	// TypeScript configurations
-	...tseslint.configs.strictTypeChecked, // Strictest, requires type info
+	// TypeScript files configuration
+	{
+		files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
+		extends: tseslint.configs.strictTypeChecked, // Apply strict TS rules
+		languageOptions: {
+			// parser: tseslint.parser, // This should be set by extends
+			parserOptions: {
+				project: ['./tsconfig.app.json'], // Path relative to eslint.config.js
+				tsconfigRootDir: import.meta.dirname, // Root for tsconfig.json resolution
+			},
+		},
+		// Rules specific to TS files can be added here to override/extend
+		rules: {
+			'@typescript-eslint/no-explicit-any': 'warn',
+			'@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+		},
+	},
 
-	// Vue 3 configurations
-	...pluginVue.configs['flat/recommended'], // Use flat config version for Vue
+	// Vue files configuration
+	{
+		files: ['**/*.vue'],
+		extends: pluginVue.configs['flat/recommended'], // Apply Vue recommended rules
+		languageOptions: {
+			// The parser for .vue files is vue-eslint-parser (set by extends)
+			// We configure the parser *it* uses for <script lang="ts">
+			parserOptions: {
+				parser: tseslint.parser, // TypeScript parser for script blocks
+				project: ['./tsconfig.app.json'], // Path relative to eslint.config.js
+				tsconfigRootDir: import.meta.dirname, // Root for tsconfig.json resolution
+				extraFileExtensions: ['.vue'], // Allow TS parser to see .vue files
+			},
+		},
+		// Rules specific to Vue files can be added here
+		rules: {
+			'vue/html-self-closing': ['error', { html: { void: 'always', normal: 'always', component: 'always' } }],
+			'vue/component-name-in-template-casing': ['error', 'kebab-case', { registeredComponentsOnly: true }],
+			'vue/custom-event-name-casing': ['error', 'kebab-case'],
+			'vue/no-v-html': 'warn',
+		},
+	},
 
-	// Configuration for all files (global language options, etc.)
+	// General rules applicable to all linted files (JS, TS, Vue script)
 	{
 		languageOptions: {
 			ecmaVersion: 'latest',
@@ -37,76 +71,29 @@ export default [
 				...globals.browser,
 				...globals.es2021,
 				...globals.node,
-				// Define any custom globals if needed, e.g.
-				// 'myGlobal': 'readonly',
 			},
 		},
-	},
-
-	// Configuration specific to .vue files
-	{
-		files: ['**/*.vue'],
-		languageOptions: {
-			parserOptions: {
-				parser: tseslint.parser, // Use typescript-eslint parser for <script> in .vue
-				project: ['./tsconfig.json', './tsconfig.app.json'],
-				extraFileExtensions: ['.vue'],
-			},
-		},
-		rules: {
-			// --- Vue Specific Strict Rules (Examples, adjust as needed) ---
-			'vue/html-self-closing': [
-				'error',
-				{
-					html: { void: 'always', normal: 'always', component: 'always' },
-					svg: 'always',
-					math: 'always',
-				},
-			],
-			'vue/component-name-in-template-casing': [
-				'error',
-				'kebab-case',
-				{
-					registeredComponentsOnly: true,
-					ignores: [],
-				},
-			],
-			'vue/custom-event-name-casing': ['error', 'kebab-case'],
-			'vue/no-v-html': 'warn', // Using v-html can be a security risk
-			// Add more Vue specific rules here
-		},
-	},
-
-	// Configuration specific to .ts, .tsx, .mts, .cts files
-	{
-		files: ['**/*.ts', '**/*.tsx', '**/*.mts', '**/*.cts'],
-		languageOptions: {
-			parserOptions: {
-				project: ['./tsconfig.json', './tsconfig.app.json'],
-			},
-		},
-		rules: {
-			// --- TypeScript Specific Strict Rules (Examples, adjust as needed) ---
-			'@typescript-eslint/no-explicit-any': 'warn', // Warn on 'any' type, consider 'error' for max strictness
-			'@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_' }], // Warn on unused vars
-			// Add more TS specific rules here
-		},
-	},
-
-	// General strictness rules applicable to JS/TS/Vue script parts
-	{
 		rules: {
 			'no-console': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
 			'no-debugger': process.env.NODE_ENV === 'production' ? 'warn' : 'off',
-			eqeqeq: ['error', 'always'], // Enforce === and !==
+			eqeqeq: ['error', 'always'],
 			'no-implicit-coercion': 'error',
-			// You can override or add more rules here for maximum strictness
-			// For example, to make 'any' an error:
-			// '@typescript-eslint/no-explicit-any': 'error',
 		},
 	},
 
-	// Prettier compatibility: This should be the LAST configuration object.
-	// It turns off ESLint rules that would conflict with Prettier.
-	eslintConfigPrettier,
-]
+	// Workaround for https://github.com/vuejs/vue-eslint-parser/issues/104
+	// Disable no-unsafe-assignment for .vue files and specific .ts files importing them
+	// where type resolution issues with Vue components are common.
+	{
+		files: ['**/*.vue', '**/*.ts'],
+		rules: {
+			'@typescript-eslint/no-unsafe-assignment': 'off',
+			'@typescript-eslint/no-unsafe-argument': 'off',
+			// If other no-unsafe-* rules trigger, they can be added here too for these files
+			// e.g., '@typescript-eslint/no-unsafe-call': 'off',
+			// '@typescript-eslint/no-unsafe-member-access': 'off',
+		},
+	},
+
+	eslintConfigPrettier // Must be last to turn off conflicting rules
+)
