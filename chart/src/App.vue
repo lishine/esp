@@ -7,7 +7,7 @@ let c = 'Title from variable C' // Declare 'c' - this will be used for the card 
 
 <template>
 	<div class="flex min-h-screen flex-col items-center justify-center bg-gray-100 p-4">
-		<n-card :title="d" class="max-w-md shadow-lg">
+		<n-card :title="c" class="max-w-md shadow-lg">
 			{/* Changed from 'd' to 'c' */} {/* Bind to the declared 'c' */}
 			<p class="mb-4 text-gray-700">This card's title is now bound to the variable 'c' from the script.</p>
 			<n-button type="primary" class="mt-4"> Primary Button </n-button>
