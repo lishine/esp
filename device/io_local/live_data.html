@@ -1,39 +1,243 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Live Data Status</title>
-    <meta charset="utf-8">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Data Status</title>
+    <link rel="icon" href="data:,">
     <style>
         body {
-            font-family: sans-serif;
-            padding: 1em;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 70px 0 0 0;
+            /* Default padding-top for header */
+            background-color: #eef2f7;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
         }
 
-        h1 {
-            color: #333;
+        .container {
+            width: 90%;
+            max-width: 800px;
+            margin-top: 30px;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            flex-grow: 1;
+            /* Allows container to fill space if content is short */
+            width: 100%;
+            /* Ensure it can go full width if needed */
+        }
+
+        header {
+            background-color: #007bff;
+            color: white;
+            padding: 0;
+            /* Remove padding as it's on the anchor now */
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            display: block;
+            /* Make header behave like a block for the anchor */
+            text-decoration: none;
+            /* Remove underline from link */
+            position: fixed;
+            /* Sticky header */
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            /* Ensure header is above other content */
+            height: 70px;
+            /* Default header height */
+            box-sizing: border-box;
+        }
+
+        header a {
+            display: flex;
+            /* For centering content vertically */
+            align-items: center;
+            /* For centering content vertically */
+            justify-content: center;
+            /* For centering content horizontally */
+            height: 100%;
+            /* Make anchor fill header */
+            padding: 0;
+            /* Padding is now on header a, not header itself */
+            color: white;
+            text-decoration: none;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 2.2em;
+            /* Slightly reduced default size */
+            font-weight: 300;
+        }
+
+        .data-section {
+            margin-bottom: 30px;
+            padding: 20px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            border: 1px solid #e0e0e0;
+        }
+
+        h2 {
+            color: #0056b3;
+            margin-top: 0;
+            margin-bottom: 20px;
+            font-weight: 500;
+            font-size: 1.5em;
         }
 
         p {
             color: #555;
+            margin: 10px 0;
+            font-size: 1.1em;
+            line-height: 1.5;
+        }
+
+        strong {
+            color: #0056b3;
+            font-weight: 600;
+        }
+
+        ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        li {
+            padding: 12px;
+            margin-bottom: 10px;
+            background-color: #fff;
+            border-radius: 6px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+            transition: transform 0.2s ease;
+        }
+
+        li:hover {
+            transform: translateX(5px);
         }
 
         code {
-            background-color: #eee;
+            background-color: #e9ecef;
             padding: 0.2em 0.4em;
-            border-radius: 3px;
+            border-radius: 4px;
+            font-family: 'Consolas', monospace;
+            font-size: 0.9em;
+        }
+
+        footer {
+            margin-top: auto;
+            padding: 20px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9em;
+            width: 100%;
+        }
+
+
+        .error {
+            color: #dc3545;
+            background-color: #f8d7da;
+            border: 1px solid #f5c6cb;
+            padding: 10px;
+            border-radius: 4px;
+            margin-top: 10px;
+        }
+
+        /* Responsive adjustments for mobile */
+        @media (max-width: 600px) {
+            body {
+                padding-top: 50px;
+                /* Adjusted padding-top for smaller sticky header */
+            }
+
+            header {
+                height: 50px;
+                /* Smaller header height on mobile */
+            }
+
+            header h1 {
+                font-size: 1.5em;
+                /* Smaller font size for header on mobile */
+            }
+
+            .container {
+                width: 100%;
+                margin-top: 0;
+                /* Remove top margin */
+                padding: 15px;
+                /* Reduced padding */
+                border-radius: 0;
+                /* No rounded corners */
+                box-shadow: none;
+                /* No shadow */
+                min-height: calc(100vh - 50px - 40px);
+                /* Full height minus header and footer */
+            }
+
+            .data-section {
+                padding: 15px;
+                margin-bottom: 20px;
+            }
+
+            h2 {
+                font-size: 1.3em;
+                margin-bottom: 15px;
+            }
+
+            p {
+                font-size: 1em;
+                margin: 8px 0;
+            }
+
+            li {
+                padding: 10px;
+                font-size: 0.9em;
+            }
+
+            footer {
+                padding: 15px;
+                font-size: 0.8em;
+                height: 40px;
+                /* Fixed footer height for calc() */
+                box-sizing: border-box;
+            }
         }
     </style>
 </head>
 <body>
-    <h1>Live Data Status</h1>
-    <h2>Current ADC Readings:</h2>
-    <p>From read_uv() w/ 2-point calib: <strong id="adc-value-uv">Loading...</strong></p>
-    <p>From read_u16() w/ linear factor: <strong id="adc-value-u16">Loading...</strong></p>
+    <header>
+        <a href="/">
+            <h1>Live Data Status</h1>
+        </a>
+    </header>
 
-    <h2>DS18B20 Sensors:</h2>
-    <p>Count: <strong id="ds18b20-count">Loading...</strong></p>
-    <div id="ds18b20-sensors">Loading...</div>
+    <div class="container">
+        <div class="data-section">
+            <h2>Current ADC Readings</h2>
+            <p>From read_uv() w/ 2-point calib: <strong id="adc-value-uv">Loading...</strong></p>
+            <p>From read_u16() w/ linear factor: <strong id="adc-value-u16">Loading...</strong></p>
+        </div>
+
+        <div class="data-section">
+            <h2>DS18B20 Sensors</h2>
+            <p>Count: <strong id="ds18b20-count">Loading...</strong></p>
+            <div id="ds18b20-sensors">Loading...</div>
+        </div>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 ESP32 Project</p>
+    </footer>
 
     <script>
         async function fetchData() {
@@ -43,9 +247,13 @@
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
                 const data = await response.json();
-                // Update both values
-                document.getElementById('adc-value-uv').textContent = data.adc_voltage_uv_2pt !== null ? data.adc_voltage_uv_2pt.toFixed(3) + ' V' : 'N/A';
-                document.getElementById('adc-value-u16').textContent = data.adc_voltage_u16_linear !== null ? data.adc_voltage_u16_linear.toFixed(3) + ' V' : 'N/A';
+
+                // Update ADC values
+                document.getElementById('adc-value-uv').textContent =
+                    data.adc_voltage_uv_2pt !== null ? data.adc_voltage_uv_2pt.toFixed(3) + ' V' : 'N/A';
+                document.getElementById('adc-value-u16').textContent =
+                    data.adc_voltage_u16_linear !== null ? data.adc_voltage_u16_linear.toFixed(3) + ' V' : 'N/A';
+
                 // Update DS18B20 data
                 const dsData = data.ds18b20;
                 document.getElementById('ds18b20-count').textContent = dsData ? dsData.count : 'N/A';
@@ -69,18 +277,20 @@
 
             } catch (error) {
                 console.error('Error fetching live data:', error);
-                // Update all display elements on error
+                // Update all display elements with error state
                 document.getElementById('adc-value-uv').textContent = 'Error';
                 document.getElementById('adc-value-u16').textContent = 'Error';
                 document.getElementById('ds18b20-count').textContent = 'Error';
-                document.getElementById('ds18b20-sensors').textContent = 'Error loading sensor data.';
+                document.getElementById('ds18b20-sensors').innerHTML =
+                    '<div class="error">Error loading sensor data. Please check your connection.</div>';
             }
         }
+
+        // Initial fetch when page loads
+        document.addEventListener('DOMContentLoaded', fetchData);
+
         // Fetch data every 2 seconds
-        // setInterval(fetchData, 2000);
-        // Fetch data on load
-        document.addEventListener('DOMContentLoaded', fetchData); // Fetch data when page loads
-        setInterval(fetchData, 2000); // Fetch data every 2 seconds
+        setInterval(fetchData, 2000);
     </script>
 </body>
 </html>

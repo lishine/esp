@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ESP32 Device Home</title>
+    <link rel="icon" href="data:,">
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            /* Adjust padding-top to account for sticky header height */
+            padding: 70px 0 0 0;
+            /* Default padding-top for header */
+            background-color: #eef2f7;
+            /* Light blue-gray background */
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 800px;
+            margin-top: 30px;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            flex-grow: 1;
+            /* Allows container to fill space if content is short */
+            width: 100%;
+            /* Ensure it can go full width if needed */
+        }
+
+        header {
+            background-color: #007bff;
+            /* Bright blue */
+            color: white;
+            padding: 20px 0;
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            position: fixed;
+            /* Sticky header */
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            /* Ensure header is above other content */
+            height: 70px;
+            /* Default header height */
+            box-sizing: border-box;
+            display: flex;
+            /* For centering content vertically */
+            align-items: center;
+            /* For centering content vertically */
+            justify-content: center;
+            /* For centering content horizontally */
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 2.2em;
+            /* Slightly reduced default size */
+            font-weight: 300;
+        }
+
+        nav ul {
+            list-style-type: none;
+            padding: 0;
+            margin-top: 30px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+        }
+
+        nav a {
+            text-decoration: none;
+            color: #fff;
+            /* White text */
+            font-weight: 500;
+            /* Medium weight */
+            padding: 18px 25px;
+            background-color: #0056b3;
+            /* Darker blue */
+            border: none;
+            border-radius: 8px;
+            display: block;
+            /* Make the whole area clickable */
+            text-align: center;
+            transition: background-color 0.3s ease, transform 0.2s ease;
+            font-size: 1.1em;
+        }
+
+        nav a:hover {
+            background-color: #004080;
+            /* Even darker blue on hover */
+            transform: translateY(-3px);
+            /* Slight lift effect */
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15);
+        }
+
+        footer {
+            margin-top: auto;
+            /* Pushes footer to the bottom */
+            padding: 20px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9em;
+            width: 100%;
+        }
+
+        /* Responsive adjustments for mobile */
+        @media (max-width: 600px) {
+            body {
+                padding-top: 50px;
+                /* Adjusted padding-top for smaller sticky header */
+            }
+
+            header {
+                height: 50px;
+                /* Smaller header height on mobile */
+                padding: 10px 0;
+                /* Reduced padding for smaller header */
+            }
+
+            header h1 {
+                font-size: 1.5em;
+                /* Smaller font size for header on mobile */
+            }
+
+            .container {
+                width: 100%;
+                margin-top: 0;
+                /* Remove top margin */
+                padding: 15px;
+                /* Reduced padding */
+                border-radius: 0;
+                /* No rounded corners */
+                box-shadow: none;
+                /* No shadow */
+                min-height: calc(100vh - 50px - 40px);
+                /* Full height minus header and footer */
+                display: flex;
+                flex-direction: column;
+                justify-content: center;
+                /* Center content vertically if it's short */
+            }
+
+            nav ul {
+                grid-template-columns: 1fr;
+                /* Stack links vertically */
+                gap: 15px;
+                /* Reduced gap */
+                margin-top: 20px;
+            }
+
+            nav a {
+                padding: 15px;
+                /* Adjusted padding */
+                font-size: 1em;
+                /* Adjusted font size */
+            }
+
+            footer {
+                padding: 15px;
+                font-size: 0.8em;
+                height: 40px;
+                /* Fixed footer height for calc() */
+                box-sizing: border-box;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>ESP32 Control Panel</h1>
+    </header>
+    <div class="container">
+        <nav>
+            <ul>
+                <li><a href="/settings">Device Settings</a></li>
+                <li><a href="/control">System Control</a></li>
+                <li><a href="/live-data">Live Data Stream</a></li>
+                <li><a href="/gps-settings">GPS Configuration</a></li>
+                <li><a href="/log/infinite">View System Logs</a></li>
+            </ul>
+        </nav>
+    </div>
+    <footer>
+        <p>&copy; 2024 ESP32 Project</p>
+    </footer>
+</body>
+</html>

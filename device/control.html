@@ -2,31 +2,279 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Fan Control</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ESP32 Device Control</title>
+    <link rel="icon" href="data:,">
     <style>
         body {
-            font-family: sans-serif;
-            margin: 2em;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 70px 0 0 0;
+            /* Default padding-top for header */
+            background-color: #eef2f7;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 800px;
+            margin-top: 30px;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            flex-grow: 1;
+            /* Allows container to fill space if content is short */
+            width: 100%;
+            /* Ensure it can go full width if needed */
+        }
+
+        header {
+            background-color: #007bff;
+            color: white;
+            padding: 0;
+            /* Remove padding as it's on the anchor now */
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            display: block;
+            /* Make header behave like a block for the anchor */
+            text-decoration: none;
+            /* Remove underline from link */
+            position: fixed;
+            /* Sticky header */
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            /* Ensure header is above other content */
+            height: 70px;
+            /* Default header height */
+            box-sizing: border-box;
+        }
+
+        header a {
+            display: flex;
+            /* For centering content vertically */
+            align-items: center;
+            /* For centering content vertically */
+            justify-content: center;
+            /* For centering content horizontally */
+            height: 100%;
+            /* Make anchor fill header */
+            padding: 0;
+            /* Padding is now on header a, not header itself */
+            color: white;
+            text-decoration: none;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 2.2em;
+            /* Slightly reduced default size */
+            font-weight: 300;
+        }
+
+        .control-group {
+            margin-bottom: 25px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            transition: box-shadow 0.3s ease;
+        }
+
+        .control-group:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        label {
+            display: block;
+            margin-bottom: 10px;
+            font-weight: 500;
+            color: #0056b3;
+            font-size: 1.1em;
+        }
+
+        input[type="number"],
+        textarea {
+            width: 100%;
+            padding: 12px;
+            margin-bottom: 15px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+            box-sizing: border-box;
+        }
+
+        input[type="number"]:focus,
+        textarea:focus {
+            border-color: #007bff;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
         }
 
         button {
-            font-size: 1.2em;
-            margin: 1em 0.5em;
-            padding: 0.5em 2em;
+            padding: 12px 20px;
+            margin-right: 10px;
+            margin-bottom: 10px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background-color: #0056b3;
+            color: white;
+            font-size: 1em;
+            font-weight: 500;
+            transition: all 0.3s ease;
+        }
+
+        button:hover {
+            background-color: #004080;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        button:active {
+            transform: translateY(0);
         }
 
         #status {
-            margin-top: 1em;
-            font-weight: bold;
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 500;
+            text-align: center;
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+        }
+
+        footer {
+            margin-top: auto;
+            padding: 20px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9em;
+            width: 100%;
+        }
+
+        /* Responsive adjustments for mobile */
+        @media (max-width: 600px) {
+            body {
+                padding-top: 50px;
+                /* Adjusted padding-top for smaller sticky header */
+            }
+
+            header {
+                height: 50px;
+                /* Smaller header height on mobile */
+            }
+
+            header h1 {
+                font-size: 1.5em;
+                /* Smaller font size for header on mobile */
+            }
+
+            .container {
+                width: 100%;
+                margin-top: 0;
+                /* Remove top margin */
+                padding: 15px;
+                /* Reduced padding */
+                border-radius: 0;
+                /* No rounded corners */
+                box-shadow: none;
+                /* No shadow */
+                min-height: calc(100vh - 50px - 40px);
+                /* Full height minus header and footer */
+            }
+
+            .control-group {
+                padding: 15px;
+                margin-bottom: 20px;
+            }
+
+            label {
+                font-size: 1em;
+                margin-bottom: 8px;
+            }
+
+            input[type="number"],
+            textarea {
+                padding: 10px;
+                font-size: 0.9em;
+                margin-bottom: 10px;
+            }
+
+            button {
+                padding: 10px 15px;
+                font-size: 0.9em;
+                margin-right: 5px;
+                margin-bottom: 5px;
+            }
+
+            #status {
+                padding: 10px;
+                font-size: 0.9em;
+            }
+
+            footer {
+                padding: 15px;
+                font-size: 0.8em;
+                height: 40px;
+                /* Fixed footer height for calc() */
+                box-sizing: border-box;
+            }
         }
     </style>
 </head>
 <body>
-    <h1>Fan Control</h1>
-    <button onclick="setFan(true)">Fan ON</button>
-    <button onclick="setFan(false)">Fan OFF</button>
-    <div id="status"></div>
+    <header>
+        <a href="/">
+            <h1>Device Control</h1>
+        </a>
+    </header>
+
+    <div class="container">
+        <div class="control-group">
+            <label>Fan Control</label>
+            <button onclick="setFan(true)">Fan ON</button>
+            <button onclick="setFan(false)">Fan OFF</button>
+        </div>
+
+        <div class="control-group">
+            <label>Buzzer Control</label>
+            <button onclick="sendBuzzerCommand('set', {state: true})">Buzzer ON</button>
+            <button onclick="sendBuzzerCommand('set', {state: false})">Buzzer OFF</button>
+        </div>
+
+        <div class="control-group">
+            <label for="duration">Beep Duration (ms)</label>
+            <input type="number" id="duration" value="100" min="10">
+            <button onclick="sendBeepCommand()">Beep</button>
+        </div>
+
+        <div class="control-group">
+            <label for="sequence">Buzzer Sequence</label>
+            <textarea id="sequence" rows="3" placeholder="e.g., 100:1, 50:0, 150:1"></textarea>
+            <button onclick="sendSequenceCommand()">Play Sequence</button>
+            <button onclick="sendBuzzerCommand('stop')">Stop</button>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <footer>
+        <p>&copy; 2024 ESP32 Project</p>
+    </footer>
+
     <script>
+        const statusDiv = document.getElementById('status');
+
         function setFan(on) {
             fetch('/api/control', {
                 method: 'POST',
@@ -36,14 +284,81 @@
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
-                        document.getElementById('status').textContent = 'Fan is now ' + (data.fan_on ? 'ON' : 'OFF');
+                        statusDiv.textContent = 'Fan is now ' + (data.fan_on ? 'ON' : 'OFF');
+                        statusDiv.style.backgroundColor = data.fan_on ? '#d4edda' : '#f8d7da';
+                        statusDiv.style.color = data.fan_on ? '#155724' : '#721c24';
                     } else {
-                        document.getElementById('status').textContent = 'Error: ' + (data.error || 'Unknown error');
+                        statusDiv.textContent = 'Error: ' + (data.error || 'Unknown error');
+                        statusDiv.style.backgroundColor = '#f8d7da';
+                        statusDiv.style.color = '#721c24';
                     }
                 })
                 .catch(err => {
-                    document.getElementById('status').textContent = 'Request failed: ' + err;
+                    statusDiv.textContent = 'Request failed: ' + err;
+                    statusDiv.style.backgroundColor = '#f8d7da';
+                    statusDiv.style.color = '#721c24';
                 });
+        }
+
+        async function sendBuzzerCommand(command, params = {}) {
+            const payload = { command, ...params };
+            statusDiv.textContent = 'Sending command...';
+            statusDiv.style.backgroundColor = '#fff3cd';
+            statusDiv.style.color = '#856404';
+
+            try {
+                const response = await fetch('/api/control', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(payload),
+                });
+                const result = await response.json();
+                if (response.ok && result.success) {
+                    statusDiv.textContent = `Success: ${result.message || 'Command sent.'}`;
+                    statusDiv.style.backgroundColor = '#d4edda';
+                    statusDiv.style.color = '#155724';
+                } else {
+                    statusDiv.textContent = `Error: ${result.error || response.statusText || 'Unknown error'}`;
+                    statusDiv.style.backgroundColor = '#f8d7da';
+                    statusDiv.style.color = '#721c24';
+                }
+            } catch (error) {
+                statusDiv.textContent = `Network Error: ${error.message}`;
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+            }
+        }
+
+        function sendBeepCommand() {
+            const durationInput = document.getElementById('duration');
+            const duration_ms = parseInt(durationInput.value, 10);
+            if (isNaN(duration_ms) || duration_ms <= 0) {
+                statusDiv.textContent = 'Error: Please enter a valid positive duration.';
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                return;
+            }
+            sendBuzzerCommand('beep', { duration_ms });
+        }
+
+        function sendSequenceCommand() {
+            const sequenceInput = document.getElementById('sequence');
+            const sequenceData = sequenceInput.value.trim();
+            if (!sequenceData) {
+                statusDiv.textContent = 'Error: Please enter a sequence string.';
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                return;
+            }
+            if (!sequenceData.match(/^(\s*\d+\s*:\s*[01]\s*,?)*$/)) {
+                statusDiv.textContent = 'Error: Invalid sequence format. Use duration:state (0 or 1), comma-separated.';
+                statusDiv.style.backgroundColor = '#f8d7da';
+                statusDiv.style.color = '#721c24';
+                return;
+            }
+            sendBuzzerCommand('sequence', { data: sequenceData });
         }
     </script>
 </body>

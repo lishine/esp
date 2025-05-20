@@ -22,15 +22,13 @@ from fs import (
     exists,
     remove_if_empty_or_file,
     remove_empty_parents,
-    is_dir,  # Added for /la-data
 )
 from globals import SD_MOUNT_POINT  # Import from globals
 from netutils import get_client_ip, get_device_info
 from upload import handle_upload
 
 import io_local.gps_config as gps_config
-from io_local.buzzer import register_buzzer_routes
-
+from io_local import control
 from io_local import adc as adc_module  # Import the ADC module (device/ is root)
 from io_local import ds18b20 as ds18b20_module  # Import the DS18B20 module
 from io_local import fan
@@ -715,31 +713,25 @@ def index(request: Request):
     host = request.headers.get("Host", "")
     log.log(f"Root Request: {request.method} {request.path} Host: {host}")
 
-    # Simplified check for captive portal based on Microdot example
-    # This might need adjustment based on specific device/client behavior
-    # is_captive_trigger = (
-    #     "captive.apple.com" in host or "connectivitycheck" in request.path
-    # )
+    home_page_file = "home.html"  # Assumes home.html is in the root of the device fs
 
-    # if is_captive_trigger:
-    #     log.log(
-    #         f"Detected potential captive portal trigger. Host: {host}, Path: {request.path}"
-    #     )
-    #     # Redirect to settings page, assuming device IP is 192.168.4.1 in AP mode
-    #     # Or use the actual device IP if known and in STA mode
-    #     device_ip = get_ip() or "192.168.4.1"  # Fallback IP
-    #     settings_url = f"http://{device_ip}/settings"
-    #     log.log(f"Redirecting captive portal request to {settings_url}")
-    #     return Response.redirect(settings_url)  # Use the redirect helper
-
-    # Default action for root: redirect to settings
-    return Response.redirect("/settings")
+    try:
+        with open(home_page_file, "r") as f:
+            content = f.read()
+        return Response(
+            body=content,
+            status=HTTP_OK,
+            headers={"Content-Type": "text/html; charset=utf-8"},
+        )
+    except Exception as e:
+        log.log(f"Error reading {home_page_file}: {e}")
+        return Response(
+            body=f"Error reading {home_page_file}: {str(e)}", status=HTTP_INTERNAL_ERROR
+        )
 
 
 # from captive import register_captive_portal_routes
-
 # register_captive_portal_routes(app)
-register_buzzer_routes(app)
 
 
 @app.route("/control", methods=["GET"])
@@ -761,30 +753,7 @@ def control_page(request: Request):
 
 @app.route("/api/control", methods=["POST"])
 def api_control(request: Request):
-    try:
-        data = json.loads(request.body)
-        on = data.get("on")
-        if not isinstance(on, bool):
-            return Response(
-                body=json.dumps(
-                    {"success": False, "error": "Missing or invalid 'on' parameter"}
-                ),
-                status=HTTP_BAD_REQUEST,
-                headers={"Content-Type": "application/json"},
-            )
-        fan.set_fan(on)
-        return Response(
-            body=json.dumps({"success": True, "fan_on": on}),
-            status=HTTP_OK,
-            headers={"Content-Type": "application/json"},
-        )
-    except Exception as e:
-        log.log(f"Error in /api/control: {e}")
-        return Response(
-            body=json.dumps({"success": False, "error": str(e)}),
-            status=HTTP_INTERNAL_ERROR,
-            headers={"Content-Type": "application/json"},
-        )
+    return control.handle_control_api(request)
 
 
 def start_server():

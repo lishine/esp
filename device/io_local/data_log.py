@@ -11,7 +11,7 @@ from file_utils import (
 )
 
 DATA_REPORT_INTERVAL_MS = 500
-DATA_LOG_INTERVAL_S = 5
+DATA_LOG_INTERVAL_S = 4
 ERROR_LOG_INTERVAL_S = 30
 QUEUE_SIZE = 500
 
@@ -114,23 +114,20 @@ def report_error(sensor_name: str, timestamp: int, error_msg: str) -> None:
         log.log(f"DataLog: Error queue full. Dropping error from {sensor_name}")
 
 
-# DOES NOT WORK CURRENTLY
 def rename_file_if_rtc_updated() -> bool:
     """Renames the log file if RTC has been updated from GPS during this session.
     Only attempts rename once per session."""
     global current_log_file_path, is_log_file_renamed_this_session
     from rtc import get_rtc_set_with_time
 
-    if (
-        not get_rtc_set_with_time()
-        or not current_log_file_path
-        or is_log_file_renamed_this_session
-    ):
+    rtc_is_set = get_rtc_set_with_time()
+    # Only perform detailed logging if RTC is considered set, to reduce log spam.
+
+    if not rtc_is_set or not current_log_file_path or is_log_file_renamed_this_session:
         return False
 
     try:
         new_path = generate_filename(SD_DATA_DIR, DATA_LOG_EXTENSION)
-
         if current_log_file_path == new_path:
             is_log_file_renamed_this_session = True
             return False

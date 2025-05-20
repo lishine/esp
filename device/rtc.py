@@ -39,6 +39,7 @@ def get_rtc_set_with_time() -> bool:
 def update_rtc_if_needed(
     gmtime_tuple_from_gps: tuple | None = None, from_settings: bool = False
 ) -> bool:
+    global rtc_set_with_time
     """
     Checks if RTC needs update and performs it.
     Can be called with GPS time or to set time from stored settings.

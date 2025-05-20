@@ -1,6 +1,7 @@
 from machine import UART, Pin, RTC  # Added RTC
 import uasyncio as asyncio
 import time
+from io_local import control
 import rtc
 import log
 from . import data_log
@@ -115,7 +116,13 @@ def _parse_gprmc(parts: list[str]):
         # --- Basic Fix Status & Speed ---
         status = parts[2] if len(parts) > 2 else "V"
         prev_fix = gps_fix
-        gps_fix = status == "A"
+        current_fix = status == "A"
+
+        # If fix was just achieved, play the GPS fixed sequence
+        if not prev_fix and current_fix:
+            asyncio.create_task(control.gps_fixed())
+
+        gps_fix = current_fix
 
         # Update Speed
         try:

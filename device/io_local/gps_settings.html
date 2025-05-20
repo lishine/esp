@@ -1,75 +1,343 @@
-thumb
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>GPS Settings</title>
+    <link rel="icon" href="data:,">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>GPS Settings</title>
     <style>
         body {
-            font-family: sans-serif;
-            padding: 15px;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 70px 0 0 0;
+            /* Default padding-top for header */
+            background-color: #eef2f7;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 800px;
+            margin-top: 30px;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            flex-grow: 1;
+            /* Allows container to fill space if content is short */
+            width: 100%;
+            /* Ensure it can go full width if needed */
+        }
+
+        header {
+            background-color: #007bff;
+            color: white;
+            padding: 0;
+            /* Remove padding as it's on the anchor now */
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            display: block;
+            /* Make header behave like a block for the anchor */
+            text-decoration: none;
+            /* Remove underline from link */
+            position: fixed;
+            /* Sticky header */
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            /* Ensure header is above other content */
+            height: 70px;
+            /* Default header height */
+            box-sizing: border-box;
+        }
+
+        header a {
+            display: flex;
+            /* For centering content vertically */
+            align-items: center;
+            /* For centering content vertically */
+            justify-content: center;
+            /* For centering content horizontally */
+            height: 100%;
+            /* Make anchor fill header */
+            padding: 0;
+            /* Padding is now on header a, not header itself */
+            color: white;
+            text-decoration: none;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 2.2em;
+            /* Slightly reduced default size */
+            font-weight: 300;
         }
 
         .setting {
-            margin-bottom: 15px;
-            padding: 10px;
-            border: 1px solid #ccc;
-            border-radius: 5px;
+            margin-bottom: 25px;
+            padding: 20px;
+            border-radius: 8px;
+            background-color: #f8f9fa;
+            border: 1px solid #e0e0e0;
+            transition: box-shadow 0.3s ease;
+        }
+
+        .setting:hover {
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+        }
+
+        .setting.reader-control {
+            background-color: #e8f4ff;
+            border-color: #b8daff;
+        }
+
+        .setting.danger-zone {
+            background-color: #fff8f8;
+            border-color: #f5c6cb;
         }
 
         label {
             display: inline-block;
-            min-width: 120px;
+            min-width: 150px;
+            color: #0056b3;
+            font-weight: 500;
+            margin-bottom: 10px;
         }
 
-        input[type=number] {
-            width: 60px;
+        input[type="number"] {
+            width: 80px;
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+
+        input[type="number"]:focus {
+            border-color: #007bff;
+            outline: none;
+            box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.1);
         }
 
         button {
-            margin-left: 10px;
-            padding: 5px 10px;
+            padding: 10px 20px;
+            margin: 0 10px;
+            border: none;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            background-color: #0056b3;
+            color: white;
+        }
+
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        button.success {
+            background-color: #28a745;
+        }
+
+        button.success:hover {
+            background-color: #218838;
+        }
+
+        button.danger {
+            background-color: #dc3545;
+        }
+
+        button.danger:hover {
+            background-color: #c82333;
         }
 
         #status {
-            margin-top: 15px;
-            font-weight: bold;
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            font-weight: 500;
+            text-align: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+        }
+
+        #status.visible {
+            opacity: 1;
+        }
+
+        #status.success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+
+        #status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+
+        #status.warning {
+            background-color: #fff3cd;
+            color: #856404;
+            border: 1px solid #ffeeba;
+        }
+
+        .info-text {
+            font-size: 0.9em;
+            color: #666;
+            margin-top: 10px;
+            font-style: italic;
+        }
+
+        footer {
+            margin-top: auto;
+            padding: 20px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9em;
+            width: 100%;
+        }
+
+
+        #readerStatus {
+            display: inline-block;
+            margin-left: 15px;
+            font-weight: 500;
+            padding: 5px 10px;
+            border-radius: 4px;
+            background-color: #f8f9fa;
+        }
+
+        /* Responsive adjustments for mobile */
+        @media (max-width: 600px) {
+            body {
+                padding-top: 50px;
+                /* Adjusted padding-top for smaller sticky header */
+            }
+
+            header {
+                height: 50px;
+                /* Smaller header height on mobile */
+            }
+
+            header h1 {
+                font-size: 1.5em;
+                /* Smaller font size for header on mobile */
+            }
+
+            .container {
+                width: 100%;
+                margin-top: 0;
+                /* Remove top margin */
+                padding: 15px;
+                /* Reduced padding */
+                border-radius: 0;
+                /* No rounded corners */
+                box-shadow: none;
+                /* No shadow */
+                min-height: calc(100vh - 50px - 40px);
+                /* Full height minus header and footer */
+            }
+
+            .setting {
+                padding: 15px;
+                margin-bottom: 20px;
+            }
+
+            label {
+                font-size: 1em;
+                margin-bottom: 8px;
+                min-width: 120px;
+                /* Adjust if needed */
+            }
+
+            input[type="number"] {
+                padding: 8px;
+                font-size: 0.9em;
+                width: 60px;
+                /* Adjust if needed */
+            }
+
+            button {
+                padding: 8px 15px;
+                font-size: 0.9em;
+                margin: 5px;
+                /* Adjust margin for better stacking */
+            }
+
+            #readerStatus {
+                margin-left: 10px;
+                font-size: 0.9em;
+            }
+
+            .info-text {
+                font-size: 0.8em;
+            }
+
+            #status {
+                padding: 10px;
+                font-size: 0.9em;
+            }
+
+            footer {
+                padding: 15px;
+                font-size: 0.8em;
+                height: 40px;
+                /* Fixed footer height for calc() */
+                box-sizing: border-box;
+            }
         }
     </style>
 </head>
 <body>
-    <h1>GPS Settings</h1>
+    <header>
+        <a href="/">
+            <h1>GPS Settings</h1>
+        </a>
+    </header>
 
-    <!-- Reader Control Section -->
-    <div class="setting" style="background-color: #f0f8ff;">
-        <label>GPS Reader Task:</label>
-        <button id="startReaderBtn" style="background-color: #ddffdd;">Enable Reader</button>
-        <button id="stopReaderBtn" style="background-color: #ffdddd;">Disable Reader</button>
-        <span id="readerStatus" style="margin-left: 10px;">(Unknown)</span>
-        <p style="font-size: 0.8em; color: #666;">Disable the reader before using Set Rate or Factory Reset.</p>
+    <div class="container">
+        <div class="setting reader-control">
+            <label>GPS Reader Task:</label>
+            <button id="startReaderBtn" class="success">Enable Reader</button>
+            <button id="stopReaderBtn" class="danger">Disable Reader</button>
+            <span id="readerStatus">(Unknown)</span>
+            <p class="info-text">Disable the reader before using Set Rate or Factory Reset.</p>
+        </div>
+
+        <div class="setting">
+            <label>Navigation Rate:</label>
+            <span id="currentRate">--</span> Hz
+            <button id="getRateBtn">Retrieve Current</button>
+        </div>
+
+        <div class="setting">
+            <label for="newRate">Set New Rate (Hz):</label>
+            <input type="number" id="newRate" name="newRate" min="1" max="10" value="1">
+            <button id="setRateBtn">Set Rate</button>
+        </div>
+
+        <div class="setting danger-zone">
+            <label>Factory Reset:</label>
+            <button id="factoryResetBtn" class="danger">Reset GPS to Defaults</button>
+            <p class="info-text">Warning: This will erase all custom configurations on the GPS module.</p>
+        </div>
+
+        <div id="status"></div>
     </div>
 
-    <div class="setting">
-        <label>Navigation Rate:</label>
-        <span id="currentRate">--</span> Hz
-        <button id="getRateBtn">Retrieve Current</button>
-    </div>
-
-    <div class="setting">
-        <label for="newRate">Set New Rate (Hz):</label>
-        <input type="number" id="newRate" name="newRate" min="1" max="10" value="1">
-        <button id="setRateBtn">Set Rate</button>
-    </div>
-
-    <!-- Factory Reset Section -->
-    <div class="setting" style="border-color: #ffcccc;">
-        <label>Factory Reset:</label>
-        <button id="factoryResetBtn" style="background-color: #ffdddd; color: #a00;">Reset GPS to Defaults</button>
-        <p style="font-size: 0.8em; color: #666;">Warning: This will erase all custom configurations on the GPS module.
-        </p>
-    </div>
-
-    <div id="status"></div>
+    <footer>
+        <p>&copy; 2024 ESP32 Project</p>
+    </footer>
 
     <script>
         const getRateBtn = document.getElementById('getRateBtn');
@@ -77,23 +345,26 @@ thumb
         const currentRateSpan = document.getElementById('currentRate');
         const newRateInput = document.getElementById('newRate');
         const factoryResetBtn = document.getElementById('factoryResetBtn');
-        const startReaderBtn = document.getElementById('startReaderBtn'); // Get reader buttons
+        const startReaderBtn = document.getElementById('startReaderBtn');
         const stopReaderBtn = document.getElementById('stopReaderBtn');
-        const readerStatusSpan = document.getElementById('readerStatus'); // Get reader status span
+        const readerStatusSpan = document.getElementById('readerStatus');
         const statusDiv = document.getElementById('status');
 
-        function showStatus(message, isError = false) {
+        function showStatus(message, type = 'success') {
             statusDiv.textContent = message;
-            statusDiv.style.color = isError ? 'red' : 'green';
-            // Clear status after a few seconds
-            setTimeout(() => { statusDiv.textContent = ''; }, 5000);
+            statusDiv.className = `visible ${type}`;
+            setTimeout(() => {
+                statusDiv.style.opacity = '0';
+                setTimeout(() => {
+                    statusDiv.textContent = '';
+                    statusDiv.className = '';
+                }, 300);
+            }, 5000);
         }
 
-        // --- Reader Control Button Event Listeners ---
         async function controlReader(action) {
             const actionText = action === 'start_reader' ? 'Enabling' : 'Disabling';
-            statusDiv.textContent = `${actionText} reader...`;
-            statusDiv.style.color = 'black';
+            showStatus(`${actionText} reader...`, 'warning');
             readerStatusSpan.textContent = '(Processing...)';
             try {
                 const response = await fetch('/api/gps-settings/data', {
@@ -103,14 +374,14 @@ thumb
                 });
                 const data = await response.json();
                 if (response.ok && data.success) {
-                    showStatus(data.message || `${actionText} successful.`);
+                    showStatus(data.message || `${actionText} successful.`, 'success');
                     readerStatusSpan.textContent = action === 'start_reader' ? '(Enabled)' : '(Disabled)';
                 } else {
                     throw new Error(data.message || `Failed to ${actionText.toLowerCase()} reader.`);
                 }
             } catch (error) {
                 console.error(`Error ${actionText.toLowerCase()} reader:`, error);
-                showStatus(`Error: ${error.message}`, true);
+                showStatus(`Error: ${error.message}`, 'error');
                 readerStatusSpan.textContent = '(Error)';
             }
         }
@@ -118,11 +389,8 @@ thumb
         startReaderBtn.addEventListener('click', () => controlReader('start_reader'));
         stopReaderBtn.addEventListener('click', () => controlReader('stop_reader'));
 
-        // --- Existing Listeners ---
         getRateBtn.addEventListener('click', async () => {
-            // Optional: Add check for readerStatusSpan.textContent !== '(Disabled)' and show warning?
-            statusDiv.textContent = 'Retrieving rate...';
-            statusDiv.style.color = 'black';
+            showStatus('Retrieving rate...', 'warning');
             currentRateSpan.textContent = '--';
             try {
                 const response = await fetch('/api/gps-settings/data', {
@@ -133,25 +401,23 @@ thumb
                 const data = await response.json();
                 if (response.ok && data.success && data.rate) {
                     currentRateSpan.textContent = data.rate.rate_hz;
-                    showStatus('Rate retrieved successfully.');
+                    showStatus('Rate retrieved successfully.', 'success');
                 } else {
                     throw new Error(data.message || 'Failed to retrieve rate.');
                 }
             } catch (error) {
                 console.error('Error getting rate:', error);
-                showStatus(`Error: ${error.message}`, true);
+                showStatus(`Error: ${error.message}`, 'error');
             }
         });
 
         setRateBtn.addEventListener('click', async () => {
-            // Optional: Add check for readerStatusSpan.textContent !== '(Disabled)' and show warning?
             const rate = parseInt(newRateInput.value, 10);
             if (isNaN(rate) || rate < 1 || rate > 10) {
-                showStatus('Please enter a valid rate between 1 and 10 Hz.', true);
+                showStatus('Please enter a valid rate between 1 and 10 Hz.', 'error');
                 return;
             }
-            statusDiv.textContent = `Setting rate to ${rate} Hz...`;
-            statusDiv.style.color = 'black';
+            showStatus(`Setting rate to ${rate} Hz...`, 'warning');
             try {
                 const response = await fetch('/api/gps-settings/data', {
                     method: 'POST',
@@ -160,24 +426,22 @@ thumb
                 });
                 const data = await response.json();
                 if (response.ok && data.success) {
-                    showStatus(`Rate set to ${rate} Hz successfully. Retrieve again to confirm.`);
+                    showStatus(`Rate set to ${rate} Hz successfully. Retrieve again to confirm.`, 'success');
                 } else {
                     throw new Error(data.message || 'Failed to set rate.');
                 }
             } catch (error) {
                 console.error('Error setting rate:', error);
-                showStatus(`Error: ${error.message}`, true);
+                showStatus(`Error: ${error.message}`, 'error');
             }
         });
 
         factoryResetBtn.addEventListener('click', async () => {
-            // Optional: Add check for readerStatusSpan.textContent !== '(Disabled)' and show warning?
             if (!confirm('Are you sure you want to reset the GPS module to factory defaults? All custom settings will be lost.')) {
-                showStatus('Factory reset cancelled.', false);
+                showStatus('Factory reset cancelled.', 'warning');
                 return;
             }
-            statusDiv.textContent = 'Sending factory reset command...';
-            statusDiv.style.color = 'orange';
+            showStatus('Sending factory reset command...', 'warning');
             try {
                 const response = await fetch('/api/gps-settings/data', {
                     method: 'POST',
@@ -186,20 +450,16 @@ thumb
                 });
                 const data = await response.json();
                 if (response.ok && data.success) {
-                    showStatus('Factory reset command sent successfully. Module may restart.', false);
+                    showStatus('Factory reset command sent successfully. Module may restart.', 'success');
                     currentRateSpan.textContent = '--';
                 } else {
                     throw new Error(data.message || 'Failed to send factory reset command.');
                 }
             } catch (error) {
                 console.error('Error sending factory reset:', error);
-                showStatus(`Error: ${error.message}`, true);
+                showStatus(`Error: ${error.message}`, 'error');
             }
         });
-
-        // TODO: Optionally add a way to query initial reader status on page load
-        // e.g., fetch('/api/gps-settings/data', { method: 'POST', body: JSON.stringify({ action: 'get_reader_status' }) })
-        // Requires adding a 'get_reader_status' action in the Python handler.
     </script>
 </body>
 </html>

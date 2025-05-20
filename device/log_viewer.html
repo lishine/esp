@@ -4,63 +4,262 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ESP Log Viewer</title>
+    <link rel="icon" href="data:,">
     <style>
         body {
-            font-family: monospace;
-            background-color: #f4f4f4;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 70px 0 0 0;
+            /* Default padding-top for header */
+            background-color: #eef2f7;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 1000px;
+            /* Increased width for log viewing */
+            margin-top: 30px;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            flex-grow: 1;
+            /* Allows container to fill space if content is short */
+            width: 100%;
+            /* Ensure it can go full width if needed */
+        }
+
+        header {
+            background-color: #007bff;
+            color: white;
+            padding: 0;
+            /* Remove padding as it's on the anchor now */
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            display: block;
+            /* Make header behave like a block for the anchor */
+            text-decoration: none;
+            /* Remove underline from link */
+            position: fixed;
+            /* Sticky header */
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            /* Ensure header is above other content */
+            height: 70px;
+            /* Default header height */
+            box-sizing: border-box;
+        }
+
+        header a {
+            display: flex;
+            /* For centering content vertically */
+            align-items: center;
+            /* For centering content vertically */
+            justify-content: center;
+            /* For centering content horizontally */
+            height: 100%;
+            /* Make anchor fill header */
+            padding: 0;
+            /* Padding is now on header a, not header itself */
+            color: white;
+            text-decoration: none;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 2.2em;
+            /* Slightly reduced default size */
+            font-weight: 300;
         }
 
         #logContainer {
-            background-color: #fff;
-            border: 1px solid #ddd;
-            padding: 15px;
-            height: 80vh;
+            background-color: #1e1e1e;
+            /* Dark background for logs */
+            color: #d4d4d4;
+            /* Light text for logs */
+            border: 1px solid #333;
+            padding: 20px;
+            height: 70vh;
+            /* Adjusted height */
             overflow-y: scroll;
             white-space: pre;
-            /* Preserve whitespace and line breaks */
-            line-height: 1.4;
-            margin-bottom: 15px;
+            line-height: 1.5;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-family: 'Consolas', 'Monaco', monospace;
+            /* Monospace font */
+            font-size: 0.9em;
         }
 
         button {
-            padding: 10px 15px;
+            padding: 12px 25px;
             cursor: pointer;
-            background-color: #007bff;
+            background-color: #0056b3;
             color: white;
             border: none;
-            border-radius: 4px;
+            border-radius: 6px;
+            font-size: 1em;
+            font-weight: 500;
+            transition: all 0.3s ease;
         }
 
         button:hover {
-            background-color: #0056b3;
+            background-color: #004080;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
         }
 
         .log-line {
             display: block;
-            /* Ensure each log entry is on a new line */
+            padding: 2px 0;
+            /* Small padding for each line */
+        }
+
+        .log-line.error {
+            /* Example for styling error lines */
+            color: #f88;
+        }
+
+        .log-line.warning {
+            /* Example for styling warning lines */
+            color: #f80;
+        }
+
+        footer {
+            margin-top: auto;
+            padding: 20px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9em;
+            width: 100%;
+        }
+
+        /* Responsive adjustments for mobile */
+        @media (max-width: 600px) {
+            body {
+                padding-top: 50px;
+                /* Adjusted padding-top for smaller sticky header */
+            }
+
+            header {
+                height: 50px;
+                /* Smaller header height on mobile */
+            }
+
+            header h1 {
+                font-size: 1.5em;
+                /* Smaller font size for header on mobile */
+            }
+
+            .container {
+                width: 100%;
+                margin-top: 0;
+                /* Remove top margin */
+                padding: 15px;
+                /* Reduced padding */
+                border-radius: 0;
+                /* No rounded corners */
+                box-shadow: none;
+                /* No shadow */
+                min-height: calc(100vh - 50px - 40px);
+                /* Full height minus header and footer */
+            }
+
+            #logContainer {
+                height: calc(100vh - 50px - 40px - 70px);
+                /* Adjust height considering buttons and footer */
+                padding: 10px;
+                font-size: 0.8em;
+            }
+
+            button {
+                padding: 10px 15px;
+                font-size: 0.9em;
+                margin-bottom: 10px;
+                /* Add some margin for stacked buttons */
+            }
+
+            /* Stack buttons vertically on small screens */
+            #loadOlderBtn,
+            #clearLogBtn {
+                display: block;
+                width: 100%;
+                margin-left: 0;
+                margin-right: 0;
+            }
+
+            #clearLogBtn {
+                margin-top: 10px;
+                /* Space between buttons when stacked */
+            }
+
+
+            footer {
+                padding: 15px;
+                font-size: 0.8em;
+                height: 40px;
+                /* Fixed footer height for calc() */
+                box-sizing: border-box;
+            }
         }
     </style>
 </head>
 <body>
+    <header>
+        <a href="/">
+            <h1>ESP Log Viewer</h1>
+        </a>
+    </header>
 
-    <h1>ESP Log Viewer</h1>
+    <div class="container">
+        <div id="logContainer">Loading logs...</div>
+        <button id="loadOlderBtn">Load Older Logs</button>
+        <button id="clearLogBtn" style="background-color: #dc3545; margin-left: 10px;">Clear Logs on Device</button>
+    </div>
 
-    <div id="logContainer">Loading logs...</div>
-    <button id="loadOlderBtn">Load Older Logs</button>
+    <footer>
+        <p>&copy; 2024 ESP32 Project</p>
+    </footer>
 
     <script>
         const logContainer = document.getElementById('logContainer');
         const loadOlderBtn = document.getElementById('loadOlderBtn');
-        const logApiUrl = `http://${window.location.hostname}/api/log/chunk`; // Use hostname from URL
-        const updateInterval = 7000; // 7 seconds
+        const clearLogBtn = document.getElementById('clearLogBtn');
+        const logApiUrl = `http://${window.location.hostname}/api/log/chunk`;
+        const clearLogApiUrl = `http://${window.location.hostname}/log/clear`;
+        const updateInterval = 7000;
 
         let currentLogIndex = -1;
         let oldestLogIndex = -1;
-        let displayedLogLines = new Set(); // Use a Set to easily track unique lines
+        let displayedLogLines = new Set();
 
-        // Function to fetch and process logs
+        function addLogLine(line, container, isError = false) {
+            const span = document.createElement('span');
+            span.className = 'log-line';
+            if (isError) {
+                span.style.color = '#f88'; // Red for errors
+            } else if (line.toLowerCase().includes('error')) {
+                span.style.color = '#f88';
+            } else if (line.toLowerCase().includes('warn')) {
+                span.style.color = '#f80';
+            }
+            span.textContent = line;
+            container.appendChild(span);
+        }
+
         async function fetchLogs(url) {
             try {
                 const response = await fetch(url);
@@ -74,118 +273,115 @@
                 return { lines, fileIndex };
             } catch (error) {
                 console.error("Error fetching logs:", error);
-                logContainer.innerHTML = `<span class="log-line" style="color: red;">Error fetching logs: ${error.message}</span>` + logContainer.innerHTML;
-                return { lines: [], fileIndex: -1 }; // Return empty on error
+                addLogLine(`Error fetching logs: ${error.message}`, logContainer, true);
+                return { lines: [], fileIndex: -1 };
             }
         }
 
-        // Function to render logs (prepend new lines) without scrolling
         function renderNewLogs(lines) {
-            const reversedLines = lines.reverse(); // Reverse to show newest first
-            let newContent = '';
-            reversedLines.forEach(line => {
-                if (!displayedLogLines.has(line)) {
-                    newContent += `<span class="log-line">${line}</span>`;
-                    displayedLogLines.add(line);
-                }
-            });
-
-            if (!newContent) return; // Nothing new to add
+            const reversedLines = lines.reverse();
+            let newContentAdded = false;
 
             if (logContainer.innerHTML === 'Loading logs...') {
-                logContainer.innerHTML = newContent;
-            } else {
-                const oldScrollHeight = logContainer.scrollHeight;
-                const oldScrollTop = logContainer.scrollTop;
-                const isScrolledToBottom = oldScrollHeight - logContainer.clientHeight <= oldScrollTop + 1; // +1 for tolerance
+                logContainer.innerHTML = ''; // Clear "Loading logs..."
+            }
 
-                logContainer.insertAdjacentHTML('afterbegin', newContent);
-
-                const newScrollHeight = logContainer.scrollHeight;
-
-                // Maintain scroll position unless user was scrolled near the bottom
-                // If new content is added at the top, the scroll position needs adjustment
-                // to keep the same content visible.
-                if (!isScrolledToBottom) {
-                    logContainer.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
+            const fragment = document.createDocumentFragment();
+            reversedLines.forEach(line => {
+                if (!displayedLogLines.has(line)) {
+                    const span = document.createElement('span');
+                    span.className = 'log-line';
+                    if (line.toLowerCase().includes('error')) {
+                        span.style.color = '#f88';
+                    } else if (line.toLowerCase().includes('warn')) {
+                        span.style.color = '#f80';
+                    }
+                    span.textContent = line;
+                    fragment.insertBefore(span, fragment.firstChild); // Prepend to fragment
+                    displayedLogLines.add(line);
+                    newContentAdded = true;
                 }
-                // If the user was scrolled to the bottom, adding content at the top
-                // should naturally keep them viewing the newest (top) content without adjustment.
-                // However, if the content addition itself causes scroll, this might need refinement.
-                // Let's test this behavior first. If issues persist, we might need to explicitly
-                // scroll to top (scrollTop = 0) when new content is added.
+            });
+
+            if (!newContentAdded) return;
+
+            const oldScrollHeight = logContainer.scrollHeight;
+            const oldScrollTop = logContainer.scrollTop;
+            const isScrolledToBottom = oldScrollHeight - logContainer.clientHeight <= oldScrollTop + 1;
+
+            logContainer.insertBefore(fragment, logContainer.firstChild); // Prepend fragment to container
+
+            const newScrollHeight = logContainer.scrollHeight;
+            if (!isScrolledToBottom) {
+                logContainer.scrollTop = oldScrollTop + (newScrollHeight - oldScrollHeight);
             }
         }
 
-        // Function to render older logs (append)
         function renderOlderLogs(lines) {
-            const reversedLines = lines.reverse(); // Reverse chunk to maintain order within chunk
-            let olderContent = '';
+            const reversedLines = lines.reverse();
+            const fragment = document.createDocumentFragment();
             reversedLines.forEach(line => {
                 if (!displayedLogLines.has(line)) {
-                    olderContent += `<span class="log-line">${line}</span>`;
+                    const span = document.createElement('span');
+                    span.className = 'log-line';
+                    if (line.toLowerCase().includes('error')) {
+                        span.style.color = '#f88';
+                    } else if (line.toLowerCase().includes('warn')) {
+                        span.style.color = '#f80';
+                    }
+                    span.textContent = line;
+                    fragment.appendChild(span); // Append to fragment
                     displayedLogLines.add(line);
                 }
             });
-            logContainer.innerHTML += olderContent;
+            logContainer.appendChild(fragment); // Append fragment to container
         }
 
-
-        // Initial load
         async function initialLoad() {
             const { lines, fileIndex } = await fetchLogs(logApiUrl);
             if (fileIndex !== -1) {
                 currentLogIndex = fileIndex;
-                oldestLogIndex = fileIndex; // Initially, the oldest is the current one
+                oldestLogIndex = fileIndex;
                 renderNewLogs(lines);
-                loadOlderBtn.disabled = oldestLogIndex <= 0; // Disable if no older logs exist
+                loadOlderBtn.disabled = oldestLogIndex <= 0;
             } else {
                 logContainer.textContent = 'Failed to load initial logs or get file index.';
             }
         }
 
-        // Periodic update
         async function periodicUpdate() {
             const { lines: newLines, fileIndex: newFileIndex } = await fetchLogs(logApiUrl);
 
             if (newFileIndex === -1) {
                 console.warn("Periodic update failed to get file index.");
-                return; // Don't proceed if we couldn't get the index
+                return;
             }
 
             let linesToRender = [];
 
             if (newFileIndex > currentLogIndex) {
-                // File index incremented, fetch the previous chunk as well to ensure no gaps
                 console.log(`File index changed: ${currentLogIndex} -> ${newFileIndex}. Fetching previous chunk.`);
                 const prevIndex = newFileIndex - 1;
                 if (prevIndex >= 0) {
                     const { lines: prevLines } = await fetchLogs(`${logApiUrl}?file_index=${prevIndex}`);
-                    // Combine lines, newLines first to maintain order before reversing for display
                     linesToRender = [...newLines, ...prevLines];
                 } else {
                     linesToRender = newLines;
                 }
-                currentLogIndex = newFileIndex; // Update the current index
+                currentLogIndex = newFileIndex;
             } else if (newFileIndex === currentLogIndex) {
-                // Same file, just add new lines from this chunk
                 linesToRender = newLines;
             } else {
                 console.warn(`New file index ${newFileIndex} is older than current ${currentLogIndex}. Ignoring.`);
-                // This case might happen if the server restarts or log indices reset.
-                // Could potentially trigger a full reload or show an error. For now, just log it.
                 return;
             }
 
-
-            // Filter out already displayed lines and render
             const uniqueNewLines = linesToRender.filter(line => !displayedLogLines.has(line));
             if (uniqueNewLines.length > 0) {
                 renderNewLogs(uniqueNewLines);
             }
         }
 
-        // Load older logs button click handler
         loadOlderBtn.addEventListener('click', async () => {
             if (oldestLogIndex <= 0) {
                 console.log("No older logs to fetch.");
@@ -197,26 +393,50 @@
             loadOlderBtn.textContent = `Loading chunk ${indexToFetch}...`;
             loadOlderBtn.disabled = true;
 
-            const { lines, fileIndex } = await fetchLogs(`${logApiUrl}?file_index=${indexToFetch}`);
+            const { lines } = await fetchLogs(`${logApiUrl}?file_index=${indexToFetch}`);
 
             if (lines.length > 0) {
                 renderOlderLogs(lines);
-                oldestLogIndex = indexToFetch; // Update the oldest index we've successfully fetched
+                oldestLogIndex = indexToFetch;
             } else {
                 console.log(`Chunk ${indexToFetch} is empty or failed to load.`);
-                // Optionally show a message to the user
             }
 
             loadOlderBtn.textContent = 'Load Older Logs';
-            loadOlderBtn.disabled = oldestLogIndex <= 0; // Re-enable if there are still older logs
+            loadOlderBtn.disabled = oldestLogIndex <= 0;
         });
 
-        // Start the process
+        clearLogBtn.addEventListener('click', async () => {
+            if (!confirm('Are you sure you want to clear all logs on the device? This action cannot be undone.')) {
+                return;
+            }
+            try {
+                clearLogBtn.textContent = 'Clearing...';
+                clearLogBtn.disabled = true;
+                const response = await fetch(clearLogApiUrl, { method: 'POST' });
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const resultText = await response.text();
+                alert(resultText);
+                // Reset viewer
+                logContainer.innerHTML = 'Logs cleared. Refreshing...';
+                displayedLogLines.clear();
+                currentLogIndex = -1;
+                oldestLogIndex = -1;
+                await initialLoad(); // Reload logs
+            } catch (error) {
+                console.error("Error clearing logs:", error);
+                alert(`Error clearing logs: ${error.message}`);
+            } finally {
+                clearLogBtn.textContent = 'Clear Logs on Device';
+                clearLogBtn.disabled = false;
+            }
+        });
+
         initialLoad().then(() => {
             setInterval(periodicUpdate, updateInterval);
         });
-
     </script>
-
 </body>
 </html>

@@ -2,17 +2,16 @@
 
 from machine import Pin  # Still needed for NeoPixel pin definition
 from neopixel import NeoPixel  # Import NeoPixel
+from io_local import control
 from log import log
 import led
 
 # Import specific IO modules from this directory
-from . import adc
 from . import esc_telemetry
 from . import ds18b20
 
 # from . import ina226 # Keep file but don't init
 from . import gps_reader
-from . import buzzer
 from . import motor_current_i2c
 from . import throttle_reader
 from . import fan
@@ -46,6 +45,6 @@ def init_io():
     ds18b20.init_ds18b20()
     # ina226.init_ina226() # Commented out as requested
     gps_reader.init_gps_reader()
-    buzzer.init_buzzer()
+    control.init_buzzer()
 
     log("IO initialization complete.")  # Changed log.log to log

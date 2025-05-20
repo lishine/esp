@@ -1,19 +1,82 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>ESP32 Wi-Fi Settings</title>
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ESP32 Wi-Fi Settings</title>
+    <link rel="icon" href="data:,">
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             margin: 0;
-            padding: 20px;
-            max-width: 600px;
-            margin: 0 auto;
+            padding: 70px 0 0 0;
+            /* Default padding-top for header */
+            background-color: #eef2f7;
+            color: #333;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            min-height: 100vh;
+            box-sizing: border-box;
         }
 
-        h1 {
-            color: #333;
+        .container {
+            width: 90%;
+            max-width: 800px;
+            margin-top: 30px;
+            background-color: #fff;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1);
+            flex-grow: 1;
+            /* Allows container to fill space if content is short */
+            width: 100%;
+            /* Ensure it can go full width if needed */
+        }
+
+        header {
+            background-color: #007bff;
+            color: white;
+            padding: 0;
+            /* Remove padding as it's on the anchor now */
+            width: 100%;
+            text-align: center;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            display: block;
+            /* Make header behave like a block for the anchor */
+            text-decoration: none;
+            /* Remove underline from link */
+            position: fixed;
+            /* Sticky header */
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            /* Ensure header is above other content */
+            height: 70px;
+            /* Default header height */
+            box-sizing: border-box;
+        }
+
+        header a {
+            display: flex;
+            /* For centering content vertically */
+            align-items: center;
+            /* For centering content vertically */
+            justify-content: center;
+            /* For centering content horizontally */
+            height: 100%;
+            /* Make anchor fill header */
+            padding: 0;
+            /* Padding is now on header a, not header itself */
+            color: white;
+            text-decoration: none;
+        }
+
+        header h1 {
+            margin: 0;
+            font-size: 2.2em;
+            /* Slightly reduced default size */
+            font-weight: 300;
         }
 
         .form-group {
@@ -24,148 +87,290 @@
             display: block;
             margin-bottom: 5px;
             font-weight: bold;
+            color: #333;
         }
 
         input[type="text"],
-        input[type="password"] {
+        input[type="password"],
+        input[type="file"] {
             width: 100%;
-            padding: 8px;
+            padding: 12px;
             box-sizing: border-box;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            font-size: 1em;
+            transition: border-color 0.3s ease;
+        }
+
+        input[type="text"]:focus,
+        input[type="password"]:focus {
+            border-color: #007bff;
+            outline: none;
         }
 
         button {
-            background-color: #4CAF50;
+            background-color: #0056b3;
             color: white;
-            padding: 10px 15px;
+            padding: 12px 20px;
             border: none;
+            border-radius: 6px;
             cursor: pointer;
+            font-size: 1em;
+            font-weight: 500;
+            transition: all 0.3s ease;
         }
 
         button:hover {
-            background-color: #45a049;
+            background-color: #004080;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        button[type="button"] {
+            background-color: #dc3545;
+        }
+
+        button[type="button"]:hover {
+            background-color: #c82333;
         }
 
         .status {
             margin-top: 20px;
-            padding: 10px;
-            background-color: #f8f8f8;
-            border-radius: 4px;
+            padding: 20px;
+            background-color: #fff;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
         }
 
         .status-item {
-            margin-bottom: 8px;
+            margin-bottom: 12px;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
         }
 
-        .log-link {
-            margin-left: 10px;
+        .status-item:last-child {
+            border-bottom: none;
+        }
+
+        #settingsPopup {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 1000;
+            display: none;
+        }
+
+        .popup-content {
+            position: relative;
+            background-color: white;
+            margin: 10% auto;
+            padding: 30px;
+            width: 80%;
+            max-width: 500px;
+            border-radius: 12px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        }
+
+        footer {
+            margin-top: auto;
+            padding: 20px;
+            text-align: center;
+            color: #777;
+            font-size: 0.9em;
+            width: 100%;
+        }
+
+        h2 {
+            color: #0056b3;
+            margin-top: 30px;
+            margin-bottom: 20px;
+        }
+
+        #uploadStatus {
+            margin-top: 20px;
         }
 
         /* Password visibility toggle styles */
-        #eyeIcon {
-            transition: all 0.2s ease;
-            pointer-events: none;
+        .password-container {
+            position: relative;
         }
 
         #togglePassword {
-            user-select: none;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            height: 100%;
-            transition: opacity 0.2s ease;
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            cursor: pointer;
+            padding: 5px;
         }
 
-        #togglePassword:hover {
-            opacity: 0.7;
-        }
-
-        #togglePassword:active #eyeIcon {
-            transform: scale(0.9);
+        #eyeIcon {
+            transition: all 0.2s ease;
+            color: #666;
         }
 
         #togglePassword:hover #eyeIcon {
-            transform: scale(1.1);
+            color: #007bff;
+        }
+
+        /* Responsive adjustments for mobile */
+        @media (max-width: 600px) {
+            body {
+                padding-top: 50px;
+                /* Adjusted padding-top for smaller sticky header */
+            }
+
+            header {
+                height: 50px;
+                /* Smaller header height on mobile */
+            }
+
+            header a {
+                /* Padding already set to 0, height 100% will adjust */
+            }
+
+            header h1 {
+                font-size: 1.5em;
+                /* Smaller font size for header on mobile */
+            }
+
+            .container {
+                width: 100%;
+                margin-top: 0;
+                /* Remove top margin */
+                padding: 15px;
+                /* Reduced padding */
+                border-radius: 0;
+                /* No rounded corners */
+                box-shadow: none;
+                /* No shadow */
+                min-height: calc(100vh - 50px - 40px);
+                /* Full height minus header and footer */
+            }
+
+            h2 {
+                font-size: 1.3em;
+            }
+
+            input[type="text"],
+            input[type="password"],
+            input[type="file"],
+            button {
+                font-size: 0.9em;
+                padding: 10px;
+            }
+
+            .status {
+                padding: 15px;
+            }
+
+            .status-item {
+                padding: 6px;
+                font-size: 0.9em;
+            }
+
+            .popup-content {
+                width: 90%;
+                padding: 20px;
+            }
+
+            footer {
+                padding: 15px;
+                font-size: 0.8em;
+                height: 40px;
+                /* Fixed footer height for calc() */
+                box-sizing: border-box;
+            }
         }
     </style>
 </head>
 <body onload="showSettingsPopup()">
-    <h1>ESP32 Wi-Fi Settings</h1>
-    <div class="status">
-        <div class="status-item"><strong>Connection Status:</strong> <span id="connectionStatus">Loading...</span></div>
-        <div class="status-item"><strong>IP Address:</strong> <span id="ipAddress">Loading...</span></div>
-        <div class="status-item"><strong>Current Network:</strong> <span id="currentSSID">Loading...</span></div>
-    </div>
-    <form id="settingsForm">
-        <div class="form-group">
-            <label for="primary_ssid">Primary Wi-Fi Name (SSID):</label>
-            <input type="text" id="primary_ssid" name="primary_ssid" value="{{primary_ssid}}">
-        </div>
-        <div class="form-group">
-            <label for="primary_password">Primary Password:</label>
-            <div style="position: relative;">
-                <input type="password" id="primary_password" name="primary_password" style="padding-right: 30px;">
-                <span id="togglePassword" onclick="togglePasswordVisibility()" aria-label="Toggle password visibility"
-                    style="position: absolute; right: 10px; top: 0; bottom: 0; display: flex; align-items: center; justify-content: center; cursor: pointer; width: 30px;">
-                    <svg id="eyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
-                        <path d="M1 1l22 22"></path>
-                    </svg>
-                </span>
+    <header>
+        <a href="/">
+            <h1>ESP32 Wi-Fi Settings</h1>
+        </a>
+    </header>
+
+    <div class="container">
+        <div class="status">
+            <div class="status-item"><strong>Connection Status:</strong> <span id="connectionStatus">Loading...</span>
             </div>
+            <div class="status-item"><strong>IP Address:</strong> <span id="ipAddress">Loading...</span></div>
+            <div class="status-item"><strong>Current Network:</strong> <span id="currentSSID">Loading...</span></div>
         </div>
-        <div class="form-group">
-            <label for="secondary_ssid">Secondary Wi-Fi Name (SSID):</label>
-            <input type="text" id="secondary_ssid" name="secondary_ssid" value="{{secondary_ssid}}">
-        </div>
-        <div class="form-group">
-            <label for="secondary_password">Secondary Password:</label>
-            <input type="password" id="secondary_password" name="secondary_password">
-        </div>
-        <button type="submit">Save & Connect</button>
-        <button type="button" id="resetButton" style="background-color: #f44336; margin-left: 10px;">Reset
-            Device</button>
-    </form>
 
-    <h2>File Upload</h2>
-    <form id="uploadForm">
-        <div class="form-group">
-            <label for="file">Select file:</label>
-            <input type="file" id="file" name="file">
-        </div>
-        <div class="form-group">
-            <label for="targetPath">Target path (optional):</label>
-            <input type="text" id="targetPath" name="targetPath" placeholder="e.g. x/y.py">
-        </div>
-        <button type="submit">Upload</button>
-    </form>
-    <div id="uploadStatus" class="status"></div>
+        <form id="settingsForm">
+            <h2>Network Configuration</h2>
+            <div class="form-group">
+                <label for="primary_ssid">Primary Wi-Fi Name (SSID):</label>
+                <input type="text" id="primary_ssid" name="primary_ssid">
+            </div>
+            <div class="form-group">
+                <label for="primary_password">Primary Password:</label>
+                <div class="password-container">
+                    <input type="password" id="primary_password" name="primary_password">
+                    <span id="togglePassword" onclick="togglePasswordVisibility()"
+                        aria-label="Toggle password visibility">
+                        <svg id="eyeIcon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                            <circle cx="12" cy="12" r="3"></circle>
+                        </svg>
+                    </span>
+                </div>
+            </div>
+            <div class="form-group">
+                <label for="secondary_ssid">Secondary Wi-Fi Name (SSID):</label>
+                <input type="text" id="secondary_ssid" name="secondary_ssid">
+            </div>
+            <div class="form-group">
+                <label for="secondary_password">Secondary Password:</label>
+                <input type="password" id="secondary_password" name="secondary_password">
+            </div>
+            <button type="submit">Save & Connect</button>
+            <button type="button" id="resetButton">Reset Device</button>
+        </form>
 
-    <!-- Settings Popup -->
-    <div id="settingsPopup"
-        style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1000;">
-        <div
-            style="position: relative; background-color: white; margin: 10% auto; padding: 20px; width: 80%; max-width: 500px; border-radius: 5px; box-shadow: 0 4px 8px rgba(0,0,0,0.2);">
+        <h2>File Upload</h2>
+        <form id="uploadForm">
+            <div class="form-group">
+                <label for="file">Select file:</label>
+                <input type="file" id="file" name="file">
+            </div>
+            <div class="form-group">
+                <label for="targetPath">Target path (optional):</label>
+                <input type="text" id="targetPath" name="targetPath" placeholder="e.g. x/y.py">
+            </div>
+            <button type="submit">Upload</button>
+        </form>
+        <div id="uploadStatus" class="status"></div>
+    </div>
+
+    <div id="settingsPopup">
+        <div class="popup-content">
             <h2>Welcome to ESP32 Setup</h2>
             <p>You've connected to the ESP32 access point. Configure your Wi-Fi settings below to connect the device to
                 your network.</p>
-            <button onclick="closeSettingsPopup()"
-                style="background-color: #4CAF50; color: white; padding: 10px 15px; border: none; cursor: pointer; margin-top: 10px;">Got
-                it!</button>
+            <button onclick="closeSettingsPopup()">Got it!</button>
         </div>
     </div>
+
+    <footer>
+        <p>&copy; 2024 ESP32 Project</p>
+    </footer>
 
     <script>
         // Define SVG paths for open and closed eye icons
         const closedEye = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><path d="M1 1l22 22"></path>';
         const openEye = '<path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path><circle cx="12" cy="12" r="3"></circle>';
 
-        // Toggle password visibility and update eye icon
         function togglePasswordVisibility() {
-            var passwordInput = document.getElementById("password");
+            var passwordInput = document.getElementById("primary_password");
             var eyeIcon = document.getElementById("eyeIcon");
 
-            // Add transition effect
             eyeIcon.style.opacity = "0";
 
             setTimeout(function () {
@@ -180,7 +385,6 @@
             }, 100);
         }
 
-        // Fetch settings data and update page
         function loadSettingsData() {
             fetch('/api/settings/data')
                 .then(response => response.json())
@@ -189,13 +393,11 @@
                     document.getElementById('ipAddress').textContent = data.ip_address;
                     document.getElementById('currentSSID').textContent = data.current_ssid || 'Not connected';
 
-                    // Set primary network values
                     if (data.networks && data.networks[0]) {
                         document.getElementById('primary_ssid').value = data.networks[0].ssid || '';
                         document.getElementById('primary_password').value = data.networks[0].password || '';
                     }
 
-                    // Set secondary network values
                     if (data.networks && data.networks[1]) {
                         document.getElementById('secondary_ssid').value = data.networks[1].ssid || '';
                         document.getElementById('secondary_password').value = data.networks[1].password || '';
@@ -207,11 +409,8 @@
                 });
         }
 
-        // Auto-open settings popup when page loads
         function showSettingsPopup() {
-            // Only show popup if this is a new connection (could use localStorage to track)
-            // document.getElementById('settingsPopup').style.display = 'block';
-            loadSettingsData(); // Load settings when popup appears
+            loadSettingsData();
         }
 
         function closeSettingsPopup() {
@@ -220,9 +419,7 @@
 
         document.getElementById('resetButton').addEventListener('click', function () {
             if (confirm('Are you sure you want to reset the device? This will restart the ESP32.')) {
-                fetch('/reset', {
-                    method: 'POST'
-                })
+                fetch('/reset', { method: 'POST' })
                     .then(response => {
                         alert('Device is resetting. Please wait a few seconds and reconnect if necessary.');
                     })
@@ -239,6 +436,7 @@
             const primary_password = document.getElementById('primary_password').value;
             const secondary_ssid = document.getElementById('secondary_ssid').value;
             const secondary_password = document.getElementById('secondary_password').value;
+
             fetch('/settings/save', {
                 method: 'POST',
                 headers: {
@@ -269,6 +467,7 @@
             const formData = new FormData();
             formData.append('file', fileInput.files[0]);
             const uploadUrl = targetPath ? `/upload/${targetPath}` : '/upload';
+
             fetch(uploadUrl, {
                 method: 'POST',
                 body: formData
