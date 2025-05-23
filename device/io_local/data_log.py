@@ -26,6 +26,8 @@ _log_data_queue_instance = None
 _error_queue_instance = None
 _live_sensor_data_cache: dict = {}  # ADDED
 
+# ADDED: Accumulator for sensor data arrays
+_accumulated_sensor_arrays = []
 
 from fs import recursive_mkdir, remove_file, clear_directory
 
@@ -183,7 +185,39 @@ def _write_jsonl_entry(
         return False
 
 
+def _check_esc_rpm_zero_trigger(sensors_data: list) -> bool:
+    """Check if any sensor in the batch is 'esc' with rpm value of 0"""
+    for sensor_name, data in sensors_data:
+        if sensor_name == "esc" and isinstance(data, dict) and data.get("rpm") == 0:
+            return True
+    return False
+
+
+def _flush_accumulated_arrays() -> bool:
+    """Write all accumulated sensor arrays to file and clear the accumulator"""
+    global _accumulated_sensor_arrays
+
+    if not current_log_file_path or not _accumulated_sensor_arrays:
+        return True
+
+    try:
+        with open(current_log_file_path, "a") as f:
+            for array_json_string in _accumulated_sensor_arrays:
+                f.write(array_json_string + "\n")
+
+        log.log(
+            f"DataLog: Flushed {len(_accumulated_sensor_arrays)} accumulated arrays to file"
+        )
+        _accumulated_sensor_arrays.clear()
+        return True
+    except Exception as e:
+        log.log(f"DataLog: Error flushing accumulated arrays: {e}")
+        return False
+
+
 def _write_sensors_array(sensors_data: list) -> bool:
+    global _accumulated_sensor_arrays
+
     if not current_log_file_path or not sensors_data:
         return False
 
@@ -207,8 +241,14 @@ def _write_sensors_array(sensors_data: list) -> bool:
         # Combine common entry with all sensor-specific entries
         all_entries_for_array = [common_entry_json_string] + sensor_specific_entries
         array_json_string = f"[{','.join(all_entries_for_array)}]"
-        with open(current_log_file_path, "a") as f:
-            f.write(array_json_string + "\n")
+
+        # Add to accumulator instead of writing immediately
+        _accumulated_sensor_arrays.append(array_json_string)
+
+        # Check if we should flush (write) all accumulated data
+        if _check_esc_rpm_zero_trigger(sensors_data):
+            return _flush_accumulated_arrays()
+
         return True
     except Exception as e:
         log.log(f"DataLog: Write error for sensors array: {e}")
@@ -249,7 +289,7 @@ async def data_report_task():
                 log.log(f"DataLog: Processing error: {e}")
                 break
 
-        # Write all sensors in current batch as a single array line
+        # Write all sensors in current batch as a single array line (now accumulates)
         if sensors_batch:
             _write_sensors_array(sensors_batch)
 
@@ -349,7 +389,7 @@ def get_current_data_log_file_path() -> str | None:
 
 
 def clear_data_logs() -> bool:
-    global current_log_file_path, is_log_file_renamed_this_session
+    global current_log_file_path, is_log_file_renamed_this_session, _accumulated_sensor_arrays
 
     if not _ensure_dir_exists(SD_DATA_DIR):
         return True
@@ -358,6 +398,7 @@ def clear_data_logs() -> bool:
     if success:
         current_log_file_path = None
         is_log_file_renamed_this_session = False
+        _accumulated_sensor_arrays.clear()  # Clear accumulator
         _setup_data_logging()
 
     return success
@@ -367,3 +408,8 @@ def get_latest_live_data() -> dict:
     """Returns a copy of the most recent live sensor data cache."""
     global _live_sensor_data_cache
     return _live_sensor_data_cache.copy()
+
+
+def force_flush_accumulated_data() -> bool:
+    """Manually flush any accumulated sensor data to file"""
+    return _flush_accumulated_arrays()
