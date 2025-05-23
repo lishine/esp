@@ -34,7 +34,7 @@ async def main():
 
         log("Starting threads")
         asyncio.create_task(led.led_task())
-        ap.start_ap(essid="DDDEV", password="")
+        ap.start_ap(essid="DDDEV", password="aaaaaaaa")
         set_green_led(True)
         _thread.start_new_thread(wifi.wifi_thread_manager, ())
         _thread.start_new_thread(_log_writer_thread_func, ())

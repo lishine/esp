@@ -11,6 +11,8 @@ ESC_RX_PIN = 14
 ESC_BAUDRATE = 115200
 MOTOR_POLE_PAIRS = 12 // 2  # Assuming 12 poles (6 pairs) for RPM calculation
 
+NO_RPM_LOG_INTERVAL_MS: int = 5000
+
 # --- State ---
 uart = None
 esc_voltage = 0.0
@@ -128,6 +130,7 @@ async def _read_esc_telemetry_task():
     parsed_count = 0
     log_interval_ms = 5000
     last_log_time = time.ticks_ms()
+    last_low_current_log_time_ms: int = 0
 
     while True:
         data = None  # Reset data
@@ -176,17 +179,33 @@ async def _read_esc_telemetry_task():
                         esc_temp = parsed_data["temperature"]
                         esc_current = parsed_data["current"]
                         esc_consumption = parsed_data["consumption"]
-                        data_log.report_data(
-                            SENSOR_NAME,
-                            time.ticks_ms(),
-                            dict(
-                                v=esc_voltage,
-                                i=esc_current,
-                                rpm=esc_rpm,
-                                t=esc_temp,
-                                mah=esc_consumption,
-                            ),
-                        )
+
+                        current_ticks: int = time.ticks_ms()
+
+                        def report():
+                            data_log.report_data(
+                                SENSOR_NAME,
+                                time.ticks_ms(),
+                                dict(
+                                    v=esc_voltage,
+                                    i=esc_current,
+                                    rpm=esc_rpm,
+                                    t=esc_temp,
+                                    mah=esc_consumption,
+                                ),
+                            )
+
+                        if esc_rpm > 0:
+                            report()
+                        else:
+                            if (
+                                time.ticks_diff(
+                                    current_ticks, last_low_current_log_time_ms
+                                )
+                                >= NO_RPM_LOG_INTERVAL_MS
+                            ):
+                                report()
+                                last_low_current_log_time_ms = current_ticks
                         parsed_count += 1  # Increment successful parse count
                         await asyncio.sleep_ms(150)
                     else:

@@ -462,7 +462,76 @@ def status(request):
 register_live_data_routes(app)
 
 
-# --- Live Data Routes --- (Now handled in io_local.live_data)
+# @app.route("/api/data", methods=["POST"])
+# def api_get_data_log_file(request: Request):
+#     """
+#     Returns the content of the current JSONL data log file.
+#     The request body is ignored in this version but may be used for future enhancements
+#     (e.g., specifying date ranges or specific filenames).
+#     """
+#     try:
+#         current_file_path = get_current_data_log_file_path()
+
+#         # Removed explicit check for file existence as per feedback.
+#         # open() will raise OSError if file not found or path is None.
+
+#         if (
+#             not current_file_path
+#         ):  # Still check if path itself is None (e.g. data_log init failed)
+#             return Response(
+#                 body=json.dumps(
+#                     {"success": False, "error": "Data log path not configured."}
+#                 ),
+#                 status=HTTP_INTERNAL_ERROR,  # Or HTTP_NOT_FOUND, depending on desired semantics
+#                 headers={"Content-Type": "application/json"},
+#             )
+
+#         # Read the entire file content. For very large files, chunked transfer would be better.
+#         with open(current_file_path, "rb") as f:  # Read as binary
+#             uncompressed_content = f.read()
+
+#         # Compress the content
+#         compressed_buffer = io.BytesIO()
+#         # # Use deflate.GZIP for the format and wbits=15 for 32k window.
+#         compressor = deflate.DeflateIO(
+#             compressed_buffer, deflate.GZIP, 15
+#         )  # stream, format, wbits
+#         compressor.write(uncompressed_content)  # type: ignore # Pylance stub is missing write
+#         compressor.close()  # Must close to finalize compression
+#         compressed_content = compressed_buffer.getvalue()
+
+#         # Compress a bytes/bytearray value.
+#         # stream = io.BytesIO()
+#         # with deflate.DeflateIO(stream, deflate.GZIP) as d:  # type: ignore
+#         #     d.write(uncompressed_content)
+
+#         # compressed_content = stream.getvalue()
+#         log.log(
+#             f"/api/data: Original size: {len(uncompressed_content)}, Compressed size: {len(compressed_content)}"
+#         )
+
+#         filename_only = (
+#             current_file_path.split("/")[-1] + ".gz"
+#         )  # Add .gz to indicate compression
+
+#         return Response(
+#             body=compressed_content,
+#             status=HTTP_OK,
+#             headers={
+#                 "Content-Type": "application/jsonl",  # Original content type
+#                 "Content-Encoding": "gzip",  # Indicate gzip compression
+#                 "Content-Disposition": f'attachment; filename="{filename_only}"',
+#             },
+#         )
+#     except Exception as e:
+#         log.log(
+#             f"Error in POST /api/data: {e}"
+#         )  # Ensure 'log' is available (it is, from top of file)
+#         return Response(
+#             body=json.dumps({"success": False, "error": f"Server error: {str(e)}"}),
+#             status=HTTP_INTERNAL_ERROR,
+#             headers={"Content-Type": "application/json"},
+#         )
 
 
 @app.route("/api/data", methods=["POST"])

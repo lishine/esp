@@ -8,6 +8,8 @@ from globals import SD_MOUNT_POINT
 from file_utils import (
     generate_filename,
     get_synced_timestamp,
+    format_date,
+    format_time,
 )
 
 DATA_REPORT_INTERVAL_MS = 500
@@ -57,14 +59,26 @@ DATA_LOG_EXTENSION = "jsonl"
 
 
 def _write_config_header(file_path: str):
-    config = settings_manager.get_setting("configuration")
-    if config:
-        try:
-            with open(file_path, "w") as f:
-                f.write(json.dumps(config) + "\n")
-            log.log(f"DataLog: Wrote config header to {file_path}")
-        except Exception as e:
-            log.log(f"DataLog: Error writing config header: {e}")
+    header_data = settings_manager.get_setting("configuration")
+    if not isinstance(header_data, dict):  # Ensure config is a dict, or start fresh
+        header_data = {}
+
+    try:
+        # Add date and restart counter to the header_data dictionary
+        _, time_tuple = get_synced_timestamp()
+        date_str = format_date(time_tuple)
+        header_data["date"] = date_str
+
+        r_val = f"{settings_manager.get_reset_counter():04d}"
+        header_data["restart"] = r_val
+
+        with open(file_path, "w") as f:
+            f.write(
+                json.dumps(header_data) + "\n"
+            )  # Write the single combined header object
+        log.log(f"DataLog: Wrote combined header to {file_path}")
+    except Exception as e:
+        log.log(f"DataLog: Error writing combined header: {e}")
 
 
 def _setup_data_logging():
@@ -151,20 +165,53 @@ def _write_jsonl_entry(
 
     try:
         timestamp_str, current_time = get_synced_timestamp()
-        r_val = f"{settings_manager.get_reset_counter():04d}"
-        # Manually construct the JSON string to ensure key order: r, t, n, v.
+        # r_val = f"{settings_manager.get_reset_counter():04d}" # Moved to header
+        # Manually construct the JSON string to ensure key order: t, n, v.
         # Each value is passed through json.dumps to ensure it's valid JSON (e.g., strings quoted, objects/arrays serialized).
+        a = json.dumps(data, separators=(",", ":"))
         entry_json_string = (
-            f'{{"r":{json.dumps(r_val)},'
-            f'"t":{json.dumps(timestamp_str)},'
+            # f'{{"r":{json.dumps(r_val)},' # "r" key removed
+            f'{{"t":{json.dumps(timestamp_str)},'
             f'"n":{json.dumps(sensor_name)},'
-            f'"v":{json.dumps(data)}}}'
+            f'"v":{a}}}'  # Corrected to two closing braces
         )
         with open(current_log_file_path, "a") as f:
             f.write(entry_json_string + "\n")
         return True
     except Exception as e:
         log.log(f"DataLog: Write error for {sensor_name}: {e}")
+        return False
+
+
+def _write_sensors_array(sensors_data: list) -> bool:
+    if not current_log_file_path or not sensors_data:
+        return False
+
+    try:
+        full_timestamp_str, time_tuple = get_synced_timestamp()  # Get the time_tuple
+        time_str = format_time(time_tuple)  # Format to time-only
+        # r_val is no longer needed here as it's in the header
+        # r_val = f"{settings_manager.get_reset_counter():04d}"
+
+        # Create the common part first - now only contains time
+        common_entry_json_string = f'{{"t":{json.dumps(time_str)}}}'
+
+        sensor_specific_entries = []
+        for sensor_name, data in sensors_data:
+            # Create sensor-specific part: {"n": name, "v": value}
+            # needed to override error
+            s = json.dumps(data, separators=(",", ":"))
+            sensor_part_json_string = f'{{"n":{json.dumps(sensor_name)},' f'"v":{s}}}'
+            sensor_specific_entries.append(sensor_part_json_string)
+
+        # Combine common entry with all sensor-specific entries
+        all_entries_for_array = [common_entry_json_string] + sensor_specific_entries
+        array_json_string = f"[{','.join(all_entries_for_array)}]"
+        with open(current_log_file_path, "a") as f:
+            f.write(array_json_string + "\n")
+        return True
+    except Exception as e:
+        log.log(f"DataLog: Write error for sensors array: {e}")
         return False
 
 
@@ -176,6 +223,8 @@ async def data_report_task():
 
     while True:
         latest_data.clear()
+        sensors_batch = []
+
         while True:
             try:
                 rename_file_if_rtc_updated()
@@ -186,9 +235,8 @@ async def data_report_task():
                     get_synced_timestamp()
                 )
 
-                # _write_jsonl_entry will call get_synced_timestamp() again for its own needs for the file.
-                # This is acceptable; the critical part is that our cache uses a timely timestamp.
-                _write_jsonl_entry(sensor_name, data)
+                # Collect sensor data for batch writing
+                sensors_batch.append((sensor_name, data))
 
                 # Update latest_data with value and its specific timestamp
                 latest_data[sensor_name] = {
@@ -200,6 +248,10 @@ async def data_report_task():
             except Exception as e:
                 log.log(f"DataLog: Processing error: {e}")
                 break
+
+        # Write all sensors in current batch as a single array line
+        if sensors_batch:
+            _write_sensors_array(sensors_batch)
 
         if latest_data:
             try:

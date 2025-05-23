@@ -19,6 +19,31 @@ def format_timestamp(t: tuple, include_ms: bool = False, ms: int = 0) -> str:
     return f"{base}_{ms:03d}" if include_ms else base
 
 
+def format_date(t: tuple) -> str:
+    """
+    Formats a time tuple into a date string.
+    Args:
+        t: Time tuple (year, month, day, hour, minute, second, weekday, yearday)
+    Returns:
+        Formatted string like "2023-05-19"
+    """
+    return f"{t[0]:04d}-{t[1]:02d}-{t[2]:02d}"
+
+
+def format_time(t: tuple, include_ms: bool = False, ms: int = 0) -> str:
+    """
+    Formats a time tuple into a time string.
+    Args:
+        t: Time tuple (year, month, day, hour, minute, second, weekday, yearday)
+        include_ms: Whether to include milliseconds
+        ms: Milliseconds to include if include_ms is True
+    Returns:
+        Formatted string like "15-30-00" or "15-30-00_500"
+    """
+    base_time = f"{t[3]:02d}-{t[4]:02d}-{t[5]:02d}"
+    return f"{base_time}_{ms:03d}" if include_ms else base_time
+
+
 def generate_filename(
     base_dir: str,
     extension: str,

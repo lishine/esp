@@ -15,7 +15,7 @@ _reader_task = None
 SENSOR_NAME = "mc"
 FACTOR = 0.2
 
-LOW_CURRENT_LOG_INTERVAL_MS: int = 2000
+LOW_CURRENT_LOG_INTERVAL_MS: int = 5000
 
 
 def init_rms_motor_current_i2c() -> None:
@@ -62,7 +62,7 @@ async def _rms_motor_current_i2c_task() -> None:
                     motor_current = rms_mv * FACTOR
                     current_ticks: int = time.ticks_ms()
 
-                    if motor_current >= 2:
+                    if motor_current >= 1.3:
                         data_log.report_data(SENSOR_NAME, current_ticks, motor_current)
                     else:  # motor_current < 2
                         if (
@@ -73,7 +73,6 @@ async def _rms_motor_current_i2c_task() -> None:
                                 SENSOR_NAME, current_ticks, motor_current
                             )
                             last_low_current_log_time_ms = current_ticks
-                        # else: do nothing, skip logging
 
                 else:
                     data_log.report_error(

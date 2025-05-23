@@ -14,7 +14,7 @@ GPS_TX_PIN = 17  # ESP32 TX -> GPS RX
 GPS_RX_PIN = 18  # ESP32 RX <- GPS TX
 GPS_BAUDRATE = 9600  # Common default for NEO-xM modules
 COMM_TIMEOUT_MS = 5000  # 5 seconds timeout for communication status
-NO_FIX_LOG_INTERVAL_MS: int = 2000  # Interval for logging when no fix
+NO_FIX_LOG_INTERVAL_MS: int = 5000  # Interval for logging when no fix
 
 # --- State ---
 uart = None
