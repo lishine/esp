@@ -3,7 +3,8 @@ import { onMounted, computed } from 'vue'
 import { useSessionDataStore } from '../stores/sessionData'
 import SensorChart from '../components/SensorChart.vue'
 import type { EChartsCoreOption as ECOption } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
-import { NSpin, NAlert, NCard, NButton, NSpace } from 'naive-ui'
+import { NSpin, NAlert, NCard, NSpace } from 'naive-ui'
+import { formatInTimeZone } from 'date-fns-tz' // Import formatInTimeZone
 
 const sessionDataStore = useSessionDataStore()
 
@@ -17,8 +18,6 @@ const chartOptions = computed((): ECOption | null => {
 	if (!chartFormattedData.value || !chartFormattedData.value.series || chartFormattedData.value.series.length === 0) {
 		return null
 	}
-
-	// const xAxisTimestamps = chartFormattedData.value.series[0]?.data.map((d: any) => d[0]) || [] // No longer needed for time axis
 
 	const yAxesConfig = [
 		{ id: 'yGpsSpeed', min: 0, max: 20, seriesNames: ['GPS Speed'] },
@@ -48,16 +47,8 @@ const chartOptions = computed((): ECOption | null => {
 								console.error('Tooltip formatter - Invalid Date from params.value:', params.value)
 								return 'Invalid Date'
 							}
-							// Manual UTC formatting
-							const year = date.getUTCFullYear()
-							const month = (date.getUTCMonth() + 1).toString().padStart(2, '0')
-							const day = date.getUTCDate().toString().padStart(2, '0')
-							const hours = date.getUTCHours().toString().padStart(2, '0')
-							const minutes = date.getUTCMinutes().toString().padStart(2, '0')
-							const seconds = date.getUTCSeconds().toString().padStart(2, '0')
-							const formatted = `${year}-${month}-${day} ${hours}:${minutes}:${seconds} UTC`
-							// console.log('Tooltip formatter - manually formatted:', formatted); // Keep for debugging if needed
-							return formatted
+							// Format date to Asia/Jerusalem time using date-fns-tz
+							return formatInTimeZone(date, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss zzz')
 						}
 						return typeof params.value === 'number' ? params.value.toFixed(2) : params.value
 					},
@@ -78,8 +69,19 @@ const chartOptions = computed((): ECOption | null => {
 		},
 		xAxis: {
 			type: 'time', // X-axis type set to time
-			useUTC: true, // Add this line to display time in UTC
-			axisLabel: { show: false }, // Hide x-axis tick labels
+			useUTC: true, // ECharts should still treat input data as UTC
+			axisLabel: {
+				show: true, // Show x-axis tick labels
+				formatter: (value: number) => {
+					const date = new Date(value) // This is a UTC date from ECharts
+					if (isNaN(date.getTime())) {
+						console.error('AxisLabel formatter - Invalid Date from value:', value)
+						return 'Invalid Date'
+					}
+					// Format date to Asia/Jerusalem time using date-fns-tz
+					return formatInTimeZone(date, 'Asia/Jerusalem', 'HH:mm:ss')
+				},
+			},
 			axisLine: { show: true }, // Ensure x-axis line is visible
 			splitLine: { show: true, lineStyle: { type: 'dashed' } }, // Vertical grid lines
 			// boundaryGap: false, // Not typically needed for time axis, data points define boundaries
@@ -124,21 +126,13 @@ const chartOptions = computed((): ECOption | null => {
 				end: 100,
 				bottom: 50, // Position slider 50px from the bottom, above the legend
 				labelFormatter: (value: number) => {
-					const date = new Date(value)
+					const date = new Date(value) // This is a UTC date from ECharts
 					if (isNaN(date.getTime())) {
 						console.error('DataZoom formatter - Invalid Date from value:', value)
 						return 'Invalid Date'
 					}
-					// Manual UTC formatting
-					const year = date.getUTCFullYear()
-					const month = (date.getUTCMonth() + 1).toString().padStart(2, '0')
-					const day = date.getUTCDate().toString().padStart(2, '0')
-					const hours = date.getUTCHours().toString().padStart(2, '0')
-					const minutes = date.getUTCMinutes().toString().padStart(2, '0')
-					const seconds = date.getUTCSeconds().toString().padStart(2, '0')
-					const formatted = `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`
-					// console.log('DataZoom formatter - manually formatted:', formatted); // Keep for debugging if needed
-					return formatted // No "UTC" text for dataZoom for brevity
+					// Format date to Asia/Jerusalem time using date-fns-tz
+					return formatInTimeZone(date, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss')
 				},
 			},
 			{
@@ -181,18 +175,6 @@ onMounted(() => {
 
 		<div v-if="!isLoading && !error">
 			<p v-if="!sessionMetadata && logEntries.length === 0">No data available yet. Click 'Fetch/Refresh Data'.</p>
-
-			<!-- Raw Log Display Removed -->
-			<!--
-			<n-card v-if="logEntries.length > 0" title="Log Entries (Sample - First 10)" style="margin-top: 16px">
-				<n-list hoverable bordered>
-					<n-list-item v-for="(entry, index) in logEntries.slice(0, 10)" :key="index">
-						<n-code :code="JSON.stringify(entry, null, 2)" language="json" word-wrap />
-					</n-list-item>
-				</n-list>
-				<p v-if="logEntries.length > 10">... and {{ logEntries.length - 10 }} more entries.</p>
-			</n-card>
-			-->
 
 			<n-card style="margin-top: 16px">
 				<div v-if="!isLoading && !error && chartFormattedData && chartFormattedData.series.length > 0">
