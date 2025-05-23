@@ -6,8 +6,13 @@ import gc
 import esp
 import esp32  # Added for heap info
 import sys
+import ssl  # Corrected from ussl
+import time  # For sleep in conditional server
 
 import log
+from log import (
+    log as app_log,
+)  # Explicitly alias to avoid conflict if 'log' module itself is used as a function
 
 from wifi import (
     is_connected,
@@ -40,6 +45,7 @@ HTTP_BAD_REQUEST = 400
 HTTP_NOT_FOUND = 404
 HTTP_INTERNAL_ERROR = 500
 
+# Import app from server_framework, not http_server itself
 from server_framework import app, Response, Request, error_response, success_response
 
 
@@ -762,6 +768,72 @@ def api_control(request: Request):
     return control.handle_control_api(request)
 
 
-def start_server():
-    _thread.start_new_thread(lambda: app.run(port=80), ())
-    log.log("Web server started")
+# Renamed from start_server
+def start_https_server():
+    """Starts the HTTPS server in a new thread."""
+    key_file = "/key.pem"
+    cert_file = "/cert.pem"
+
+    if not exists(key_file) or not exists(cert_file):
+        app_log(
+            f"SSL Error: Key file '{key_file}' or Cert file '{cert_file}' not found. HTTPS server not started."
+        )
+        return
+
+    try:
+        app_log("Creating SSL context for HTTPS server...")
+        ssl_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)  # Corrected from ussl
+        app_log(f"Loading cert chain: cert='{cert_file}', key='{key_file}'")
+        ssl_context.load_cert_chain(cert_file, key_file)
+        app_log("SSL context created and certs loaded.")
+
+        # The app instance is already defined globally in this module, imported from server_framework
+        _thread.start_new_thread(lambda: app.run(port=443, ssl_context=ssl_context), ())
+        app_log("HTTPS Web server thread started on port 443.")
+    except Exception as e:
+        app_log(f"Failed to start HTTPS server: {e}")
+        sys.print_exception(e)
+
+
+_http_server_started_flag = False
+
+
+def start_conditional_http_server():
+    """
+    Monitors STA Wi-Fi connection. If connected, starts the HTTP server on port 80
+    in a new thread. Designed to be run in its own thread.
+    """
+    global _http_server_started_flag
+    app_log(
+        "Conditional HTTP server monitor thread started (will become HTTP server thread if STA connects)."
+    )
+
+    # Wait for STA connection
+    while not is_connected():
+        time.sleep(5)  # Check every 5 seconds
+        # Add a counter or timeout if you want to give up after some time
+        # For now, it waits indefinitely for STA connection.
+        app_log("Conditional HTTP server: STA not connected, waiting...")
+
+    # STA is connected (or was at last check)
+    if not _http_server_started_flag:
+        app_log(
+            "STA Wi-Fi connected. Starting HTTP server on port 80 directly in this thread."
+        )
+        try:
+            # The app instance is global. app.run() is blocking and will take over this thread.
+            _http_server_started_flag = True  # Set flag before starting blocking call
+            app.run(port=80, ssl_context=None)
+            # The log below will only be reached if app.run() somehow exits, which it normally doesn't
+            app_log("HTTP Web server (app.run) exited.")
+        except Exception as e:
+            _http_server_started_flag = False  # Reset flag on error
+            app_log(f"Failed to start or run HTTP server: {e}")
+            sys.print_exception(e)
+    else:
+        app_log(
+            "HTTP server already marked as started. Conditional monitor thread exiting without starting a new one."
+        )
+
+    # This thread's purpose is now either fulfilled by app.run() or it exits if server was already started.
+    app_log("Conditional HTTP server (monitor/starter) thread logic complete.")

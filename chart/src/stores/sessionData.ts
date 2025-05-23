@@ -211,7 +211,11 @@ export const useSessionDataStore = defineStore('sessionData', {
 			this.logEntries = []
 
 			try {
-				const response = await ofetch('http://10.100.102.6/api/data', {
+				const baseUrl = (import.meta.env.VITE_API_BASE_URL as string) || 'http://192.168.4.1' // Fallback if not set, though Vite should set it.
+				const apiUrl = `${baseUrl}/api/data`
+				console.log(`Fetching data from: ${apiUrl}`) // For debugging which URL is used
+
+				const response = await ofetch(apiUrl, {
 					method: 'POST',
 					parseResponse: (txt) => txt, // Keep as text since we handle JSONL parsing
 					retry: 3,

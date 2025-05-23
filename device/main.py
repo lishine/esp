@@ -10,7 +10,10 @@ from led import set_green_led
 import wifi
 from wifi import manage_wifi_led_status
 import ap
-from http_server import start_server
+from http_server import (
+    start_https_server,
+    start_conditional_http_server,
+)  # Modified import
 from cpu_measure import idle_task, measure_cpu
 
 import io_local.init_io as init_io
@@ -38,7 +41,13 @@ async def main():
         set_green_led(True)
         _thread.start_new_thread(wifi.wifi_thread_manager, ())
         _thread.start_new_thread(_log_writer_thread_func, ())
-        start_server()
+
+        log("Starting HTTPS server...")
+        start_https_server()  # Starts the always-on HTTPS server in its own thread
+
+        log("Starting conditional HTTP server monitor thread...")
+        # This thread will wait for STA to connect and then start the HTTP server
+        _thread.start_new_thread(start_conditional_http_server, ())
 
         log("Starting async tasks")
         esc_telemetry.start_esc_reader()

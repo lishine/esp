@@ -3,6 +3,7 @@ import socket
 from log import log
 from netutils import get_client_ip, get_device_info
 import json
+import ssl  # Corrected from ussl
 
 # HTTP status codes
 HTTP_OK = 200
@@ -296,30 +297,52 @@ class HTTPServer:
             except:
                 pass
 
-    def run(self, port=None):
+    def run(self, port=None, ssl_context=None):  # Added ssl_context parameter
         if port is not None:
             self.port = port
+
+        server_type = "HTTPS" if ssl_context else "HTTP"
+        log(f"Attempting to start {server_type} server on port {self.port}")
 
         server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
         try:
             server_socket.bind(("0.0.0.0", self.port))
-            server_socket.listen(5)
-            log(f"Server started on port {self.port}")
+            server_socket.listen(5)  # Max 5 queued connections
+            log(f"{server_type} server started on 0.0.0.0:{self.port}")
 
             while True:
-                client_socket, addr = server_socket.accept()
-                try:
-                    _thread.start_new_thread(self.handle_client, (client_socket, addr))
-                except:
+                client_socket_orig, addr = server_socket.accept()
+                log(f"{server_type} server: Connection from {addr}")
+
+                actual_client_socket = client_socket_orig
+                if ssl_context:
                     try:
-                        client_socket.close()
+                        actual_client_socket = ssl_context.wrap_socket(
+                            client_socket_orig, server_side=True
+                        )
+                        log(f"{server_type} server: Socket wrapped with SSL for {addr}")
+                    except Exception as e_ssl_wrap:
+                        log(f"Error wrapping socket with SSL for {addr}: {e_ssl_wrap}")
+                        client_socket_orig.close()  # Close the original socket
+                        continue  # Skip to next connection attempt
+
+                try:
+                    # Pass the (potentially SSL-wrapped) socket to handle_client
+                    _thread.start_new_thread(
+                        self.handle_client, (actual_client_socket, addr)
+                    )
+                except Exception as e_thread:
+                    log(f"Error starting thread for client {addr}: {e_thread}")
+                    try:
+                        actual_client_socket.close()  # Close if thread failed to start
                     except:
-                        pass
-        except Exception as e:
-            log(f"Server error: {e}")
+                        pass  # Ignore errors on close
+        except Exception as e_server:
+            log(f"{server_type} server error on port {self.port}: {e_server}")
         finally:
+            log(f"Closing {server_type} server socket on port {self.port}")
             server_socket.close()
 
 
