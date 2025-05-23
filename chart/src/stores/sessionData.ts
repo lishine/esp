@@ -1,6 +1,5 @@
 import { defineStore } from 'pinia'
-// The import for mock data remains, but its content will change
-import mockFullSessionDataRaw from './mockSessionData.jsonl?raw'
+import { ofetch, FetchError } from 'ofetch'
 
 // Value types for different sensors
 export interface EscValues {
@@ -32,7 +31,6 @@ export type LogEntryValue = EscValues | GpsValues | DsValues | number
 
 // Structure for a single log entry
 export interface LogEntry {
-	r: string // run id or similar
 	t: string // timestamp part (original string form)
 	n: string // sensor name
 	v: LogEntryValue // sensor value(s)
@@ -63,6 +61,7 @@ export interface SessionMetadata {
 	device_description: string
 	fan_enabled: boolean
 	ds_associations: DsAssociation[]
+	date: string // Added date field
 }
 
 export const useSessionDataStore = defineStore('sessionData', {
@@ -84,63 +83,96 @@ export const useSessionDataStore = defineStore('sessionData', {
 			}
 
 			// Parse metadata (first line)
+			let metadata: SessionMetadata | null = null
 			try {
-				this.sessionMetadata = JSON.parse(lines[0]) as SessionMetadata
+				metadata = JSON.parse(lines[0]) as SessionMetadata
+				this.sessionMetadata = metadata
 			} catch (e) {
 				console.error('Failed to parse session metadata:', e)
 				this.error = 'Failed to parse session metadata.'
 				this.sessionMetadata = null
+				// If metadata parsing fails, we cannot proceed with log entries as date is needed
+				return
 			}
 
+			if (!metadata.date) {
+				console.error('Metadata is missing or does not contain date.')
+				this.error = 'Metadata is missing or does not contain date.'
+				this.sessionMetadata = null
+				this.logEntries = []
+				return
+			}
+
+			const sessionDate = metadata.date // "YYYY-MM-DD"
+
 			// Parse log entries (remaining lines)
-			// Use Omit to initially parse without preciseTimestamp, as it's derived
-			const rawLogEntries: Array<Omit<LogEntry, 'preciseTimestamp'>> = []
+			const rawLogEntryArrays: Array<Array<Omit<LogEntry, 'preciseTimestamp'>>> = []
 			for (let i = 1; i < lines.length; i++) {
 				const line = lines[i].trim()
 				if (line === '') continue
 				try {
-					rawLogEntries.push(JSON.parse(line) as Omit<LogEntry, 'preciseTimestamp'>)
+					// Each line is now an array of log entries
+					const entriesInLine = JSON.parse(line) as Array<Omit<LogEntry, 'preciseTimestamp'>>
+					rawLogEntryArrays.push(entriesInLine)
 				} catch (e) {
-					console.error('Failed to parse log entry line:', line, e)
+					console.error('Failed to parse log entry array line:', line, e)
 				}
 			}
 
+			// Flatten the array of arrays and group entries by their original timestamp string
 			const entriesWithPreciseTimestamp: LogEntry[] = []
-			const groups = new Map<string, Array<Omit<LogEntry, 'preciseTimestamp'>>>()
+			const entriesByTimestamp = new Map<string, Array<Omit<LogEntry, 'preciseTimestamp'>>>()
 
-			// Group entries by their original r and t key
-			for (const entry of rawLogEntries) {
-				const key = `${entry.r}_${entry.t}` // Group by run and original timestamp string
-				if (!groups.has(key)) {
-					groups.set(key, [])
+			rawLogEntryArrays.forEach((entryArray) => {
+				if (entryArray.length === 0) return
+
+				// The first object in the array contains the timestamp
+				const timestampEntry = entryArray[0]
+				if (!timestampEntry.t) {
+					console.error('Skipping line due to missing timestamp:', entryArray)
+					return
 				}
-				const groupForKey = groups.get(key)
+				const timestampKey = timestampEntry.t // "HH-MM-SS"
+
+				// The remaining objects are the actual log entries for this timestamp
+				const logEntriesForTimestamp = entryArray.slice(1)
+
+				if (!entriesByTimestamp.has(timestampKey)) {
+					entriesByTimestamp.set(timestampKey, [])
+				}
+				const groupForKey = entriesByTimestamp.get(timestampKey)
 				if (groupForKey) {
-					groupForKey.push(entry)
+					groupForKey.push(...logEntriesForTimestamp)
 				}
-			}
+			})
 
 			// Process each group to assign preciseTimestamps
-			for (const group of groups.values()) {
-				// Iterate over groups
+			// Iterate over sorted timestamps to maintain order
+			const sortedTimestamps = Array.from(entriesByTimestamp.keys()).sort()
+
+			sortedTimestamps.forEach((timestampKey) => {
+				const group = entriesByTimestamp.get(timestampKey)
+				if (!group) return // Should not happen if key came from map keys
+
 				const countInSecond = group.length
-				// Ensure msIncrement is well-defined even for empty group (though shouldn't happen if group was added)
 				const msIncrement = countInSecond > 0 ? 1000 / countInSecond : 0
 
 				group.forEach((entry, index) => {
-					// Construct Date object from entry.t
-					// "YYYY-MM-DD_HH-MM-SS" -> "YYYY-MM-DDTHH:MM:SSZ" for UTC parsing
-					// entry.t is "YYYY-MM-DD_HH-MM-SS"
-					// We need "YYYY-MM-DDTHH:MM:SS" for Date parsing
-					const parts = entry.t.split('_')
-					const datePart = parts[0]
-					const timePart = parts[1] // "HH-MM-SS"
-					const formattedTimePart = timePart.replace(/-/g, ':') // "HH:MM:SS"
-					const isoTimestampStr = `${datePart}T${formattedTimePart}`
+					// Construct Date object using sessionDate and the timestampKey (HH-MM-SS)
+					// sessionDate is "YYYY-MM-DD", timestampKey is "HH-MM-SS"
+					const formattedTimePart = timestampKey.replace(/-/g, ':') // "HH:MM:SS"
+					const isoTimestampStr = `${sessionDate}T${formattedTimePart}`
 					const baseDate = new Date(isoTimestampStr + 'Z') // Parse as UTC
 
 					if (isNaN(baseDate.getTime())) {
-						console.error('Invalid date parsed for entry:', entry, 'from t:', entry.t)
+						console.error(
+							'Invalid date parsed for entry:',
+							entry,
+							'from date:',
+							sessionDate,
+							'and timestampKey:',
+							timestampKey
+						)
 						// Skip this entry or handle error appropriately
 						return
 					}
@@ -150,12 +182,13 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 					entriesWithPreciseTimestamp.push({
 						...entry,
+						t: timestampKey, // Keep the original timestamp string
 						preciseTimestamp: baseDate,
 					} as LogEntry) // Cast to LogEntry
 				})
-			}
+			})
 
-			// Sort all entries by their new preciseTimestamp
+			// Sort all entries by their new preciseTimestamp (already mostly sorted by processing sorted timestamps, but a final sort is safer)
 			entriesWithPreciseTimestamp.sort((a, b) => a.preciseTimestamp.getTime() - b.preciseTimestamp.getTime())
 
 			console.log(
@@ -178,11 +211,29 @@ export const useSessionDataStore = defineStore('sessionData', {
 			this.logEntries = []
 
 			try {
-				await new Promise((resolve) => setTimeout(resolve, 100)) // Simulate network delay (reduced for testing)
-				this._parseSessionData(mockFullSessionDataRaw)
+				const response = await ofetch('http://10.100.102.6/api/data', {
+					method: 'POST',
+					parseResponse: (txt) => txt, // Keep as text since we handle JSONL parsing
+					retry: 3,
+					retryDelay: 500,
+					timeout: 5000,
+					onRequestError: ({ error }) => {
+						console.error('Request error:', error)
+						throw error
+					},
+					onResponseError: ({ response }) => {
+						console.error('Response error:', response.status, response._data)
+						throw new Error(`API error: ${response.status.toString()}`)
+					},
+				})
+				this._parseSessionData(response)
 			} catch (err) {
 				console.error('Error fetching or parsing session data:', err)
-				this.error = err instanceof Error ? err.message : 'An unknown error occurred during fetch/parse'
+				if (err instanceof FetchError) {
+					this.error = `Network error: ${err.message}`
+				} else {
+					this.error = err instanceof Error ? err.message : 'An unknown error occurred'
+				}
 			} finally {
 				this.isLoading = false
 			}

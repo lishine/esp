@@ -34,7 +34,7 @@ const chartOptions = computed((): ECOption | null => {
 
 	const optionsToReturn = {
 		title: {
-			text: 'Sensor Data Over Time',
+			text: '',
 		},
 		tooltip: {
 			trigger: 'axis',
@@ -71,8 +71,8 @@ const chartOptions = computed((): ECOption | null => {
 			type: 'scroll',
 		},
 		grid: {
-			left: '3%',
-			right: '4%',
+			left: '1%',
+			right: '1%',
 			bottom: '20%', // Adjusted to accommodate dataZoom and legend below it
 			containLabel: true,
 		},
@@ -170,10 +170,6 @@ onMounted(() => {
 
 <template>
 	<n-space vertical style="padding: 20px">
-		<n-button :loading="isLoading" type="primary" @click="sessionDataStore.fetchSessionData()">
-			Fetch/Refresh Data
-		</n-button>
-
 		<n-space v-if="isLoading" align="center" justify="center" style="margin-top: 20px">
 			<n-spin size="large" />
 			<p>Loading session data...</p>
@@ -185,13 +181,6 @@ onMounted(() => {
 
 		<div v-if="!isLoading && !error">
 			<p v-if="!sessionMetadata && logEntries.length === 0">No data available yet. Click 'Fetch/Refresh Data'.</p>
-
-			<n-card v-if="sessionMetadata" title="Session Info" style="margin-top: 16px">
-				<n-space>
-					<span>Device: {{ sessionMetadata.device_description || 'N/A' }}</span>
-					<span>Fan: {{ sessionMetadata.fan_enabled ? 'Enabled' : 'Disabled' }}</span>
-				</n-space>
-			</n-card>
 
 			<!-- Raw Log Display Removed -->
 			<!--
@@ -205,13 +194,20 @@ onMounted(() => {
 			</n-card>
 			-->
 
-			<n-card title="Sensor Charts" style="margin-top: 16px">
+			<n-card style="margin-top: 16px">
 				<div v-if="!isLoading && !error && chartFormattedData && chartFormattedData.series.length > 0">
 					<sensor-chart :options="chartOptions" height="500px" />
 				</div>
 				<div v-else-if="!isLoading && !error">
 					<p>No chart data available or data is still processing.</p>
 				</div>
+			</n-card>
+
+			<n-card v-if="sessionMetadata" title="Session Info" style="margin-top: 16px">
+				<n-space>
+					<span>Device: {{ sessionMetadata.device_description || 'N/A' }}</span>
+					<span>Fan: {{ sessionMetadata.fan_enabled ? 'Enabled' : 'Disabled' }}</span>
+				</n-space>
 			</n-card>
 		</div>
 	</n-space>

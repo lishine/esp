@@ -70,9 +70,6 @@ const chartStyle = computed(() => ({
 </template>
 
 <style scoped>
-.chart {
-	/* Ensure the chart fills its container if needed, though autoresize and style prop should handle it */
-}
 .no-options-placeholder {
 	display: flex;
 	align-items: center;

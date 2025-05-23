@@ -570,6 +570,9 @@ def api_get_data_log_file(request: Request):
             headers={
                 "Content-Type": "application/jsonl",  # Standard MIME type for JSON Lines
                 "Content-Disposition": f'attachment; filename="{filename_only}"',
+                "Access-Control-Allow-Origin": "*",  # Allow requests from any origin
+                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",  # Allow POST, GET, and OPTIONS methods
+                "Access-Control-Allow-Headers": "Content-Type",  # Allow Content-Type header
             },
         )
     except Exception as e:
