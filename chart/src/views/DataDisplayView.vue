@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
-import { useSessionDataStore } from '../stores/sessionData'
+import { useSessionDataStore, type EscValues, type DsValues, type LogEntry } from '../stores/sessionData'
 import SensorChart from '../components/SensorChart.vue'
 import type { EChartsCoreOption as ECOption } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
 import { NSpin, NAlert, NCard, NSpace } from 'naive-ui'
@@ -15,20 +15,103 @@ const logEntries = computed(() => sessionDataStore.logEntries)
 const chartFormattedData = computed(() => sessionDataStore.getChartFormattedData)
 
 const chartOptions = computed((): ECOption | null => {
-	if (!chartFormattedData.value || !chartFormattedData.value.series || chartFormattedData.value.series.length === 0) {
+	if (
+		!chartFormattedData.value ||
+		!chartFormattedData.value.series ||
+		chartFormattedData.value.series.length === 0 ||
+		logEntries.value.length === 0
+	) {
 		return null
 	}
 
+	// Calculate dynamic max values
+	let maxObservedCurrent = 0
+	let maxObservedTemp = 0
+
+	logEntries.value.forEach((entry: LogEntry) => {
+		if (entry.n === 'esc') {
+			const escVal = entry.v as EscValues
+			if (typeof escVal.i === 'number') {
+				maxObservedCurrent = Math.max(maxObservedCurrent, escVal.i)
+			}
+			if (typeof escVal.t === 'number') {
+				maxObservedTemp = Math.max(maxObservedTemp, escVal.t)
+			}
+		} else if (entry.n === 'mc') {
+			const motorCurrentVal = entry.v as number
+			if (typeof motorCurrentVal === 'number') {
+				maxObservedCurrent = Math.max(maxObservedCurrent, motorCurrentVal)
+			}
+		} else if (entry.n === 'ds') {
+			const dsVal = entry.v as DsValues
+			for (const key in dsVal) {
+				if (typeof dsVal[key] === 'number') {
+					maxObservedTemp = Math.max(maxObservedTemp, dsVal[key])
+				}
+			}
+		}
+	})
+
+	const finalMaxCurrent = maxObservedCurrent > 0 ? Math.ceil((maxObservedCurrent * 1.1) / 10) * 10 : 100
+	const finalMaxTemp = maxObservedTemp > 0 ? Math.ceil((maxObservedTemp * 1.1) / 10) * 10 : 120
+	const minTemp = 0 // Or 10 if preferred
+
 	const yAxesConfig = [
-		{ id: 'yGpsSpeed', min: 0, max: 20, seriesNames: ['GPS Speed'] },
-		{ id: 'yEscRpm', min: 0, max: 3000, seriesNames: ['ESC RPM'] },
-		{ id: 'yEscMah', min: 0, max: 15000, seriesNames: ['ESC mAh'] },
-		{ id: 'yEscTemp', min: 10, max: 120, seriesNames: ['ESC Temp'] },
-		{ id: 'yEscCurrent', min: 0, max: 100, seriesNames: ['ESC Current'] },
-		{ id: 'yEscVoltage', min: 30, max: 55, seriesNames: ['ESC Voltage'] },
-		{ id: 'yDsTemps', min: 10, max: 120, seriesNamePrefix: 'DS Temp' }, // Catches DS Temp aq, DS Temp bq etc.
-		{ id: 'yThrottle', min: 990, max: 1500, seriesNames: ['Throttle'] },
-		{ id: 'yMotorCurrent', min: 0, max: 100, seriesNames: ['Motor Current'] },
+		// Visible Axes
+		{
+			id: 'yCurrent',
+			name: 'I',
+			position: 'left',
+			min: 0,
+			max: finalMaxCurrent,
+			seriesNames: ['ESC I', 'Motor Current'],
+			axisLabel: { show: true },
+			nameTextStyle: { padding: [0, 0, 0, -35] },
+			show: true,
+		},
+		{
+			id: 'yTemperature',
+			name: 'T',
+			position: 'right',
+			min: minTemp,
+			max: finalMaxTemp,
+			seriesNames: ['ESC T'],
+			seriesNamePrefix: 'DS Temp',
+			axisLabel: { show: true },
+			nameTextStyle: { padding: [0, -35, 0, 0] },
+			show: true,
+		},
+		// Hidden Axes for other series
+		{
+			id: 'yThrottle',
+			seriesNames: ['Throttle'],
+			min: 990, // Original fixed min
+			max: 4500, // Original fixed max
+			show: false, // This axis will not be displayed
+		},
+		{
+			id: 'yEscVoltage',
+			seriesNames: ['ESC V'], // Note: sessionData produces 'ESC V'
+			min: 0,
+			max: 50.5,
+			show: false,
+		},
+		{
+			id: 'yEscRpm',
+			seriesNames: ['ESC RPM'],
+			min: 0,
+			max: 9000,
+			show: false,
+		},
+		{
+			id: 'yGpsSpeed',
+			seriesNames: ['GPS Speed'],
+			min: 0,
+			max: 20,
+			show: false,
+		},
+		// Add a fallback hidden axis for any series not explicitly matched
+		{ id: 'yOther', show: false },
 	]
 
 	const optionsToReturn = {
@@ -63,7 +146,7 @@ const chartOptions = computed((): ECOption | null => {
 		},
 		grid: {
 			left: '1%',
-			right: '1%',
+			right: '8%', // Increased to make space for the right Y-axis name and labels
 			bottom: '20%', // Adjusted to accommodate dataZoom and legend below it
 			containLabel: true,
 		},
@@ -84,31 +167,41 @@ const chartOptions = computed((): ECOption | null => {
 			},
 			axisLine: { show: true }, // Ensure x-axis line is visible
 			splitLine: { show: true, lineStyle: { type: 'dashed' } }, // Vertical grid lines
-			// boundaryGap: false, // Not typically needed for time axis, data points define boundaries
 		},
 		yAxis: yAxesConfig.map((config) => ({
+			id: config.id,
 			type: 'value',
-			name: '', // Remove name or set to empty
+			name: config.name || '',
 			min: config.min,
 			max: config.max,
-			axisLabel: { show: false }, // Hide y-axis tick labels
-			splitLine: { show: false }, // Hide horizontal grid lines from this y-axis
-			axisLine: { show: true }, // Ensure y-axis line is visible
-			// id: config.id // Optional: if you need to reference by ID later
+			position: config.position,
+			show: config.show !== undefined ? config.show : true, // Default to true if not specified
+			axisLabel:
+				config.axisLabel !== undefined
+					? config.axisLabel
+					: { show: config.show !== undefined ? config.show : true },
+			splitLine: { show: config.show !== undefined ? config.show : true, lineStyle: { type: 'dashed' } }, // Show for visible axes
+			axisLine: { show: config.show !== undefined ? config.show : true, onZero: false },
+			nameTextStyle: config.nameTextStyle || {},
 		})),
 		series: chartFormattedData.value.series.map((s: any) => {
-			let yAxisIndex = 0 // Default to the first y-axis
-			const seriesName = s.name
-			for (let i = 0; i < yAxesConfig.length; i++) {
-				const config = yAxesConfig[i]
-				if (
-					config.seriesNames?.includes(seriesName) ||
-					(config.seriesNamePrefix && seriesName.startsWith(config.seriesNamePrefix))
-				) {
-					yAxisIndex = i
-					break
-				}
+			const seriesName = s.name as string
+			let yAxisIndex = yAxesConfig.length - 1 // Default to the last 'yOther' hidden axis
+
+			const axisConfigIndex = yAxesConfig.findIndex(
+				(axCfg) =>
+					(axCfg.seriesNames && axCfg.seriesNames.includes(seriesName)) ||
+					(axCfg.seriesNamePrefix && seriesName.startsWith(axCfg.seriesNamePrefix))
+			)
+
+			if (axisConfigIndex !== -1) {
+				yAxisIndex = axisConfigIndex
+			} else {
+				console.warn(
+					`Series "${seriesName}" did not match any yAxesConfig. Defaulting to hidden yOther axis (index ${yAxisIndex}).`
+				)
 			}
+
 			return {
 				...s,
 				yAxisIndex: yAxisIndex,

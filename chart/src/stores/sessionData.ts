@@ -216,7 +216,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 					parseResponse: (txt) => txt, // Keep as text since we handle JSONL parsing
 					retry: 3,
 					retryDelay: 500,
-					timeout: 5000,
+					timeout: 50000,
 					onRequestError: ({ error }) => {
 						console.error('Request error:', error)
 						throw error
@@ -247,177 +247,142 @@ export const useSessionDataStore = defineStore('sessionData', {
 		// getEscRpmHistory would need an update to use preciseTimestamp if it were actively used for charting.
 
 		getChartFormattedData: (state): FormattedChartData => {
-			// The `|| state.logEntries.length === 0` is redundant if `!state.logEntries` is true.
-			// However, state.logEntries is initialized as `[] as LogEntry[]`, so it's never null/undefined.
-			// The correct check is just for length.
 			if (state.logEntries.length === 0) {
 				return { series: [] }
 			}
 
-			// Collect all unique preciseTimestamps (as Date objects) and sort them
-			const uniqueTimestampValues = new Set<number>() // Store time as number for uniqueness
+			console.time('getChartFormattedData')
+
+			// 1. Collect all unique preciseTimestamps and sort them
+			const uniqueTimestampMillis = new Set<number>()
 			state.logEntries.forEach((entry) => {
-				// entry.preciseTimestamp is guaranteed to exist here due to the parsing logic
-				// and the LogEntry interface.
-				uniqueTimestampValues.add(entry.preciseTimestamp.getTime())
+				uniqueTimestampMillis.add(entry.preciseTimestamp.getTime())
 			})
+			const sortedUniqueTimestampMillis = Array.from(uniqueTimestampMillis).sort((a, b) => a - b)
 
-			const sortedUniqueTimestamps: Date[] = Array.from(uniqueTimestampValues)
-				.sort((a, b) => a - b) // Sort numbers (timestamps)
-				.map((time) => new Date(time)) // Convert back to Date objects
+			const finalSeries: ChartSeriesData[] = []
 
-			const series: ChartSeriesData[] = []
+			// Helper function to apply range checks
+			const applyRangeChecks = (name: string, value: number | null, entry?: LogEntry): number | null => {
+				if (value === null || typeof value !== 'number' || isNaN(value)) return null
 
-			// Helper function to create a series
-			const createSeries = (
-				name: string,
-				sensorName: string,
-				valueExtractor: (entry: LogEntry) => number | null | undefined
-			): ChartSeriesData => {
-				const data: Array<[Date, number | null]> = []
-				for (const tsDate of sortedUniqueTimestamps) {
-					// Find the first entry for this sensor at this precise timestamp.
-					const entry = state.logEntries.find(
-						(e) =>
-							// e.preciseTimestamp is guaranteed by LogEntry type
-							e.preciseTimestamp.getTime() === tsDate.getTime() && e.n === sensorName
-					)
-
-					let value: number | null = null
-					if (entry) {
-						const rawValueFromExtractor = valueExtractor(entry)
-
-						if (typeof rawValueFromExtractor === 'number' && !isNaN(rawValueFromExtractor)) {
-							let processedValue: number | null = rawValueFromExtractor
-
-							// Apply range checks based on the series 'name'
-							if (name === 'ESC RPM') {
-								if (processedValue < 0 || processedValue > 3000) processedValue = null
-							} else if (name === 'ESC Voltage') {
-								if (processedValue < 30 || processedValue > 55) processedValue = null
-							} else if (name === 'ESC Current') {
-								if (processedValue < 0 || processedValue > 200) processedValue = null
-							} else if (name === 'ESC Temp') {
-								if (processedValue < 10 || processedValue > 120) processedValue = null
-							} else if (name === 'Motor Current') {
-								if (processedValue < 0 || processedValue > 200) processedValue = null
-							} else if (name === 'Throttle') {
-								if (processedValue < 990 || processedValue > 1500) processedValue = null
-							} else if (name.startsWith('DS Temp ')) {
-								// e.g., "DS Temp aq"
-								if (processedValue < 10 || processedValue > 60) processedValue = null
-							} else if (name === 'GPS Speed') {
-								const gpsValues = entry.v as GpsValues // Assuming entry.v is GpsValues if name is 'GPS Speed'
-								if (!gpsValues.fix) {
-									processedValue = null // No fix, speed is invalid
-								} else {
-									// Fix is true, check range for the extracted speed (which is rawValueFromExtractor)
-									if (rawValueFromExtractor < 0 || rawValueFromExtractor > 20) {
-										processedValue = null
-									}
-									// else processedValue remains rawValueFromExtractor (valid and in range or already nulled by extractor)
-								}
-							}
-							// Note: ESC mAh range is 0-15000, not currently charted as a separate series.
-							// else if (name === 'ESC mAh') {
-							//   if (processedValue < 0 || processedValue > 15000) processedValue = null;
-							// }
-							value = processedValue
-						} else {
-							// rawValueFromExtractor is not a valid number (e.g. undefined, null from extractor, or NaN)
-							// Ensure GPS Speed is null if !fix, even if rawValueFromExtractor was not a number.
-							if (name === 'GPS Speed' && entry.n === 'gps') {
-								const gpsValues = entry.v as GpsValues
-								if (!gpsValues.fix) {
-									value = null
-								} else {
-									// Fix is true, but speed value itself was not a number (e.g. undefined from extractor)
-									value = null
-								}
-							} else {
-								value = null // Default to null for other non-numeric extracted values
-							}
-						}
+				let checkedValue: number | null = value // Allow null
+				if (name === 'ESC RPM') {
+					if (checkedValue < 0 || checkedValue > 3000) checkedValue = null
+				} else if (name === 'ESC Voltage') {
+					if (checkedValue < 30 || checkedValue > 55) checkedValue = null
+				} else if (name === 'ESC Current') {
+					if (checkedValue < 0 || checkedValue > 200) checkedValue = null
+				} else if (name === 'ESC Temp') {
+					if (checkedValue < 10 || checkedValue > 120) checkedValue = null
+				} else if (name === 'Motor Current') {
+					if (checkedValue < 0 || checkedValue > 200) checkedValue = null
+				} else if (name === 'Throttle') {
+					if (checkedValue < 990 || checkedValue > 1500) checkedValue = null
+				} else if (name.startsWith('DS Temp ')) {
+					if (checkedValue < 10 || checkedValue > 60) checkedValue = null
+				} else if (name === 'GPS Speed' && entry) {
+					const gpsValues = entry.v as GpsValues
+					if (!gpsValues.fix) {
+						checkedValue = null
 					} else {
-						// No entry for this sensor at this timestamp
-						value = null
+						// Ensure checkedValue is a number before numeric comparison
+						if (typeof checkedValue === 'number' && (checkedValue < 0 || checkedValue > 20)) {
+							checkedValue = null
+						}
 					}
-					data.push([tsDate, value])
 				}
-				return { name, type: 'line', data, showSymbol: false }
+				return checkedValue
 			}
 
-			// ESC Metrics
-			const escMetrics: Array<{ key: keyof EscValues; name: string }> = [
-				{ key: 'rpm', name: 'ESC RPM' },
-				{ key: 'v', name: 'ESC Voltage' },
-				{ key: 'i', name: 'ESC Current' },
-				{ key: 't', name: 'ESC Temp' },
+			// 2. Define series configurations
+			const seriesConfigs = [
+				// ESC Metrics
+				...(['rpm', 'v', 'i', 't'] as Array<keyof EscValues>).map((key) => ({
+					seriesName: `ESC ${key.toUpperCase()}`, // e.g., ESC RPM
+					sensorName: 'esc',
+					valueExtractor: (entry: LogEntry) => (entry.v as EscValues)[key],
+				})),
+				// MC (Motor Current)
+				{
+					seriesName: 'Motor Current',
+					sensorName: 'mc',
+					valueExtractor: (entry: LogEntry) => entry.v as number,
+				},
+				// TH (Throttle)
+				{
+					seriesName: 'Throttle',
+					sensorName: 'th',
+					valueExtractor: (entry: LogEntry) => entry.v as number,
+				},
+				// GPS Speed
+				{
+					seriesName: 'GPS Speed',
+					sensorName: 'gps',
+					valueExtractor: (entry: LogEntry) => (entry.v as GpsValues).speed,
+				},
+				// Add other GPS metrics here if needed, similar to ESC metrics
 			]
-			escMetrics.forEach((metric) => {
-				series.push(createSeries(metric.name, 'esc', (entry) => (entry.v as EscValues)[metric.key]))
-			})
 
-			// MC (Motor Current)
-			series.push(createSeries('Motor Current', 'mc', (entry) => entry.v as number))
-
-			// TH (Throttle)
-			series.push(createSeries('Throttle', 'th', (entry) => entry.v as number))
-
-			// DS (Temperature Sensors)
+			// DS (Temperature Sensors) - dynamically add them
 			const dsSensorKeys = new Set<string>()
 			state.logEntries.forEach((entry) => {
-				// entry.v can be EscValues, GpsValues, DsValues, or number.
-				// We are interested in DsValues, which is an object.
-				// `typeof entry.v === 'object'` is a good check.
-				// `entry.v !== null` is also good practice.
-				// The linter might be overly aggressive here or there's a subtle type inference.
-				// For safety and clarity, keeping the check. If entry.n is 'ds', entry.v should be DsValues.
 				if (entry.n === 'ds') {
-					// If entry.n is 'ds', TypeScript should infer entry.v as DsValues based on LogEntryValue.
-					// DsValues is defined as { [key: string]: number }, so it's an object and not null.
 					const dsValue = entry.v as DsValues
 					Object.keys(dsValue).forEach((key) => dsSensorKeys.add(key))
 				}
 			})
 			Array.from(dsSensorKeys).forEach((key) => {
-				series.push(createSeries(`DS Temp ${key}`, 'ds', (entry) => (entry.v as DsValues)[key]))
+				seriesConfigs.push({
+					seriesName: `DS Temp ${key}`,
+					sensorName: 'ds',
+					valueExtractor: (entry: LogEntry) => (entry.v as DsValues)[key],
+				})
 			})
 
-			// GPS Metrics
-			// GPS Speed is handled first due to its special defaulting logic
-			series.push(
-				createSeries('GPS Speed', 'gps', (entry) => {
-					// The core logic for GPS speed (defaulting to 0) is inside createSeries.
-					// This extractor just provides the raw speed if available.
-					return (entry.v as GpsValues).speed
+			// 3. Process data for each series
+			seriesConfigs.forEach((config) => {
+				// Create a temporary map for the current sensor's data: timestamp -> value
+				const sensorDataMap = new Map<number, number | null>()
+				const sensorEntries = new Map<number, LogEntry>() // To store entry for range checks if needed
+
+				state.logEntries.forEach((entry) => {
+					if (entry.n === config.sensorName) {
+						const value = config.valueExtractor(entry)
+						if (typeof value === 'number') {
+							sensorDataMap.set(entry.preciseTimestamp.getTime(), value)
+							if (config.seriesName === 'GPS Speed') {
+								// Store entry for GPS fix check
+								sensorEntries.set(entry.preciseTimestamp.getTime(), entry)
+							}
+						} else {
+							// Catches both null and undefined if not a number
+							sensorDataMap.set(entry.preciseTimestamp.getTime(), null)
+						}
+					}
 				})
-			)
 
-			// const otherGpsMetrics: Array<{
-			// 	key: keyof GpsValues
-			// 	name: string
-			// 	condition?: (v: GpsValues) => boolean
-			// }> = [
-			// 	{ key: 'alt', name: 'GPS Altitude', condition: (v) => v.fix },
-			// 	{ key: 'seen', name: 'GPS Satellites Seen' },
-			// 	{ key: 'active', name: 'GPS Satellites Active' },
-			// 	// hdg could be added if needed
-			// ]
+				const seriesChartData: Array<[Date, number | null]> = []
+				sortedUniqueTimestampMillis.forEach((tsMillis) => {
+					const value = sensorDataMap.get(tsMillis)
+					const entryForCheck = config.seriesName === 'GPS Speed' ? sensorEntries.get(tsMillis) : undefined
+					const checkedValue = applyRangeChecks(
+						config.seriesName,
+						value === undefined ? null : value,
+						entryForCheck
+					)
+					seriesChartData.push([new Date(tsMillis), checkedValue])
+				})
 
-			// otherGpsMetrics.forEach((metric) => {
-			// 	series.push(
-			// 		createSeries(metric.name, 'gps', (entry) => {
-			// 			const gpsValues = entry.v as GpsValues
-			// 			if (metric.condition && !metric.condition(gpsValues)) {
-			// 				return null // Condition not met (e.g., no fix for alt)
-			// 			}
-			// 			const val = gpsValues[metric.key]
-			// 			return typeof val === 'number' ? val : null
-			// 		})
-			// 	)
-			// })
-			return { series }
+				finalSeries.push({
+					name: config.seriesName,
+					type: 'line',
+					data: seriesChartData,
+					showSymbol: false,
+				})
+			})
+			console.timeEnd('getChartFormattedData')
+			return { series: finalSeries }
 		},
 	},
 })
