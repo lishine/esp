@@ -119,6 +119,11 @@ make_request() {
     # Use an array for curl options for better handling of spaces/special chars
     local curl_opts_array=("-s" "-m" "$timeout") # -s: silent, -m: max time
 
+    # Add -k for HTTPS URLs to allow self-signed certificates
+    if [[ "$url" == https://* ]]; then
+        curl_opts_array+=("-k")
+    fi
+
     if [ -z "$ESP_IP" ]; then
         echo "Error: ESP_IP variable is not set for make_request." >&2
         return 1

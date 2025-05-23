@@ -250,9 +250,7 @@ const chartOptions = computed((): ECOption | null => {
 	return optionsToReturn
 })
 
-onMounted(() => {
-	sessionDataStore.fetchSessionData()
-})
+onMounted(() => {})
 </script>
 
 <template>

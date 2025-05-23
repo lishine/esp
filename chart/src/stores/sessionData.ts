@@ -65,14 +65,42 @@ export interface SessionMetadata {
 }
 
 export const useSessionDataStore = defineStore('sessionData', {
-	state: () => ({
-		sessionMetadata: null as SessionMetadata | null,
-		logEntries: [] as LogEntry[],
-		isLoading: false,
-		error: null as string | null,
-	}),
+	state: () => {
+		let storedUserApiIp = ''
+		if (typeof localStorage !== 'undefined') {
+			storedUserApiIp = localStorage.getItem('espChartUserApiIp') || ''
+		}
+
+		let storedUseUserApiIp = false
+		if (typeof localStorage !== 'undefined') {
+			const useIpStr = localStorage.getItem('espChartUseUserApiIp')
+			storedUseUserApiIp = useIpStr === 'true'
+		}
+
+		return {
+			sessionMetadata: null as SessionMetadata | null,
+			logEntries: [] as LogEntry[],
+			isLoading: false,
+			error: null as string | null,
+			// New state for user-configurable IP, loaded from localStorage
+			userApiIp: storedUserApiIp,
+			useUserApiIp: storedUseUserApiIp,
+		}
+	},
 
 	actions: {
+		setUserApiIp(ip: string) {
+			this.userApiIp = ip.trim()
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('espChartUserApiIp', this.userApiIp)
+			}
+		},
+		setUseUserApiIp(use: boolean) {
+			this.useUserApiIp = use
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('espChartUseUserApiIp', String(use))
+			}
+		},
 		_parseSessionData(fullDataString: string) {
 			const lines = fullDataString.trim().split('\n')
 			if (lines.length === 0) {
@@ -211,9 +239,33 @@ export const useSessionDataStore = defineStore('sessionData', {
 			this.logEntries = []
 
 			try {
-				const baseUrl = (import.meta.env.VITE_API_BASE_URL as string) || 'http://192.168.4.1' // Fallback if not set, though Vite should set it.
-				const apiUrl = `${baseUrl}/api/data`
-				console.log(`Fetching data from: ${apiUrl}`) // For debugging which URL is used
+				let protocol = 'https'
+				let effectiveIp = '192.168.4.1' // Default for production/remote
+
+				if (import.meta.env.DEV) {
+					// Development mode (localhost)
+					protocol = 'http'
+					// Default IP for dev as per your request, can be overridden by user input
+					effectiveIp = '192.168.4.1'
+				}
+
+				if (this.useUserApiIp && this.userApiIp) {
+					// Validate userApiIp roughly (not a full validation)
+					if (this.userApiIp.match(/^(\d{1,3}\.){3}\d{1,3}$/) || this.userApiIp.includes(':')) {
+						// Allow host:port
+						effectiveIp = this.userApiIp
+						// Protocol for user IP might need to be smarter or also user-configurable
+						// For now, if user provides IP, assume it matches the dev/prod protocol context
+					} else {
+						console.warn('Invalid custom IP format, using default:', this.userApiIp)
+						// Stick to default effectiveIp based on DEV/PROD
+					}
+				}
+
+				const apiUrl = `${protocol}://${effectiveIp}/api/data`
+				console.log(
+					`Fetching data from: ${apiUrl} (DEV: ${String(import.meta.env.DEV)}, useUserApiIp: ${String(this.useUserApiIp)}, userApiIp: ${this.userApiIp})`
+				)
 
 				const response = await ofetch(apiUrl, {
 					method: 'POST',
