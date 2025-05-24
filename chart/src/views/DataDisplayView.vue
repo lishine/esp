@@ -188,9 +188,29 @@ const chartOptions = computed((): ECOption | null => {
 			axisLine: { show: config.show !== undefined ? config.show : true, onZero: false },
 			nameTextStyle: config.nameTextStyle || {},
 		})),
-		series: chartFormattedData.value.series.map((s: any) => {
+		series: chartFormattedData.value.series.map((s: any, index: number) => {
 			const seriesName = s.name as string
 			let yAxisIndex = yAxesConfig.length - 1 // Default to the last 'yOther' hidden axis
+
+			const colorMap: Record<string, string> = {
+				'ESC I': 'blue',
+				'Motor Current': 'magenta', // Keeping magenta as it was changed
+				'ESC T': '#E53935', // Material Design Red 600 for motor temp
+				'ESC V': 'grey',
+			}
+			// More distinguishable shades of red for DS temps
+			const dsTempColors = ['#D32F2F', '#C62828', '#B71C1C', '#F44336', '#EF5350', '#E57373']
+
+			let itemStyle = {}
+			if (colorMap[seriesName]) {
+				itemStyle = { color: colorMap[seriesName] }
+			} else if (seriesName.startsWith('DS Temp')) {
+				// Cycle through dsTempColors for different DS Temp series
+				const colorIndex = chartFormattedData.value.series
+					.filter((dsSeries: any) => dsSeries.name.startsWith('DS Temp'))
+					.indexOf(s)
+				itemStyle = { color: dsTempColors[colorIndex % dsTempColors.length] }
+			}
 
 			const axisConfigIndex = yAxesConfig.findIndex(
 				(axCfg) =>
@@ -212,7 +232,8 @@ const chartOptions = computed((): ECOption | null => {
 				showSymbol: false, // Ensure symbols are off for line series
 				smooth: false,
 				type: 'line',
-				connectNulls: true, // Add this line
+				connectNulls: true,
+				itemStyle: itemStyle, // Add this line
 			}
 		}),
 		dataZoom: [
