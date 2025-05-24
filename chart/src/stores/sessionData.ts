@@ -527,15 +527,37 @@ export const useSessionDataStore = defineStore('sessionData', {
 				})
 
 				const seriesChartData: Array<[Date, number | null]> = []
+				let currentSeriesLastValidValue: number | null = null // Initialize last valid value for the series
+
 				sortedUniqueTimestampMillis.forEach((tsMillis) => {
-					const value = sensorDataMap.get(tsMillis)
+					const directValue = sensorDataMap.get(tsMillis) // Raw value for this sensor at this tsMillis
 					const entryForCheck = config.seriesName === 'GPS Speed' ? sensorEntries.get(tsMillis) : undefined
-					const checkedValue = applyRangeChecks(
-						config.seriesName,
-						value === undefined ? null : value,
-						entryForCheck
-					)
-					seriesChartData.push([new Date(tsMillis), checkedValue])
+
+					let valueToPushForChart: number | null
+
+					if (directValue !== undefined) {
+						// A data point (value or explicit null) exists for this sensor at this tsMillis
+						const checkedDirectValue = applyRangeChecks(
+							config.seriesName,
+							directValue, // directValue could be a number or an actual null from the source data
+							entryForCheck
+						)
+
+						if (checkedDirectValue !== null) {
+							// If the direct value, after checking, is valid (not null)
+							currentSeriesLastValidValue = checkedDirectValue // Update the last known valid value
+							valueToPushForChart = checkedDirectValue // Use this valid direct value for the chart
+						} else {
+							// The direct value was invalid (became null after check) or was originally null.
+							// For the chart point, use the previously known valid value.
+							valueToPushForChart = currentSeriesLastValidValue
+						}
+					} else {
+						// No data point at all for this sensor at this specific tsMillis
+						// Use the last known valid value.
+						valueToPushForChart = currentSeriesLastValidValue
+					}
+					seriesChartData.push([new Date(tsMillis), valueToPushForChart])
 				})
 
 				finalSeries.push({
