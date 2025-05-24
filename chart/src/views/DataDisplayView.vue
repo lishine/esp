@@ -105,10 +105,14 @@ const chartOptions = computed((): ECOption | null => {
 		},
 		{
 			id: 'yGpsSpeed',
+			name: 'GPS',
+			position: 'left',
 			seriesNames: ['GPS Speed'],
 			min: 0,
 			max: 20,
-			show: false,
+			show: true,
+			axisLabel: { show: true },
+			nameTextStyle: { padding: [0, 0, 0, -35] },
 		},
 		// Add a fallback hidden axis for any series not explicitly matched
 		{ id: 'yOther', show: false },
@@ -145,7 +149,7 @@ const chartOptions = computed((): ECOption | null => {
 			type: 'scroll',
 		},
 		grid: {
-			left: '1%',
+			left: '8%', // Increased to make space for the new GPS Y-axis on the left
 			right: '12%', // Increased to make space for both Y-axes on the right side
 			bottom: '20%', // Adjusted to accommodate dataZoom and legend below it
 			containLabel: true,
