@@ -91,8 +91,7 @@
         }
 
         input[type="text"],
-        input[type="password"],
-        input[type="file"] {
+        input[type="password"] {
             width: 100%;
             padding: 12px;
             box-sizing: border-box;
@@ -189,10 +188,6 @@
             margin-bottom: 20px;
         }
 
-        #uploadStatus {
-            margin-top: 20px;
-        }
-
         /* Password visibility toggle styles */
         .password-container {
             position: relative;
@@ -255,7 +250,6 @@
 
             input[type="text"],
             input[type="password"],
-            input[type="file"],
             button {
                 font-size: 0.9em;
                 padding: 10px;
@@ -331,20 +325,6 @@
             <button type="submit">Save & Connect</button>
             <button type="button" id="resetButton">Reset Device</button>
         </form>
-
-        <h2>File Upload</h2>
-        <form id="uploadForm">
-            <div class="form-group">
-                <label for="file">Select file:</label>
-                <input type="file" id="file" name="file">
-            </div>
-            <div class="form-group">
-                <label for="targetPath">Target path (optional):</label>
-                <input type="text" id="targetPath" name="targetPath" placeholder="e.g. x/y.py">
-            </div>
-            <button type="submit">Upload</button>
-        </form>
-        <div id="uploadStatus" class="status"></div>
     </div>
 
     <div id="settingsPopup">
@@ -455,38 +435,6 @@
                 .catch(error => {
                     console.error('Error:', error);
                     alert('Failed to save settings. Check console for details.');
-                });
-        });
-
-        document.getElementById('uploadForm').addEventListener('submit', function (event) {
-            event.preventDefault();
-            const fileInput = document.getElementById('file');
-            const targetPath = document.getElementById('targetPath').value;
-            const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
-            const uploadUrl = targetPath ? `/upload/${targetPath}` : '/upload';
-
-            fetch(uploadUrl, {
-                method: 'POST',
-                body: formData
-            })
-                .then(response => response.json())
-                .then(data => {
-                    const statusDiv = document.getElementById('uploadStatus');
-                    if (data.success) {
-                        statusDiv.innerHTML = `
-                            <div class="status-item">File uploaded successfully!</div>
-                            <div class="status-item">Path: ${data.path}</div>
-                            <div class="status-item">Size: ${data.size} bytes</div>
-                        `;
-                    } else {
-                        statusDiv.innerHTML = `<div class="status-item">Upload failed: ${data.error || 'Unknown error'}</div>`;
-                    }
-                })
-                .catch(error => {
-                    console.error('Upload error:', error);
-                    document.getElementById('uploadStatus').innerHTML =
-                        `<div class="status-item">Upload failed: ${error.message}</div>`;
                 });
         });
     </script>

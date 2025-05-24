@@ -24,10 +24,10 @@
         .container {
             width: 90%;
             max-width: 800px;
-            margin-top: 30px;
             /* background-color: #fff; */
             /* Removed background */
             padding: 30px;
+            padding-top: 0;
             /* border-radius: 12px; */
             /* Optional: remove if no distinct panel look */
             /* box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1); */
@@ -337,22 +337,25 @@
                 ];
 
                 function formatValue(value) {
-                    if (value === null || value === undefined) return 'N/A';
+                    // Keep last known value if data is temporarily unavailable
+                    if (value === null || value === undefined) {
+                        return '...'; // Show loading indicator instead of empty string
+                    }
                     if (typeof value === 'object') {
                         let html = '';
                         for (const key in value) {
                             if (value.hasOwnProperty(key)) {
                                 const formattedKey = key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
                                 let valStr = value[key];
-                                if (typeof valStr === 'object') { // Nested object
-                                    valStr = formatValue(valStr); // Recursive call for nested objects
+                                if (typeof valStr === 'object') {
+                                    valStr = formatValue(valStr);
                                     html += `<span class="data-object-entry"><span class="data-key">${formattedKey}:</span> ${valStr}</span>`;
                                 } else {
                                     html += `<span class="data-object-entry"><span class="data-key">${formattedKey}:</span> <span class="data-value">${valStr}</span></span>`;
                                 }
                             }
                         }
-                        return html || '{}'; // Return empty object string if no properties
+                        return html || '{}';
                     }
                     if (typeof value === 'number' && !Number.isInteger(value)) {
                         return value.toFixed(3);
@@ -379,17 +382,20 @@
                 }
 
                 function renderGenericSensor(sensorItemDiv, title, sensorData) {
-                    let valueDisplay = 'N/A';
+                    let valueDisplay = sensorData?.value;
 
-                    if (sensorData && typeof sensorData === 'object') {
-                        valueDisplay = formatValue(sensorData.value);
-                        if (title === 'Fan Status') { // Specific for fan
-                            valueDisplay = sensorData.value && sensorData.value.enabled ? 'ON' : 'OFF';
-                        }
-                    } else if (sensorData === undefined) { // Data for this sensor key is missing entirely
-                        valueDisplay = 'N/A';
+                    // Keep last known value if data is temporarily unavailable
+                    if (valueDisplay === undefined && sensorItemDiv.querySelector('p.sensor-title-line')) {
+                        return; // Keep existing display
                     }
-                    // Error or non-object data will also result in 'N/A' or formatted error from formatValue if applicable
+
+                    if (typeof valueDisplay === 'object') {
+                        if (title === 'Fan Status') {
+                            valueDisplay = valueDisplay?.enabled ? 'ON' : 'OFF';
+                        } else {
+                            valueDisplay = formatValue(valueDisplay);
+                        }
+                    }
                     let pTitle = sensorItemDiv.querySelector('p.sensor-title-line');
                     if (!pTitle) {
                         pTitle = document.createElement('p');
@@ -437,7 +443,7 @@
                         sensorData.sensors.forEach(sensor => {
                             const romAddress = sensor.rom;
                             currentSensorRoms.add(romAddress);
-                            const tempDisplay = sensor.temp_c !== null ? sensor.temp_c.toFixed(1) + ' °C' : 'N/A';
+                            const tempDisplay = sensor.temp_c !== null ? sensor.temp_c.toFixed(1) + ' °C' : '';
                             const currentName = sensor.name || "";
 
                             let li = existingLis.get(romAddress);
@@ -473,14 +479,14 @@
                             }
                         });
 
-                        // Remove LIs for sensors that are no longer present
-                        existingLis.forEach((li, rom) => {
-                            if (!currentSensorRoms.has(rom)) {
-                                li.remove();
-                            }
-                        });
+                        // Keep LIs for sensors that are no longer present
+                        // existingLis.forEach((li, rom) => {
+                        //     if (!currentSensorRoms.has(rom)) {
+                        //         li.remove();
+                        //     }
+                        // });
 
-                        if (!sensorItemDiv.querySelector('button')) { // Add button only if not present
+                        if (!sensorItemDiv.querySelector('button')) {
                             const saveButton = document.createElement('button');
                             saveButton.textContent = 'Save DS18B20 Names';
                             saveButton.style.marginTop = '10px';
@@ -492,14 +498,16 @@
                             saveStatusDiv.style.marginTop = '5px';
                             sensorItemDiv.appendChild(saveStatusDiv);
                         }
-                    } else if (sensorData && sensorData.count === 0) {
-                        const p = document.createElement('p');
+                    } else if (!sensorData || !sensorData.sensors) {
+                        // Keep existing display if data is not available
+                        return;
+                    } else if (sensorData.count === 0) {
+                        let p = sensorItemDiv.querySelector('p:not(.sensor-title-line)');
+                        if (!p) {
+                            p = document.createElement('p');
+                            sensorItemDiv.appendChild(p);
+                        }
                         p.textContent = 'No DS18B20 sensors found.';
-                        sensorItemDiv.appendChild(p);
-                    } else if (!sensorData || !sensorData.sensors) { // No sensor data or sensors array
-                        const p = document.createElement('p');
-                        p.textContent = 'DS18B20 data not available or no sensors detected.';
-                        sensorItemDiv.appendChild(p);
                     }
                 }
 
@@ -532,18 +540,7 @@
                 // This part is tricky if we want to preserve order strictly based on SENSOR_DEFINITIONS
                 // For now, we ensure all defined sensors have a div, and others are appended.
                 // If a sensor from `data` disappears and is not in SENSOR_DEFINITIONS, its div will remain but show N/A.
-                // To fully remove divs for sensors that are no longer reported AND not in SENSOR_DEFINITIONS:
-                const allRenderedDivIds = new Set(Array.from(sensorContainer.children).map(child => child.id.replace('sensor-item-', '')));
-                allRenderedDivIds.forEach(renderedKey => {
-                    if (!currentDataKeys.has(renderedKey) && !SENSOR_DEFINITIONS.some(def => def.key === renderedKey)) {
-                        const divToRemove = document.getElementById(`sensor-item-${renderedKey}`);
-                        if (divToRemove) {
-                            const sensorItemDiv = getOrCreateSensorItemDiv(renderedKey);
-                            const title = renderedKey.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
-                            renderGenericSensor(sensorItemDiv, title, undefined);
-                        }
-                    }
-                });
+                // Keep all existing sensor divs, no cleanup needed
 
                 // Restore focus if an input was focused
                 if (focusedDs18b20InputRom) {
