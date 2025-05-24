@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, computed } from 'vue'
+import { onMounted, computed, ref } from 'vue'
 import {
 	useSessionDataStore,
 	type EscValues,
@@ -32,6 +32,10 @@ type EChartTooltipParam = {
 	axisValue?: number | string | Date // Added axisValue for the firstPoint
 	// Add other properties if needed, like componentType, seriesType, dataIndex
 }
+
+const screenWidth = ref(window.innerWidth)
+const isMobile = computed(() => screenWidth.value < 1024)
+const chartsHeight = computed(() => (isMobile.value ? '460px' : '600px')) // Adjust height based on screen size
 
 const chartOptions = computed((): ECOption | null => {
 	if (
@@ -342,10 +346,10 @@ const chartOptions = computed((): ECOption | null => {
 		// The legend is now part of baseChartOptions and its 'data' property is updated based on currentVisibleSeries
 		legend: baseChartOptions.legend,
 		grid: {
-			left: '1%', // Adjusted for maximizing chart area
-			right: '1%', // Adjusted for maximizing chart area
-			bottom: '16%', // Adjusted for maximizing chart area
-			top: '1%', // Adjusted for maximizing chart area
+			left: '0.5%', // Adjusted for maximizing chart area
+			right: '0.5%', // Adjusted for maximizing chart area
+			bottom: '18%', // Adjusted for maximizing chart area
+			top: '2%', // Adjusted for maximizing chart area
 			containLabel: true,
 		},
 		xAxis: {
@@ -387,14 +391,17 @@ const chartOptions = computed((): ECOption | null => {
 			let yAxisIndex = yAxesConfig.length - 1 // Default to the last 'yOther' hidden axis
 
 			const colorMap: Record<string, string> = {
-				'Bat current': 'blue', // Updated key
-				'Motor current': 'magenta', // Updated key (case)
-				TEsc: '#E53935', // Updated key
+				'Bat current': '#0000b3', // Updated key
+				'Motor current': '#8080ff', // Updated key (case)
+				TEsc: ' #ff0000', // Updated key
 				V: 'grey', // Updated key
+				Speed: 'yellow',
+				RPM: 'darkorange',
+				Throttle: 'green', // Updated key
 				// RPM, Speed, Throttle will get default colors or can be added
 			}
 			// More distinguishable shades of red for DS temps
-			const dsTempColors = ['#D32F2F', '#C62828', '#B71C1C', '#F44336', '#EF5350', '#E57373']
+			const dsTempColors = ['#ffb3b3', '#ffcccc', '#660000', '#F44336', '#EF5350', '#E57373']
 
 			let itemStyle = {}
 			if (colorMap[seriesName]) {
@@ -528,7 +535,7 @@ const handleRefreshData = () => {
 </script>
 
 <template>
-	<n-space vertical style="padding: 20px; padding-top: 0px">
+	<n-space vertical class="data-display-container" style="padding: 0px; padding-top: 0px">
 		<n-space v-if="isLoading" align="center" justify="center" style="margin-top: 20px">
 			<n-spin size="large" />
 			<p>Loading session data...</p>
@@ -543,10 +550,10 @@ const handleRefreshData = () => {
 
 			<n-grid :x-gap="12" :y-gap="8" :cols="'1 s:1 m:4 l:4 xl:4'">
 				<n-gi :span="'1 s:1 m:3 l:3 xl:3'">
-					<n-card style="margin-top: 16px">
+					<n-card style="margin-top: 0px">
 						<div v-if="!isLoading && !error && chartFormattedData && chartFormattedData.series.length > 0">
-							<sensor-chart :options="chartOptions" height="600px" />
-							<!-- Increased height -->
+							<sensor-chart :options="chartOptions" :height="chartsHeight" />
+							<!-- Fixed height for desktop, responsive height handled by CSS media query -->
 						</div>
 						<div v-else-if="!isLoading && !error">
 							<p>No chart data available or data is still processing.</p>
@@ -576,6 +583,41 @@ const handleRefreshData = () => {
 
 <style scoped>
 /* Scoped styles for DataDisplayView */
+/* Scoped styles for DataDisplayView */
+
+/* Apply height adjustments only on screens smaller than 768px (typical tablet/desktop breakpoint) */
+@media (max-width: 767px) {
+	.data-display-container {
+		min-height: 100vh; /* Make container at least viewport height */
+		display: flex;
+		flex-direction: column;
+	}
+
+	.n-grid {
+		flex-grow: 1; /* Allow grid to take available space */
+		height: 100%; /* Ensure grid fills parent height */
+	}
+
+	.n-gi {
+		height: 100%; /* Ensure grid item fills parent height */
+		display: flex; /* Use flex to make card fill gi */
+		flex-direction: column;
+	}
+
+	.n-card {
+		flex-grow: 1; /* Allow card to take available space */
+		height: 100%; /* Ensure card fills parent height */
+		display: flex; /* Use flex to make content fill card */
+		flex-direction: column;
+	}
+
+	/* Target the div containing the sensor-chart */
+	.n-card > div {
+		flex-grow: 1; /* Allow the div containing the chart to take space */
+		height: 100%; /* Ensure it fills card height */
+	}
+}
+
 p {
 	margin-left: 8px;
 }
