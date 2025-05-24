@@ -558,9 +558,6 @@ const handleRefreshData = () => {
 					<!-- Add the toggle component here -->
 				</n-gi>
 			</n-grid>
-			<n-button @click="handleRefreshData" type="primary" block style="margin-bottom: 16px">
-				Fetch/Refresh Data
-			</n-button>
 
 			<n-card v-if="sessionMetadata" title="Session Info" style="margin-top: 16px">
 				<n-space vertical>
@@ -570,6 +567,9 @@ const handleRefreshData = () => {
 					<span>Fan: {{ sessionMetadata.fan_enabled ? 'Enabled' : 'Disabled' }}</span>
 				</n-space>
 			</n-card>
+			<n-button @click="handleRefreshData" type="primary" block style="margin-bottom: 16px; margin-top: 16px">
+				Fetch/Refresh Data
+			</n-button>
 		</div>
 	</n-space>
 </template>
