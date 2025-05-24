@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { onMounted, computed } from 'vue'
-import { useSessionDataStore, type EscValues, type DsValues, type LogEntry } from '../stores/sessionData'
+import {
+	useSessionDataStore,
+	type EscValues,
+	type DsValues,
+	type LogEntry,
+	type ChartSeriesData,
+} from '../stores/sessionData'
 import SensorChart from '../components/SensorChart.vue'
 import SeriesToggle from '../components/SeriesToggle.vue' // Import the new component
 import type { EChartsCoreOption as ECOption } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
@@ -15,6 +21,16 @@ const sessionMetadata = computed(() => sessionDataStore.sessionMetadata)
 const logEntries = computed(() => sessionDataStore.logEntries)
 const chartFormattedData = computed(() => sessionDataStore.getChartFormattedData)
 const visibleSeriesSet = computed(() => sessionDataStore.visibleSeries)
+
+// Define a type for the ECharts params object for clarity, used in tooltip.formatter
+type EChartTooltipParam = {
+	seriesName: string
+	value: [number | string | Date, number | null] | number | null // value can be [timestamp, actualValue] or just actualValue
+	marker?: string
+	color?: string
+	axisValue?: number | string | Date // Added axisValue for the firstPoint
+	// Add other properties if needed, like componentType, seriesType, dataIndex
+}
 
 const chartOptions = computed((): ECOption | null => {
 	if (
@@ -36,18 +52,99 @@ const chartOptions = computed((): ECOption | null => {
 			axisPointer: {
 				type: 'cross',
 				label: {
-					formatter: (params: any) => {
-						if (params.axisDimension === 'x') {
-							const date = new Date(params.value)
-							if (isNaN(date.getTime())) {
-								console.error('Tooltip formatter - Invalid Date from params.value:', params.value)
-								return 'Invalid Date'
+					formatter: (params: {
+						axisDimension?: string
+						axisIndex?: number
+						value: number | string | Date
+					}) => {
+						if (params.axisDimension === 'x' && params.value !== undefined) {
+							const date = new Date(params.value as number)
+							if (!isNaN(date.getTime())) {
+								return formatInTimeZone(date, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss zzz')
 							}
-							return formatInTimeZone(date, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss zzz')
+							return 'Invalid Date'
 						}
-						return typeof params.value === 'number' ? params.value.toFixed(2) : params.value
+						if (
+							params.axisDimension === 'y' &&
+							params.axisIndex !== undefined &&
+							params.value !== undefined
+						) {
+							// yAxesConfig and visibleYAxisIds are defined later in the chartOptions computed property.
+							// This formatter will be part of the options object that ECharts uses.
+							// We rely on the yAxesConfig structure and the dynamically built visibleYAxisIds.
+							const yAxisDefinition = yAxesConfig[params.axisIndex] // yAxesConfig is in the outer scope
+							if (yAxisDefinition && visibleYAxisIds.has(yAxisDefinition.id) && yAxisDefinition.show) {
+								return typeof params.value === 'number' ? params.value.toFixed(1) : String(params.value)
+							}
+						}
+						return '' // Default to empty
 					},
 				},
+			},
+			formatter: (params: EChartTooltipParam[]) => {
+				// This is the main tooltip formatter
+				// This is the main tooltip formatter
+				// Typed params as EChartTooltipParam[]
+				if (!Array.isArray(params) || params.length === 0) {
+					return '' // No data to display
+				}
+
+				// 1. Format the timestamp (first line of tooltip)
+				const firstPoint = params[0]
+				let tooltipHtml = ''
+				if (firstPoint.axisValue !== undefined) {
+					const xAxisDate = new Date(firstPoint.axisValue)
+					if (!isNaN(xAxisDate.getTime())) {
+						tooltipHtml += `${formatInTimeZone(xAxisDate, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss zzz')}<br/>`
+					} else {
+						tooltipHtml += 'Invalid Date from axisValue<br/>'
+					}
+				} else {
+					tooltipHtml += 'Timestamp not available<br/>'
+				}
+
+				// 2. Define desired series order and names for the tooltip
+				const tooltipSeriesConfig = [
+					{ displayName: 'Bat current', originalName: 'ESC I', unit: 'A', decimals: 2 },
+					{ displayName: 'Motor current', originalName: 'Motor Current', unit: 'A', decimals: 2 },
+					{ displayName: 'TEsc', originalName: 'ESC T', unit: '°C', decimals: 0 },
+					{ displayName: 'TAmbient', originalName: 'DS Temp Ambient', unit: '°C', decimals: 1 },
+					{ displayName: 'TAlum', originalName: 'DS Temp alum', unit: '°C', decimals: 1 },
+					{ displayName: 'TMosfet', originalName: 'DS Temp Mosfet', unit: '°C', decimals: 1 },
+					{ displayName: 'Speed', originalName: 'GPS Speed', unit: 'km/h', decimals: 2 },
+					{ displayName: 'RPM', originalName: 'ESC RPM', unit: '', decimals: 0 },
+					{ displayName: 'Throttle', originalName: 'Throttle', unit: '', decimals: 0 },
+					{ displayName: 'V', originalName: 'ESC V', unit: 'V', decimals: 2 },
+				]
+
+				// 3. Create a map of params for easy lookup by seriesName
+				const paramsMap = new Map<string, EChartTooltipParam>()
+				params.forEach((p: EChartTooltipParam) => {
+					// No need for 'as EChartTooltipParam[]' here as params is already typed
+					paramsMap.set(p.seriesName, p)
+				})
+
+				// 4. Build tooltip content based on the defined order and names
+				tooltipSeriesConfig.forEach((config) => {
+					const seriesData = paramsMap.get(config.originalName)
+					if (seriesData) {
+						// Extract the actual numeric value. For line charts, seriesData.value is typically [timestamp, value].
+						const numericValue = Array.isArray(seriesData.value) ? seriesData.value[1] : seriesData.value
+
+						let displayValue = 'N/A'
+						if (numericValue !== null && typeof numericValue === 'number' && !isNaN(numericValue)) {
+							displayValue = numericValue.toFixed(config.decimals)
+						}
+
+						tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${seriesData.marker || ''}${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">${displayValue}${config.unit ? ' ' + config.unit : ''}</span></div>`
+					} else {
+						// Optionally, handle cases where a configured series might not be in params (e.g., if it's hidden)
+						// For now, we just skip it if not found in paramsMap.
+						// console.warn(`Series ${config.originalName} not found in tooltip params.`);
+					}
+				})
+
+				return tooltipHtml
 			},
 		},
 		legend: {
@@ -80,8 +177,8 @@ const chartOptions = computed((): ECOption | null => {
 			axisLine: { show: true },
 			splitLine: { show: true, lineStyle: { type: 'dashed' } },
 		},
-		yAxis: [] as any[], // Will be populated based on visible series and their axes
-		series: [] as any[], // Will be populated based on visible series
+		yAxis: [] as ECOption['yAxis'], // Use ECharts' YAXisOption array type
+		series: [] as ECOption['series'], // Use ECharts' SeriesOption array type
 		dataZoom: [
 			{
 				type: 'slider',
@@ -132,7 +229,7 @@ const chartOptions = computed((): ECOption | null => {
 		}
 	}
 	// Assign to the already existing data property
-	baseChartOptions.legend.data = currentVisibleSeries.map((s: any) => s.name)
+	baseChartOptions.legend.data = currentVisibleSeries.map((s: ChartSeriesData) => s.name)
 
 	// Calculate dynamic max values
 	let maxObservedCurrent = 0
@@ -232,26 +329,7 @@ const chartOptions = computed((): ECOption | null => {
 		title: {
 			text: '',
 		},
-		tooltip: {
-			trigger: 'axis',
-			axisPointer: {
-				type: 'cross',
-				label: {
-					formatter: (params: any) => {
-						if (params.axisDimension === 'x') {
-							const date = new Date(params.value)
-							if (isNaN(date.getTime())) {
-								console.error('Tooltip formatter - Invalid Date from params.value:', params.value)
-								return 'Invalid Date'
-							}
-							// Format date to Asia/Jerusalem time using date-fns-tz
-							return formatInTimeZone(date, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss zzz')
-						}
-						return typeof params.value === 'number' ? params.value.toFixed(2) : params.value
-					},
-				},
-			},
-		},
+		tooltip: baseChartOptions.tooltip, // USE THE CORRECT TOOLTIP CONFIG WITH CUSTOM FORMATTER
 		// legend: { // This whole block is now part of baseChartOptions and dynamically set
 		// 	data: chartFormattedData.value.series.map((s: any) => s.name),
 		// 	orient: 'horizontal',
@@ -300,8 +378,8 @@ const chartOptions = computed((): ECOption | null => {
 			axisLine: { show: config.show !== undefined ? config.show : true, onZero: false },
 			nameTextStyle: config.nameTextStyle || {},
 		})),
-		series: currentVisibleSeries.map((s: any) => {
-			const seriesName = s.name as string
+		series: currentVisibleSeries.map((s: ChartSeriesData) => {
+			const seriesName = s.name
 			let yAxisIndex = yAxesConfig.length - 1 // Default to the last 'yOther' hidden axis
 
 			const colorMap: Record<string, string> = {
@@ -319,7 +397,7 @@ const chartOptions = computed((): ECOption | null => {
 			} else if (seriesName.startsWith('DS Temp')) {
 				// Cycle through dsTempColors for different DS Temp series
 				const colorIndex = currentVisibleSeries // Use currentVisibleSeries for consistent coloring
-					.filter((dsSeries: any) => dsSeries.name.startsWith('DS Temp'))
+					.filter((dsSeries: ChartSeriesData) => dsSeries.name.startsWith('DS Temp'))
 					.indexOf(s)
 				itemStyle = { color: dsTempColors[colorIndex % dsTempColors.length] }
 			}

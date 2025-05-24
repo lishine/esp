@@ -447,12 +447,16 @@ export const useSessionDataStore = defineStore('sessionData', {
 					if (checkedValue < 10 || checkedValue > 60) checkedValue = null
 				} else if (name === 'GPS Speed' && entry) {
 					const gpsValues = entry.v as GpsValues
-					if (!gpsValues.fix) {
-						checkedValue = null
+					if (!gpsValues.fix || value === null || typeof value !== 'number' || isNaN(value)) {
+						checkedValue = null // No fix or invalid initial value
 					} else {
-						// Ensure checkedValue is a number before numeric comparison
-						if (typeof checkedValue === 'number' && (checkedValue < 0 || checkedValue > 20)) {
+						const speedInKmh = value * 1.852 // Convert knots to km/h
+						// Apply range check to km/h value
+						if (speedInKmh < 0 || speedInKmh > 35) {
+							// Adjusted upper range for km/h if 20 was for kts
 							checkedValue = null
+						} else {
+							checkedValue = speedInKmh
 						}
 					}
 				}
