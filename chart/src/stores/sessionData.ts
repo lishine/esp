@@ -1,6 +1,27 @@
 import { defineStore } from 'pinia'
 import { ofetch, FetchError } from 'ofetch'
 
+// Centralized Series Configuration
+export const CANONICAL_SERIES_CONFIG = [
+	{ displayName: 'Bat current', internalId: 'esc_i', sensorType: 'esc', dataKey: 'i', unit: 'A', decimals: 2 },
+	{ displayName: 'Motor current', internalId: 'mc_i', sensorType: 'mc', dataKey: 'value', unit: 'A', decimals: 2 }, // Assuming 'mc' data is {"value": X} or just X. If just X, dataKey can be null/undefined and handled in extractor.
+	{ displayName: 'TEsc', internalId: 'esc_t', sensorType: 'esc', dataKey: 't', unit: '°C', decimals: 0 },
+	{
+		displayName: 'TAmbient',
+		internalId: 'ds_ambient',
+		sensorType: 'ds',
+		dataKey: 'ambient',
+		unit: '°C',
+		decimals: 1,
+	},
+	{ displayName: 'TAlum', internalId: 'ds_alum', sensorType: 'ds', dataKey: 'alum', unit: '°C', decimals: 1 },
+	{ displayName: 'TMosfet', internalId: 'ds_mosfet', sensorType: 'ds', dataKey: 'mosfet', unit: '°C', decimals: 1 },
+	{ displayName: 'Speed', internalId: 'gps_speed', sensorType: 'gps', dataKey: 'speed', unit: 'km/h', decimals: 2 },
+	{ displayName: 'RPM', internalId: 'esc_rpm', sensorType: 'esc', dataKey: 'rpm', unit: '', decimals: 0 },
+	{ displayName: 'Throttle', internalId: 'th_val', sensorType: 'th', dataKey: 'value', unit: '', decimals: 0 }, // Assuming 'th' data is {"value": X} or just X.
+	{ displayName: 'V', internalId: 'esc_v', sensorType: 'esc', dataKey: 'v', unit: 'V', decimals: 2 },
+] as const // Use 'as const' for stricter typing and readonly properties
+
 // Value types for different sensors
 export interface EscValues {
 	rpm: number
@@ -62,6 +83,7 @@ export interface SessionMetadata {
 	fan_enabled: boolean
 	ds_associations: DsAssociation[]
 	date: string // Added date field
+	restart?: string // Added restart field
 }
 
 export const useSessionDataStore = defineStore('sessionData', {
@@ -127,39 +149,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 			// It sets all available series to visible if visibleSeries is currently empty.
 			if (this.logEntries.length > 0 && this.visibleSeries.size === 0) {
 				console.log('Initializing default visibility: making all series visible.')
-				// Logic to get all potential series names directly from logEntries/configs
-				// This mirrors the series name generation in getChartFormattedData's seriesConfigs
-				const allPotentialSeriesNames = new Set<string>()
+				// Initialize default visibility based on CANONICAL_SERIES_CONFIG
+				// and what's actually available in the processed chart data.
+				const availableSeriesNamesInChartData = new Set(this.getChartFormattedData.series.map((s) => s.name))
 
-				// ESC Metrics
-				;(['rpm', 'v', 'i', 't'] as Array<keyof EscValues>).forEach((key) =>
-					allPotentialSeriesNames.add(`ESC ${key.toUpperCase()}`)
-				)
-				// MC (Motor Current)
-				if (this.logEntries.some((entry) => entry.n === 'mc')) {
-					allPotentialSeriesNames.add('Motor Current')
-				}
-				// TH (Throttle)
-				if (this.logEntries.some((entry) => entry.n === 'th')) {
-					allPotentialSeriesNames.add('Throttle')
-				}
-				// GPS Speed
-				if (this.logEntries.some((entry) => entry.n === 'gps')) {
-					allPotentialSeriesNames.add('GPS Speed')
-				}
-				// DS (Temperature Sensors)
-				const dsSensorKeys = new Set<string>()
-				this.logEntries.forEach((entry) => {
-					if (entry.n === 'ds') {
-						const dsValue = entry.v as DsValues
-						Object.keys(dsValue).forEach((key) => dsSensorKeys.add(key))
+				CANONICAL_SERIES_CONFIG.forEach((config) => {
+					if (availableSeriesNamesInChartData.has(config.displayName)) {
+						this.visibleSeries.add(config.displayName)
 					}
 				})
-				Array.from(dsSensorKeys).forEach((key) => {
-					allPotentialSeriesNames.add(`DS Temp ${key}`)
-				})
-
-				allPotentialSeriesNames.forEach((name) => this.visibleSeries.add(name))
 				this.saveVisibilityPreferences() // Persist this default
 			}
 		},
@@ -212,7 +210,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 			// Parse metadata (first line)
 			let metadata: SessionMetadata | null = null
 			try {
-				metadata = JSON.parse(lines[0]) as SessionMetadata
+				// metadata = JSON.parse(lines[0]) as SessionMetadata // Old way
+				const parsedFirstLine = JSON.parse(lines[0])
+				metadata = {
+					device_description: parsedFirstLine.device_description,
+					fan_enabled: parsedFirstLine.fan_enabled,
+					ds_associations: parsedFirstLine.ds_associations,
+					date: parsedFirstLine.date,
+					restart: parsedFirstLine.restart, // Parse restart
+				}
 				this.sessionMetadata = metadata
 			} catch (e) {
 				console.error('Failed to parse session metadata:', e)
@@ -377,7 +383,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 					parseResponse: (txt) => txt, // Keep as text since we handle JSONL parsing
 					retry: 3,
 					retryDelay: 500,
-					timeout: 50000,
+					timeout: 10000, // Set fetch timeout to 10 seconds
 					onRequestError: ({ error }) => {
 						console.error('Request error:', error)
 						throw error
@@ -426,26 +432,29 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 			const finalSeries: ChartSeriesData[] = []
 
-			// Helper function to apply range checks
-			const applyRangeChecks = (name: string, value: number | null, entry?: LogEntry): number | null => {
+			// Helper function to apply range checks using internal IDs
+			const applyRangeChecks = (internalId: string, value: number | null, entry?: LogEntry): number | null => {
 				if (value === null || typeof value !== 'number' || isNaN(value)) return null
 
 				let checkedValue: number | null = value // Allow null
-				if (name === 'ESC RPM') {
-					if (checkedValue < 0 || checkedValue > 3000) checkedValue = null
-				} else if (name === 'ESC Voltage') {
+				if (internalId === 'esc_rpm') {
+					if (checkedValue < 0 || checkedValue > 30000) checkedValue = null // Adjusted RPM max based on typical values
+				} else if (internalId === 'esc_v') {
 					if (checkedValue < 30 || checkedValue > 55) checkedValue = null
-				} else if (name === 'ESC Current') {
+				} else if (internalId === 'esc_i') {
 					if (checkedValue < 0 || checkedValue > 200) checkedValue = null
-				} else if (name === 'ESC Temp') {
+				} else if (internalId === 'esc_t') {
 					if (checkedValue < 10 || checkedValue > 120) checkedValue = null
-				} else if (name === 'Motor Current') {
+				} else if (internalId === 'mc_i') {
+					// Motor current internal ID
 					if (checkedValue < 0 || checkedValue > 200) checkedValue = null
-				} else if (name === 'Throttle') {
-					if (checkedValue < 990 || checkedValue > 1500) checkedValue = null
-				} else if (name.startsWith('DS Temp ')) {
-					if (checkedValue < 10 || checkedValue > 60) checkedValue = null
-				} else if (name === 'GPS Speed' && entry) {
+				} else if (internalId === 'th_val') {
+					// Throttle internal ID
+					if (checkedValue < 990 || checkedValue > 2050) checkedValue = null // Adjusted throttle max
+				} else if (internalId.startsWith('ds_')) {
+					// DS Temp internal ID prefix
+					if (checkedValue < -10 || checkedValue > 60) checkedValue = null // Adjusted DS temp min
+				} else if (internalId === 'gps_speed' && entry) {
 					const gpsValues = entry.v as GpsValues
 					if (!gpsValues.fix || value === null || typeof value !== 'number' || isNaN(value)) {
 						checkedValue = null // No fix or invalid initial value
@@ -463,53 +472,55 @@ export const useSessionDataStore = defineStore('sessionData', {
 				return checkedValue
 			}
 
-			// 2. Define series configurations
-			const seriesConfigs = [
-				// ESC Metrics
-				...(['rpm', 'v', 'i', 't'] as Array<keyof EscValues>).map((key) => ({
-					seriesName: `ESC ${key.toUpperCase()}`, // e.g., ESC RPM
-					sensorName: 'esc',
-					valueExtractor: (entry: LogEntry) => (entry.v as EscValues)[key],
-				})),
-				// MC (Motor Current)
-				{
-					seriesName: 'Motor Current',
-					sensorName: 'mc',
-					valueExtractor: (entry: LogEntry) => entry.v as number,
-				},
-				// TH (Throttle)
-				{
-					seriesName: 'Throttle',
-					sensorName: 'th',
-					valueExtractor: (entry: LogEntry) => entry.v as number,
-				},
-				// GPS Speed
-				{
-					seriesName: 'GPS Speed',
-					sensorName: 'gps',
-					valueExtractor: (entry: LogEntry) => (entry.v as GpsValues).speed,
-				},
-				// Add other GPS metrics here if needed, similar to ESC metrics
-			]
+			// 2. Build series configurations from CANONICAL_SERIES_CONFIG
+			// This ensures that we only attempt to process series that are defined.
+			const activeSeriesConfigs = CANONICAL_SERIES_CONFIG.map((canonConfig) => {
+				// For DS sensors, the dataKey might vary (e.g. 'Ambient', 'alum').
+				// For other sensors, dataKey is fixed (e.g. 'rpm', 'speed').
+				// 'value' is a placeholder for direct numeric values (mc, th).
+				let valueExtractorFn: (entry: LogEntry) => number | undefined | null
 
-			// DS (Temperature Sensors) - dynamically add them
-			const dsSensorKeys = new Set<string>()
-			state.logEntries.forEach((entry) => {
-				if (entry.n === 'ds') {
-					const dsValue = entry.v as DsValues
-					Object.keys(dsValue).forEach((key) => dsSensorKeys.add(key))
+				if (canonConfig.sensorType === 'esc') {
+					valueExtractorFn = (entry: LogEntry) =>
+						(entry.v as EscValues)[canonConfig.dataKey as keyof EscValues]
+				} else if (canonConfig.sensorType === 'gps') {
+					valueExtractorFn = (entry: LogEntry) => {
+						const gpsEntry = entry.v as GpsValues
+						const val = gpsEntry[canonConfig.dataKey as keyof GpsValues]
+						if (canonConfig.internalId === 'gps_speed') {
+							if (!gpsEntry.fix || typeof val !== 'number') {
+								// Ensure fix is true and val is number
+								return null // No valid speed if no fix or val is not a number
+							}
+							return val * 1.852 // Convert knots to km/h
+						}
+						// For other GPS properties that might be boolean (like 'fix' itself if charted)
+						// or other types, they should be handled or filtered by CANONICAL_SERIES_CONFIG
+						// to only include chartable numeric data.
+						return typeof val === 'number' ? val : null
+					}
+				} else if (canonConfig.sensorType === 'ds') {
+					valueExtractorFn = (entry: LogEntry) => (entry.v as DsValues)[canonConfig.dataKey]
+				} else if (canonConfig.sensorType === 'mc' || canonConfig.sensorType === 'th') {
+					// Assuming 'mc' and 'th' log entries have 'v' as the direct numeric value
+					valueExtractorFn = (entry: LogEntry) => entry.v as number
+				} else {
+					valueExtractorFn = () => undefined // Should not happen with valid config
 				}
-			})
-			Array.from(dsSensorKeys).forEach((key) => {
-				seriesConfigs.push({
-					seriesName: `DS Temp ${key}`,
-					sensorName: 'ds',
-					valueExtractor: (entry: LogEntry) => (entry.v as DsValues)[key],
-				})
-			})
+
+				return {
+					seriesName: canonConfig.displayName,
+					internalId: canonConfig.internalId,
+					sensorName: canonConfig.sensorType, // Renamed from sensorType to sensorName for consistency with LogEntry.n
+					valueExtractor: valueExtractorFn,
+				}
+			}).filter((config) =>
+				// Only include configs for which there's any relevant data in logEntries
+				state.logEntries.some((logEntry) => logEntry.n === config.sensorName)
+			)
 
 			// 3. Process data for each series
-			seriesConfigs.forEach((config) => {
+			activeSeriesConfigs.forEach((config) => {
 				// Create a temporary map for the current sensor's data: timestamp -> value
 				const sensorDataMap = new Map<number, number | null>()
 				const sensorEntries = new Map<number, LogEntry>() // To store entry for range checks if needed
@@ -519,7 +530,8 @@ export const useSessionDataStore = defineStore('sessionData', {
 						const value = config.valueExtractor(entry)
 						if (typeof value === 'number') {
 							sensorDataMap.set(entry.preciseTimestamp.getTime(), value)
-							if (config.seriesName === 'GPS Speed') {
+							if (config.internalId === 'gps_speed') {
+								// Check against internalId
 								// Store entry for GPS fix check
 								sensorEntries.set(entry.preciseTimestamp.getTime(), entry)
 							}
@@ -535,14 +547,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 				sortedUniqueTimestampMillis.forEach((tsMillis) => {
 					const directValue = sensorDataMap.get(tsMillis) // Raw value for this sensor at this tsMillis
-					const entryForCheck = config.seriesName === 'GPS Speed' ? sensorEntries.get(tsMillis) : undefined
+					const entryForCheck = config.internalId === 'gps_speed' ? sensorEntries.get(tsMillis) : undefined
 
 					let valueToPushForChart: number | null
+					let checkedDirectValue: number | null = null // Declare checkedDirectValue here
 
 					if (directValue !== undefined) {
 						// A data point (value or explicit null) exists for this sensor at this tsMillis
-						const checkedDirectValue = applyRangeChecks(
-							config.seriesName,
+						checkedDirectValue = applyRangeChecks(
+							config.internalId, // Use internalId for range check logic
 							directValue, // directValue could be a number or an actual null from the source data
 							entryForCheck
 						)

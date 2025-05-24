@@ -6,11 +6,12 @@ import {
 	type DsValues,
 	type LogEntry,
 	type ChartSeriesData,
+	CANONICAL_SERIES_CONFIG, // Import the centralized config
 } from '../stores/sessionData'
 import SensorChart from '../components/SensorChart.vue'
 import SeriesToggle from '../components/SeriesToggle.vue' // Import the new component
 import type { EChartsCoreOption as ECOption } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
-import { NSpin, NAlert, NCard, NSpace, NGrid, NGi } from 'naive-ui' // Added NGrid and NGi for layout
+import { NSpin, NAlert, NCard, NSpace, NGrid, NGi, NButton } from 'naive-ui' // Added NGrid, NGi and NButton for layout
 import { formatInTimeZone } from 'date-fns-tz' // Import formatInTimeZone
 
 const sessionDataStore = useSessionDataStore()
@@ -52,6 +53,7 @@ const chartOptions = computed((): ECOption | null => {
 			axisPointer: {
 				type: 'cross',
 				label: {
+					padding: [3, 10, 3, 10], // Increased horizontal padding
 					formatter: (params: {
 						axisDimension?: string
 						axisIndex?: number
@@ -60,7 +62,7 @@ const chartOptions = computed((): ECOption | null => {
 						if (params.axisDimension === 'x' && params.value !== undefined) {
 							const date = new Date(params.value as number)
 							if (!isNaN(date.getTime())) {
-								return formatInTimeZone(date, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss zzz')
+								return formatInTimeZone(date, 'Asia/Jerusalem', 'HH:mm:ss') // Changed format
 							}
 							return 'Invalid Date'
 						}
@@ -95,27 +97,23 @@ const chartOptions = computed((): ECOption | null => {
 				if (firstPoint.axisValue !== undefined) {
 					const xAxisDate = new Date(firstPoint.axisValue)
 					if (!isNaN(xAxisDate.getTime())) {
-						tooltipHtml += `${formatInTimeZone(xAxisDate, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss zzz')}<br/>`
+						// Display only HH:MM:SS, centered
+						tooltipHtml += `<div style="margin-bottom: -15px;text-align: center;">${formatInTimeZone(xAxisDate, 'Asia/Jerusalem', 'HH:mm:ss')}</div><br/>`
 					} else {
-						tooltipHtml += 'Invalid Date from axisValue<br/>'
+						tooltipHtml += '<div style="text-align: center;">Invalid Date</div><br/>'
 					}
 				} else {
-					tooltipHtml += 'Timestamp not available<br/>'
+					tooltipHtml += '<div style="text-align: center;">Time N/A</div><br/>'
 				}
 
-				// 2. Define desired series order and names for the tooltip
-				const tooltipSeriesConfig = [
-					{ displayName: 'Bat current', originalName: 'ESC I', unit: 'A', decimals: 2 },
-					{ displayName: 'Motor current', originalName: 'Motor Current', unit: 'A', decimals: 2 },
-					{ displayName: 'TEsc', originalName: 'ESC T', unit: '°C', decimals: 0 },
-					{ displayName: 'TAmbient', originalName: 'DS Temp Ambient', unit: '°C', decimals: 1 },
-					{ displayName: 'TAlum', originalName: 'DS Temp alum', unit: '°C', decimals: 1 },
-					{ displayName: 'TMosfet', originalName: 'DS Temp Mosfet', unit: '°C', decimals: 1 },
-					{ displayName: 'Speed', originalName: 'GPS Speed', unit: 'km/h', decimals: 2 },
-					{ displayName: 'RPM', originalName: 'ESC RPM', unit: '', decimals: 0 },
-					{ displayName: 'Throttle', originalName: 'Throttle', unit: '', decimals: 0 },
-					{ displayName: 'V', originalName: 'ESC V', unit: 'V', decimals: 2 },
-				]
+				// 2. Derive tooltipSeriesConfig from CANONICAL_SERIES_CONFIG
+				// This ensures the tooltip uses the exact same names and order.
+				const tooltipSeriesConfig = CANONICAL_SERIES_CONFIG.map((csc) => ({
+					displayName: csc.displayName,
+					originalName: csc.displayName, // seriesName from ECharts params will be this displayName
+					unit: csc.unit,
+					decimals: csc.decimals,
+				}))
 
 				// 3. Create a map of params for easy lookup by seriesName
 				const paramsMap = new Map<string, EChartTooltipParam>()
@@ -131,16 +129,22 @@ const chartOptions = computed((): ECOption | null => {
 						// Extract the actual numeric value. For line charts, seriesData.value is typically [timestamp, value].
 						const numericValue = Array.isArray(seriesData.value) ? seriesData.value[1] : seriesData.value
 
-						let displayValue = 'N/A'
+						let displayValue: string
+						let unitToShow = config.unit || ''
+
 						if (numericValue !== null && typeof numericValue === 'number' && !isNaN(numericValue)) {
 							displayValue = numericValue.toFixed(config.decimals)
+						} else {
+							// For any series, if data is not a valid number, display '-' and no unit.
+							displayValue = '-'
+							unitToShow = ''
 						}
 
-						tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${seriesData.marker || ''}${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">${displayValue}${config.unit ? ' ' + config.unit : ''}</span></div>`
+						tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${seriesData.marker || ''}${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">${displayValue}${unitToShow ? ' ' + unitToShow : ''}</span></div>`
 					} else {
-						// Optionally, handle cases where a configured series might not be in params (e.g., if it's hidden)
-						// For now, we just skip it if not found in paramsMap.
-						// console.warn(`Series ${config.originalName} not found in tooltip params.`);
+						// If seriesData is not found in paramsMap (e.g. it's hidden or no data for this exact timestamp)
+						// Display series name and '-' as its value, no unit.
+						tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">-</span></div>`
 					}
 				})
 
@@ -202,16 +206,16 @@ const chartOptions = computed((): ECOption | null => {
 				end: 100,
 			},
 		],
-		toolbox: {
-			feature: {
-				saveAsImage: {},
-				dataZoom: {
-					yAxisIndex: 'none',
-				},
-				restore: {},
-				dataView: { readOnly: false },
-			},
-		},
+		// toolbox: { // Removed toolbox
+		// 	feature: {
+		// 		saveAsImage: {},
+		// 		dataZoom: {
+		// 			yAxisIndex: 'none',
+		// 		},
+		// 		restore: {},
+		// 		dataView: { readOnly: false },
+		// 	},
+		// },
 	}
 
 	// Filter series based on visibility
@@ -271,7 +275,7 @@ const chartOptions = computed((): ECOption | null => {
 			position: 'right',
 			min: 0,
 			max: finalMaxCurrent,
-			seriesNames: ['ESC I', 'Motor Current'],
+			seriesNames: ['Bat current', 'Motor current'], // Updated series names
 			axisLabel: { show: true, inside: true, align: 'right' },
 			nameTextStyle: { padding: [0, 0, 0, -35] },
 			show: true,
@@ -282,8 +286,7 @@ const chartOptions = computed((): ECOption | null => {
 			position: 'right',
 			min: minTemp,
 			max: finalMaxTemp,
-			seriesNames: ['ESC T'],
-			seriesNamePrefix: 'DS Temp',
+			seriesNames: ['TEsc', 'TAmbient', 'TAlum', 'TMosfet'], // Updated series names, removed seriesNamePrefix
 			axisLabel: { show: true },
 			nameTextStyle: { padding: [0, -35, 0, 0] },
 			show: true,
@@ -291,21 +294,21 @@ const chartOptions = computed((): ECOption | null => {
 		// Hidden Axes for other series
 		{
 			id: 'yThrottle',
-			seriesNames: ['Throttle'],
+			seriesNames: ['Throttle'], // No change
 			min: 990, // Original fixed min
 			max: 4500, // Original fixed max
 			show: false, // This axis will not be displayed
 		},
 		{
 			id: 'yEscVoltage',
-			seriesNames: ['ESC V'], // Note: sessionData produces 'ESC V'
+			seriesNames: ['V'], // Updated series name
 			min: 0,
 			max: 50.5,
 			show: false,
 		},
 		{
 			id: 'yEscRpm',
-			seriesNames: ['ESC RPM'],
+			seriesNames: ['RPM'], // Updated series name
 			min: 0,
 			max: 9000,
 			show: false,
@@ -314,7 +317,7 @@ const chartOptions = computed((): ECOption | null => {
 			id: 'yGpsSpeed',
 			name: 'GPS',
 			position: 'left',
-			seriesNames: ['GPS Speed'],
+			seriesNames: ['Speed'], // Updated series name
 			min: 0,
 			max: 20,
 			show: true,
@@ -339,9 +342,10 @@ const chartOptions = computed((): ECOption | null => {
 		// The legend is now part of baseChartOptions and its 'data' property is updated based on currentVisibleSeries
 		legend: baseChartOptions.legend,
 		grid: {
-			left: '8%', // Increased to make space for the new GPS Y-axis on the left
-			right: '12%', // Increased to make space for both Y-axes on the right side
-			bottom: '20%', // Adjusted to accommodate dataZoom and legend below it
+			left: '1%', // Adjusted for maximizing chart area
+			right: '1%', // Adjusted for maximizing chart area
+			bottom: '16%', // Adjusted for maximizing chart area
+			top: '1%', // Adjusted for maximizing chart area
 			containLabel: true,
 		},
 		xAxis: {
@@ -383,10 +387,11 @@ const chartOptions = computed((): ECOption | null => {
 			let yAxisIndex = yAxesConfig.length - 1 // Default to the last 'yOther' hidden axis
 
 			const colorMap: Record<string, string> = {
-				'ESC I': 'blue',
-				'Motor Current': 'magenta', // Keeping magenta as it was changed
-				'ESC T': '#E53935', // Material Design Red 600 for motor temp
-				'ESC V': 'grey',
+				'Bat current': 'blue', // Updated key
+				'Motor current': 'magenta', // Updated key (case)
+				TEsc: '#E53935', // Updated key
+				V: 'grey', // Updated key
+				// RPM, Speed, Throttle will get default colors or can be added
 			}
 			// More distinguishable shades of red for DS temps
 			const dsTempColors = ['#D32F2F', '#C62828', '#B71C1C', '#F44336', '#EF5350', '#E57373']
@@ -394,18 +399,18 @@ const chartOptions = computed((): ECOption | null => {
 			let itemStyle = {}
 			if (colorMap[seriesName]) {
 				itemStyle = { color: colorMap[seriesName] }
-			} else if (seriesName.startsWith('DS Temp')) {
+			} else if (seriesName === 'TAmbient' || seriesName === 'TAlum' || seriesName === 'TMosfet') {
 				// Cycle through dsTempColors for different DS Temp series
-				const colorIndex = currentVisibleSeries // Use currentVisibleSeries for consistent coloring
-					.filter((dsSeries: ChartSeriesData) => dsSeries.name.startsWith('DS Temp'))
-					.indexOf(s)
+				const dsTempSeriesInOrder = currentVisibleSeries.filter(
+					(cs) => cs.name === 'TAmbient' || cs.name === 'TAlum' || cs.name === 'TMosfet'
+				)
+				const colorIndex = dsTempSeriesInOrder.indexOf(s)
 				itemStyle = { color: dsTempColors[colorIndex % dsTempColors.length] }
 			}
 
 			const axisConfigIndex = yAxesConfig.findIndex(
-				(axCfg) =>
-					(axCfg.seriesNames && axCfg.seriesNames.includes(seriesName)) ||
-					(axCfg.seriesNamePrefix && seriesName.startsWith(axCfg.seriesNamePrefix))
+				(axCfg) => axCfg.seriesNames && axCfg.seriesNames.includes(seriesName)
+				// Removed seriesNamePrefix check as it's no longer used in yAxesConfig for temperature
 			)
 
 			if (axisConfigIndex !== -1) {
@@ -440,7 +445,7 @@ const chartOptions = computed((): ECOption | null => {
 						return 'Invalid Date'
 					}
 					// Format date to Asia/Jerusalem time using date-fns-tz
-					return formatInTimeZone(date, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss')
+					return formatInTimeZone(date, 'Asia/Jerusalem', 'HH:mm:ss') // Changed format
 				},
 			},
 			{
@@ -450,25 +455,24 @@ const chartOptions = computed((): ECOption | null => {
 				end: 100,
 			},
 		],
-		toolbox: {
-			feature: {
-				saveAsImage: {},
-				dataZoom: {
-					yAxisIndex: 'none',
-				},
-				restore: {},
-				dataView: { readOnly: false },
-			},
-		},
+		// toolbox: { // Removed toolbox
+		// 	feature: {
+		// 		saveAsImage: {},
+		// 		dataZoom: {
+		// 			yAxisIndex: 'none',
+		// 		},
+		// 		restore: {},
+		// 		dataView: { readOnly: false },
+		// 	},
+		// },
 	}
 	// Dynamically configure yAxes based on VISIBLE series
 	const visibleYAxisIds = new Set<string>()
 	currentVisibleSeries.forEach((s) => {
 		const seriesName = s.name as string
 		const axisConfig = yAxesConfig.find(
-			(axCfg) =>
-				(axCfg.seriesNames && axCfg.seriesNames.includes(seriesName)) ||
-				(axCfg.seriesNamePrefix && seriesName.startsWith(axCfg.seriesNamePrefix))
+			(axCfg) => axCfg.seriesNames && axCfg.seriesNames.includes(seriesName)
+			// Removed seriesNamePrefix check
 		)
 		if (axisConfig) {
 			visibleYAxisIds.add(axisConfig.id)
@@ -514,11 +518,17 @@ const chartOptions = computed((): ECOption | null => {
 
 onMounted(() => {
 	sessionDataStore.loadVisibilityPreferences() // Load preferences when component mounts
+	// Fetch data immediately on page load
+	sessionDataStore.fetchSessionData()
 })
+
+const handleRefreshData = () => {
+	sessionDataStore.fetchSessionData()
+}
 </script>
 
 <template>
-	<n-space vertical style="padding: 20px">
+	<n-space vertical style="padding: 20px; padding-top: 0px">
 		<n-space v-if="isLoading" align="center" justify="center" style="margin-top: 20px">
 			<n-spin size="large" />
 			<p>Loading session data...</p>
@@ -548,10 +558,15 @@ onMounted(() => {
 					<!-- Add the toggle component here -->
 				</n-gi>
 			</n-grid>
+			<n-button @click="handleRefreshData" type="primary" block style="margin-bottom: 16px">
+				Fetch/Refresh Data
+			</n-button>
 
 			<n-card v-if="sessionMetadata" title="Session Info" style="margin-top: 16px">
-				<n-space>
+				<n-space vertical>
 					<span>Device: {{ sessionMetadata.device_description || 'N/A' }}</span>
+					<span>Date: {{ sessionMetadata.date || 'N/A' }}</span>
+					<span>Restart Count: {{ sessionMetadata.restart || 'N/A' }}</span>
 					<span>Fan: {{ sessionMetadata.fan_enabled ? 'Enabled' : 'Disabled' }}</span>
 				</n-space>
 			</n-card>

@@ -63,19 +63,6 @@ const themeOverrides: GlobalThemeOverrides = {
 	<n-config-provider :theme-overrides="themeOverrides">
 		<n-message-provider>
 			<div class="app-container">
-				<div v-if="!isMobile" style="padding: 10px 20px">
-					<h4>Advanced Settings</h4>
-					<n-space vertical style="margin-bottom: 10px; border: 1px solid #ccc; padding: 10px">
-						<n-checkbox v-model:checked="useUserApiIpLocal"> Use Custom ESP32 IP Address </n-checkbox>
-						<n-input
-							v-model:value="userApiIpLocal"
-							placeholder="Enter ESP32 IP (e.g., 192.168.1.100)"
-							:disabled="!useUserApiIpLocal"
-							style="max-width: 300px"
-						/>
-						<n-button @click="handleRefresh" type="primary" ghost> Fetch/Refresh Data </n-button>
-					</n-space>
-				</div>
 				<main class="app-main">
 					<router-view />
 				</main>
@@ -85,6 +72,18 @@ const themeOverrides: GlobalThemeOverrides = {
 						Fetch/Refresh Data
 					</n-button>
 				</footer>
+				<div v-if="!isMobile" style="padding: 10px 20px; margin-top: auto">
+					<h4>Advanced Settings</h4>
+					<n-space vertical style="margin-bottom: 10px; border: 1px solid #ccc; padding: 10px">
+						<n-checkbox v-model:checked="useUserApiIpLocal"> Use Custom ESP32 IP Address </n-checkbox>
+						<n-input
+							v-model:value="userApiIpLocal"
+							placeholder="Enter ESP32 IP (e.g., 192.168.1.100)"
+							:disabled="!useUserApiIpLocal"
+							style="max-width: 300px"
+						/>
+					</n-space>
+				</div>
 			</div>
 		</n-message-provider>
 	</n-config-provider>
@@ -127,6 +126,7 @@ html {
 .app-main {
 	flex-grow: 1; /* Allows main content to take available space */
 	padding: 0px; /* Adjust padding as needed, DataDisplayView has its own */
+	padding-top: 0px;
 }
 .app-footer {
 	padding: 10px 20px;
