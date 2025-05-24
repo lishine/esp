@@ -214,6 +214,13 @@ def save_settings(request: Request):
             log.log("Failed to save wifi settings via settings_manager")
             raise Exception("Failed to save WiFi settings")
 
+        # Handle device description if present in the request body
+        device_description = config_data.get("device_description")
+        if (
+            device_description is not None
+        ):  # Check explicitly for None to allow empty string
+            settings_manager.set_device_description(device_description)
+
         return Response(
             body=json.dumps({"success": True, "message": "Settings saved"}),
             status=HTTP_OK,
@@ -390,6 +397,7 @@ def get_settings_data(request):
             "ip_address": get_ip(),
             "current_ssid": current_network["ssid"] if current_network else "",
             "networks": networks_list,  # Directly use the list from settings_manager
+            "device_description": settings_manager.get_device_description(),
         }
         return Response(
             body=json.dumps(data), headers={"Content-Type": "application/json"}

@@ -322,6 +322,10 @@
                 <label for="secondary_password">Secondary Password:</label>
                 <input type="password" id="secondary_password" name="secondary_password">
             </div>
+            <div class="form-group">
+                <label for="device_description">Device Description:</label>
+                <input type="text" id="device_description" name="device_description">
+            </div>
             <button type="submit">Save & Connect</button>
             <button type="button" id="resetButton">Reset Device</button>
         </form>
@@ -375,6 +379,7 @@
                         document.getElementById('primary_ssid').value = data.networks[0].ssid || '';
                         document.getElementById('primary_password').value = data.networks[0].password || '';
                     }
+                    document.getElementById('device_description').value = data.device_description || '';
 
                     if (data.networks && data.networks[1]) {
                         document.getElementById('secondary_ssid').value = data.networks[1].ssid || '';
@@ -414,6 +419,7 @@
             const primary_password = document.getElementById('primary_password').value;
             const secondary_ssid = document.getElementById('secondary_ssid').value;
             const secondary_password = document.getElementById('secondary_password').value;
+            const device_description = document.getElementById('device_description').value;
 
             fetch('/settings/save', {
                 method: 'POST',
@@ -424,7 +430,8 @@
                     networks: [
                         { ssid: primary_ssid, password: primary_password },
                         { ssid: secondary_ssid, password: secondary_password }
-                    ]
+                    ],
+                    device_description: device_description
                 })
             })
                 .then(response => response.json())
