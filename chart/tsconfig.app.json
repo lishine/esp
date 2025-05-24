@@ -14,5 +14,12 @@
 		"noUncheckedSideEffectImports": true,
 		"noImplicitAny": true
 	},
-	"include": ["src/App.vue", "src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "src/views/DataDisplayView.vue"]
+	"include": [
+		"src/App.vue",
+		"src/**/*.ts",
+		"src/**/*.tsx",
+		"src/**/*.vue",
+		"src/views/DataDisplayView.vue",
+		"src/components/SeriesToggle.vue"
+	]
 }

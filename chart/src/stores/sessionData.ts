@@ -85,10 +85,109 @@ export const useSessionDataStore = defineStore('sessionData', {
 			// New state for user-configurable IP, loaded from localStorage
 			userApiIp: storedUserApiIp,
 			useUserApiIp: storedUseUserApiIp,
+			visibleSeries: new Set<string>(), // Initialize with all series visible by default, or load from localStorage
 		}
 	},
 
 	actions: {
+		// Action to load visibility preferences from localStorage
+		loadVisibilityPreferences() {
+			if (typeof localStorage !== 'undefined') {
+				const storedVisibility = localStorage.getItem('espChartVisibleSeries')
+				if (storedVisibility) {
+					try {
+						const visibleArray = JSON.parse(storedVisibility)
+						this.visibleSeries = new Set(visibleArray)
+					} catch (e) {
+						console.error('Failed to parse visible series from localStorage:', e)
+						// If parsing fails, visibleSeries remains an empty Set.
+						// initializeDefaultVisibility will be called later in _parseSessionData if needed.
+						this.visibleSeries = new Set<string>()
+					}
+				} else {
+					// If nothing in localStorage, visibleSeries remains an empty Set.
+					// initializeDefaultVisibility will be called later in _parseSessionData if needed.
+					this.visibleSeries = new Set<string>()
+				}
+			} else {
+				// If localStorage is not available, visibleSeries remains an empty Set.
+				this.visibleSeries = new Set<string>()
+			}
+		},
+
+		// Action to save visibility preferences to localStorage
+		saveVisibilityPreferences() {
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('espChartVisibleSeries', JSON.stringify(Array.from(this.visibleSeries)))
+			}
+		},
+
+		initializeDefaultVisibility() {
+			// This method should only be called AFTER logEntries are populated.
+			// It sets all available series to visible if visibleSeries is currently empty.
+			if (this.logEntries.length > 0 && this.visibleSeries.size === 0) {
+				console.log('Initializing default visibility: making all series visible.')
+				// Logic to get all potential series names directly from logEntries/configs
+				// This mirrors the series name generation in getChartFormattedData's seriesConfigs
+				const allPotentialSeriesNames = new Set<string>()
+
+				// ESC Metrics
+				;(['rpm', 'v', 'i', 't'] as Array<keyof EscValues>).forEach((key) =>
+					allPotentialSeriesNames.add(`ESC ${key.toUpperCase()}`)
+				)
+				// MC (Motor Current)
+				if (this.logEntries.some((entry) => entry.n === 'mc')) {
+					allPotentialSeriesNames.add('Motor Current')
+				}
+				// TH (Throttle)
+				if (this.logEntries.some((entry) => entry.n === 'th')) {
+					allPotentialSeriesNames.add('Throttle')
+				}
+				// GPS Speed
+				if (this.logEntries.some((entry) => entry.n === 'gps')) {
+					allPotentialSeriesNames.add('GPS Speed')
+				}
+				// DS (Temperature Sensors)
+				const dsSensorKeys = new Set<string>()
+				this.logEntries.forEach((entry) => {
+					if (entry.n === 'ds') {
+						const dsValue = entry.v as DsValues
+						Object.keys(dsValue).forEach((key) => dsSensorKeys.add(key))
+					}
+				})
+				Array.from(dsSensorKeys).forEach((key) => {
+					allPotentialSeriesNames.add(`DS Temp ${key}`)
+				})
+
+				allPotentialSeriesNames.forEach((name) => this.visibleSeries.add(name))
+				this.saveVisibilityPreferences() // Persist this default
+			}
+		},
+
+		toggleSeries(seriesName: string) {
+			const isVisible = this.visibleSeries.has(seriesName)
+			this.setSeriesVisibility(seriesName, !isVisible)
+		},
+
+		toggleAllSeries(visible: boolean) {
+			const allSeriesNames = this.getChartFormattedData.series.map((s) => s.name)
+			if (visible) {
+				allSeriesNames.forEach((name) => this.visibleSeries.add(name))
+			} else {
+				this.visibleSeries.clear()
+			}
+			this.saveVisibilityPreferences()
+		},
+
+		setSeriesVisibility(seriesName: string, visible: boolean) {
+			if (visible) {
+				this.visibleSeries.add(seriesName)
+			} else {
+				this.visibleSeries.delete(seriesName)
+			}
+			this.saveVisibilityPreferences()
+		},
+
 		setUserApiIp(ip: string) {
 			this.userApiIp = ip.trim()
 			if (typeof localStorage !== 'undefined') {
@@ -230,9 +329,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 			console.log('Total entries: ' + entriesWithPreciseTimestamp.length.toString())
 
 			this.logEntries = entriesWithPreciseTimestamp
+			// After parsing data, if visibleSeries is still empty (i.e., nothing from localStorage),
+			// initialize default visibility based on the now-parsed data.
+			if (this.visibleSeries.size === 0 && this.logEntries.length > 0) {
+				this.initializeDefaultVisibility()
+			}
 		},
 
 		async fetchSessionData() {
+			this.loadVisibilityPreferences() // Load preferences at the start of fetching data
 			this.isLoading = true
 			this.error = null
 			this.sessionMetadata = null
@@ -299,6 +404,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 	getters: {
 		getMetadata: (state) => state.sessionMetadata,
 		getLogEntries: (state) => state.logEntries,
+		getVisibleSeries: (state) => Array.from(state.visibleSeries),
 		// Other getters like getUniqueSensorNames, getEntriesBySensorName remain.
 		// getEscRpmHistory would need an update to use preciseTimestamp if it were actively used for charting.
 
@@ -306,6 +412,8 @@ export const useSessionDataStore = defineStore('sessionData', {
 			if (state.logEntries.length === 0) {
 				return { series: [] }
 			}
+			// Removed fallback logic to modify state.visibleSeries from the getter.
+			// Visibility should be handled by actions and `loadVisibilityPreferences`.
 
 			console.time('getChartFormattedData')
 

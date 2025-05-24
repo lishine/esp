@@ -2,8 +2,9 @@
 import { onMounted, computed } from 'vue'
 import { useSessionDataStore, type EscValues, type DsValues, type LogEntry } from '../stores/sessionData'
 import SensorChart from '../components/SensorChart.vue'
+import SeriesToggle from '../components/SeriesToggle.vue' // Import the new component
 import type { EChartsCoreOption as ECOption } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
-import { NSpin, NAlert, NCard, NSpace } from 'naive-ui'
+import { NSpin, NAlert, NCard, NSpace, NGrid, NGi } from 'naive-ui' // Added NGrid and NGi for layout
 import { formatInTimeZone } from 'date-fns-tz' // Import formatInTimeZone
 
 const sessionDataStore = useSessionDataStore()
@@ -13,6 +14,7 @@ const error = computed(() => sessionDataStore.error)
 const sessionMetadata = computed(() => sessionDataStore.sessionMetadata)
 const logEntries = computed(() => sessionDataStore.logEntries)
 const chartFormattedData = computed(() => sessionDataStore.getChartFormattedData)
+const visibleSeriesSet = computed(() => sessionDataStore.visibleSeries)
 
 const chartOptions = computed((): ECOption | null => {
 	if (
@@ -23,6 +25,114 @@ const chartOptions = computed((): ECOption | null => {
 	) {
 		return null
 	}
+
+	const baseChartOptions = {
+		// Renamed from optionsToReturn to baseChartOptions
+		title: {
+			text: '',
+		},
+		tooltip: {
+			trigger: 'axis',
+			axisPointer: {
+				type: 'cross',
+				label: {
+					formatter: (params: any) => {
+						if (params.axisDimension === 'x') {
+							const date = new Date(params.value)
+							if (isNaN(date.getTime())) {
+								console.error('Tooltip formatter - Invalid Date from params.value:', params.value)
+								return 'Invalid Date'
+							}
+							return formatInTimeZone(date, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss zzz')
+						}
+						return typeof params.value === 'number' ? params.value.toFixed(2) : params.value
+					},
+				},
+			},
+		},
+		legend: {
+			// data will be dynamically set based on visible series
+			orient: 'horizontal' as const, // Add 'as const' for stricter typing if needed by ECOption
+			bottom: 10,
+			type: 'scroll' as const, // Add 'as const'
+			data: [] as string[], // Initialize with data property
+		},
+		grid: {
+			left: '8%',
+			right: '12%',
+			bottom: '20%',
+			containLabel: true,
+		},
+		xAxis: {
+			type: 'time',
+			useUTC: true,
+			axisLabel: {
+				show: true,
+				formatter: (value: number) => {
+					const date = new Date(value)
+					if (isNaN(date.getTime())) {
+						console.error('AxisLabel formatter - Invalid Date from value:', value)
+						return 'Invalid Date'
+					}
+					return formatInTimeZone(date, 'Asia/Jerusalem', 'HH:mm:ss')
+				},
+			},
+			axisLine: { show: true },
+			splitLine: { show: true, lineStyle: { type: 'dashed' } },
+		},
+		yAxis: [] as any[], // Will be populated based on visible series and their axes
+		series: [] as any[], // Will be populated based on visible series
+		dataZoom: [
+			{
+				type: 'slider',
+				xAxisIndex: [0],
+				start: 0,
+				end: 100,
+				bottom: 50,
+				labelFormatter: (value: number) => {
+					const date = new Date(value)
+					if (isNaN(date.getTime())) {
+						console.error('DataZoom formatter - Invalid Date from value:', value)
+						return 'Invalid Date'
+					}
+					return formatInTimeZone(date, 'Asia/Jerusalem', 'yyyy-MM-dd HH:mm:ss')
+				},
+			},
+			{
+				type: 'inside',
+				xAxisIndex: [0],
+				start: 0,
+				end: 100,
+			},
+		],
+		toolbox: {
+			feature: {
+				saveAsImage: {},
+				dataZoom: {
+					yAxisIndex: 'none',
+				},
+				restore: {},
+				dataView: { readOnly: false },
+			},
+		},
+	}
+
+	// Filter series based on visibility
+	const currentVisibleSeries = chartFormattedData.value.series.filter((s) => visibleSeriesSet.value.has(s.name))
+
+	if (currentVisibleSeries.length === 0) {
+		// If no series are visible, perhaps return a minimal chart or a message
+		// For now, returning null will show the placeholder in SensorChart
+		// Or, return baseChartOptions with empty series and legend
+		return {
+			...baseChartOptions,
+			legend: { ...baseChartOptions.legend, data: [] }, // Empty legend
+			series: [], // Empty series
+			yAxis: [], // No yAxes if no series
+		}
+	}
+	// Assign to the already existing data property
+	baseChartOptions.legend.data = currentVisibleSeries.map((s: any) => s.name)
 
 	// Calculate dynamic max values
 	let maxObservedCurrent = 0
@@ -142,12 +252,14 @@ const chartOptions = computed((): ECOption | null => {
 				},
 			},
 		},
-		legend: {
-			data: chartFormattedData.value.series.map((s: any) => s.name),
-			orient: 'horizontal',
-			bottom: 10, // Legend's bottom edge 10px from container bottom
-			type: 'scroll',
-		},
+		// legend: { // This whole block is now part of baseChartOptions and dynamically set
+		// 	data: chartFormattedData.value.series.map((s: any) => s.name),
+		// 	orient: 'horizontal',
+		// 	bottom: 10, // Legend's bottom edge 10px from container bottom
+		// 	type: 'scroll',
+		// },
+		// The legend is now part of baseChartOptions and its 'data' property is updated based on currentVisibleSeries
+		legend: baseChartOptions.legend,
 		grid: {
 			left: '8%', // Increased to make space for the new GPS Y-axis on the left
 			right: '12%', // Increased to make space for both Y-axes on the right side
@@ -188,7 +300,7 @@ const chartOptions = computed((): ECOption | null => {
 			axisLine: { show: config.show !== undefined ? config.show : true, onZero: false },
 			nameTextStyle: config.nameTextStyle || {},
 		})),
-		series: chartFormattedData.value.series.map((s: any, index: number) => {
+		series: currentVisibleSeries.map((s: any) => {
 			const seriesName = s.name as string
 			let yAxisIndex = yAxesConfig.length - 1 // Default to the last 'yOther' hidden axis
 
@@ -206,7 +318,7 @@ const chartOptions = computed((): ECOption | null => {
 				itemStyle = { color: colorMap[seriesName] }
 			} else if (seriesName.startsWith('DS Temp')) {
 				// Cycle through dsTempColors for different DS Temp series
-				const colorIndex = chartFormattedData.value.series
+				const colorIndex = currentVisibleSeries // Use currentVisibleSeries for consistent coloring
 					.filter((dsSeries: any) => dsSeries.name.startsWith('DS Temp'))
 					.indexOf(s)
 				itemStyle = { color: dsTempColors[colorIndex % dsTempColors.length] }
@@ -271,11 +383,60 @@ const chartOptions = computed((): ECOption | null => {
 			},
 		},
 	}
-	console.log('Chart xAxis config:', JSON.parse(JSON.stringify(optionsToReturn.xAxis)))
+	// Dynamically configure yAxes based on VISIBLE series
+	const visibleYAxisIds = new Set<string>()
+	currentVisibleSeries.forEach((s) => {
+		const seriesName = s.name as string
+		const axisConfig = yAxesConfig.find(
+			(axCfg) =>
+				(axCfg.seriesNames && axCfg.seriesNames.includes(seriesName)) ||
+				(axCfg.seriesNamePrefix && seriesName.startsWith(axCfg.seriesNamePrefix))
+		)
+		if (axisConfig) {
+			visibleYAxisIds.add(axisConfig.id)
+		} else {
+			visibleYAxisIds.add('yOther') // Default to yOther if no specific axis found
+		}
+	})
+
+	baseChartOptions.yAxis = yAxesConfig
+		.filter((axCfg) => visibleYAxisIds.has(axCfg.id) || axCfg.id === 'yOther') // Include 'yOther' only if used
+		.map((config) => ({
+			id: config.id,
+			type: 'value',
+			name: config.name || '',
+			min: config.min,
+			max: config.max,
+			position: config.position,
+			// Show axis only if it's configured to be shown AND it's associated with a visible series
+			// OR if it's the 'yOther' axis and it's being used by a visible series.
+			show:
+				config.id === 'yOther'
+					? visibleYAxisIds.has('yOther')
+					: (config.show !== undefined ? config.show : false) && visibleYAxisIds.has(config.id),
+			axisLabel:
+				config.axisLabel !== undefined
+					? config.axisLabel
+					: { show: (config.show !== undefined ? config.show : false) && visibleYAxisIds.has(config.id) },
+			splitLine: {
+				show: (config.show !== undefined ? config.show : false) && visibleYAxisIds.has(config.id),
+				lineStyle: { type: 'dashed' },
+			},
+			axisLine: {
+				show: (config.show !== undefined ? config.show : false) && visibleYAxisIds.has(config.id),
+				onZero: false,
+			},
+			nameTextStyle: config.nameTextStyle || {},
+		}))
+
+	// console.log('Chart xAxis config:', JSON.parse(JSON.stringify(optionsToReturn.xAxis)))
+	// console.log('Final options being returned:', JSON.stringify(optionsToReturn, null, 2))
 	return optionsToReturn
 })
 
-onMounted(() => {})
+onMounted(() => {
+	sessionDataStore.loadVisibilityPreferences() // Load preferences when component mounts
+})
 </script>
 
 <template>
@@ -292,14 +453,23 @@ onMounted(() => {})
 		<div v-if="!isLoading && !error">
 			<p v-if="!sessionMetadata && logEntries.length === 0">No data available yet. Click 'Fetch/Refresh Data'.</p>
 
-			<n-card style="margin-top: 16px">
-				<div v-if="!isLoading && !error && chartFormattedData && chartFormattedData.series.length > 0">
-					<sensor-chart :options="chartOptions" height="500px" />
-				</div>
-				<div v-else-if="!isLoading && !error">
-					<p>No chart data available or data is still processing.</p>
-				</div>
-			</n-card>
+			<n-grid :x-gap="12" :y-gap="8" :cols="'1 s:1 m:4 l:4 xl:4'">
+				<n-gi :span="'1 s:1 m:3 l:3 xl:3'">
+					<n-card style="margin-top: 16px">
+						<div v-if="!isLoading && !error && chartFormattedData && chartFormattedData.series.length > 0">
+							<sensor-chart :options="chartOptions" height="600px" />
+							<!-- Increased height -->
+						</div>
+						<div v-else-if="!isLoading && !error">
+							<p>No chart data available or data is still processing.</p>
+						</div>
+					</n-card>
+				</n-gi>
+				<n-gi :span="'1 s:1 m:1 l:1 xl:1'">
+					<SeriesToggle />
+					<!-- Add the toggle component here -->
+				</n-gi>
+			</n-grid>
 
 			<n-card v-if="sessionMetadata" title="Session Info" style="margin-top: 16px">
 				<n-space>
