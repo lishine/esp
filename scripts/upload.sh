@@ -87,14 +87,29 @@ for original_path in "${FILE_ARRAY[@]}"; do
         continue # Skip this file
     fi
 
-    # Calculate relative path from DEVICE_DIR
-    relative_path="${original_path#$DEVICE_DIR/}"
-    if [[ "$original_path" == "$relative_path" ]]; then # Check if path was outside DEVICE_DIR
-         echo "Warning: File '$original_path' seems outside DEVICE_DIR ('$DEVICE_DIR'). Uploading to root '/$relative_path'." >&2
-         remote_path="/$(basename "$original_path")" # Default to root if outside
-    else
-         remote_path="/$relative_path"
-    fi
+    # Function to resolve remote path
+    resolve_remote_path() {
+        local orig_path="$1"
+        local orig_abs_path
+        local device_abs_path
+        
+        # Get absolute paths
+        orig_abs_path="$(cd "$(dirname "$orig_path")" && pwd)/$(basename "$orig_path")"
+        device_abs_path="$(cd "$DEVICE_DIR" && pwd)"
+        
+        # Check if path is inside DEVICE_DIR
+        if [[ "$orig_abs_path" == "$device_abs_path/"* ]]; then
+            # Calculate relative path from DEVICE_DIR
+            echo "/${orig_abs_path#$device_abs_path/}"
+        else
+            # Path is outside DEVICE_DIR
+            echo "Warning: File '$orig_path' seems outside DEVICE_DIR ('$DEVICE_DIR/'). Uploading to root as '/$(basename "$orig_path")'." >&2
+            echo "/$(basename "$orig_path")"
+        fi
+    }
+
+    # Get remote path using the function
+    remote_path=$(resolve_remote_path "$original_path")
 
     # Determine if compilation is needed
     base_name=$(basename "$original_path")

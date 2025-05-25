@@ -120,7 +120,7 @@ case "$COMMAND" in
           eval $mpremote_cmd
         else
           echo "Resetting ESP32 at $ESP_IP..."
-          make_request "http://$ESP_IP/reset" "POST" # make_request sourced
+          make_request "https://$ESP_IP/reset" "POST" # make_request sourced
           echo "Reset command sent."
         fi
         ;;
@@ -161,24 +161,24 @@ case "$COMMAND" in
   log)
         check_sync_needed
         echo "Fetching logs from ESP32 at $ESP_IP..."
-        make_request "http://$ESP_IP/api/log/chunk"
+        make_request "https://$ESP_IP/api/log/chunk"
         ;;
 
   clear-log)
         check_sync_needed
         echo "Clearing logs on ESP32 at $ESP_IP..."
-        make_request "http://$ESP_IP/log/clear" "POST"
+        make_request "https://$ESP_IP/log/clear" "POST"
         ;;
 clear-data)
         check_sync_needed
         echo "Clearing data logs on ESP32 at $ESP_IP..."
-        make_request "http://$ESP_IP/data/clear" "POST"
+        make_request "https://$ESP_IP/data/clear" "POST"
         ;;
 
   log-add-test)
        check_sync_needed
        echo "Adding 1000 test log entries on ESP32 at $ESP_IP..."
-       make_request "http://$ESP_IP/log/add-test-entries" "POST"
+       make_request "https://$ESP_IP/log/add-test-entries" "POST"
        ;;
 
   la|ls)
@@ -205,23 +205,23 @@ clear-data)
             echo "Listing files in '$FOLDER_ARG' on ESP32 at $ESP_IP..."
             # URL encode the folder argument? For now, assume it's simple enough.
             # The server-side Python code will handle leading slashes.
-            make_request "http://$ESP_IP/la?folder=$FOLDER_ARG"
+            make_request "https://$ESP_IP/la?folder=$FOLDER_ARG"
           else
             echo "Listing all files on ESP32 at $ESP_IP..."
-            make_request "http://$ESP_IP/la"
+            make_request "https://$ESP_IP/la"
           fi
         fi
         ;;
 
   fs-list)
         check_sync_needed
-        make_request "http://$ESP_IP/fs-list"
+        make_request "https://$ESP_IP/fs-list"
         ;;
 
   free)
         check_sync_needed
         echo "Checking free memory on ESP32 at $ESP_IP..."
-        response=$(make_request "http://$ESP_IP/free")
+        response=$(make_request "https://$ESP_IP/free")
         status_code=$?
         if [ $status_code -eq 0 ]; then
             check_jq
@@ -232,13 +232,13 @@ clear-data)
   ping)
         check_sync_needed
         echo "Pinging ESP32 at $ESP_IP..."
-        make_request "http://$ESP_IP/ping"
+        make_request "https://$ESP_IP/ping"
         ;;
 
   status)
         check_sync_needed
         echo "Checking status of ESP32 at $ESP_IP..."
-        response=$(make_request "http://$ESP_IP/status")
+        response=$(make_request "https://$ESP_IP/status")
         status_code=$?
         echo "$response"
 
@@ -294,7 +294,7 @@ clear-data)
             eval $mpremote_cmd
         else
             echo "Removing file $FILE_PATH from ESP32 at $ESP_IP..."
-            make_request "http://$ESP_IP/rm/$FILE_PATH" "DELETE"
+            make_request "https://$ESP_IP/rm/$FILE_PATH" "DELETE"
         fi
         ;;
 
@@ -321,7 +321,7 @@ clear-data)
         FILE_PATH="${ARGS[0]}"
         DOWNLOAD_TARGET="$(basename "$FILE_PATH")"
         echo "Downloading $FILE_PATH from ESP32 at $ESP_IP to $DOWNLOAD_TARGET..."
-        make_request "http://$ESP_IP/download/$FILE_PATH" "GET" "$DOWNLOAD_TARGET"
+        make_request "https://$ESP_IP/download/$FILE_PATH" "GET" "$DOWNLOAD_TARGET"
         if [ $? -eq 0 ]; then
             echo "Downloaded to $DOWNLOAD_TARGET"
         else
@@ -345,11 +345,11 @@ clear-data)
         if [ -n "$OUTPUT_PATH" ]; then
             # Output path provided
             echo "Viewing file $FILE_PATH from ESP32 at $ESP_IP, saving to $OUTPUT_PATH..." >&2
-            make_request "http://$ESP_IP/view/$FILE_PATH" "GET" "$OUTPUT_PATH"
+            make_request "https://$ESP_IP/view/$FILE_PATH" "GET" "$OUTPUT_PATH"
         else
             # No output path, print to stdout
             echo "Viewing file $FILE_PATH from ESP32 at $ESP_IP..." >&2
-            make_request "http://$ESP_IP/view/$FILE_PATH" "GET" # Pass GET explicitly, no output file
+            make_request "https://$ESP_IP/view/$FILE_PATH" "GET" # Pass GET explicitly, no output file
         fi
         ;;
 

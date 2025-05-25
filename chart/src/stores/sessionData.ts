@@ -186,6 +186,23 @@ export const useSessionDataStore = defineStore('sessionData', {
 			this.saveVisibilityPreferences()
 		},
 
+		async handleFileUpload(file: File) {
+			this.isLoading = true
+			this.error = null
+			this.sessionMetadata = null
+			this.logEntries = []
+
+			try {
+				const text = await file.text()
+				this._parseSessionData(text)
+			} catch (err) {
+				console.error('Error processing uploaded file:', err)
+				this.error = err instanceof Error ? err.message : 'An unknown error occurred while processing the file'
+			} finally {
+				this.isLoading = false
+			}
+		},
+
 		setUserApiIp(ip: string) {
 			this.userApiIp = ip.trim()
 			if (typeof localStorage !== 'undefined') {
@@ -351,15 +368,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 			this.logEntries = []
 
 			try {
-				let protocol = 'https'
+				const protocol = 'https'
 				let effectiveIp = '192.168.4.1' // Default for production/remote
 
-				if (import.meta.env.DEV) {
-					// Development mode (localhost)
-					protocol = 'http'
-					// Default IP for dev as per your request, can be overridden by user input
-					effectiveIp = '192.168.4.1'
-				}
+				// if (import.meta.env.DEV) {
+				// 	// Development mode (localhost)
+				// 	protocol = 'http'
+				// 	// Default IP for dev as per your request, can be overridden by user input
+				// 	effectiveIp = '192.168.4.1'
+				// }
 
 				if (this.useUserApiIp && this.userApiIp) {
 					// Validate userApiIp roughly (not a full validation)
@@ -407,7 +424,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 					parseResponse: (txt) => txt, // Keep as text since we handle JSONL parsing
 					retry: 3, // ofetch specific retry
 					retryDelay: 500,
-					timeout: 10000, // Set fetch timeout to 10 seconds
+					timeout: 10, // Set fetch timeout to 10 seconds
 					onRequestError: ({ error }) => {
 						console.error('Request error:', error)
 						throw error
@@ -468,16 +485,16 @@ export const useSessionDataStore = defineStore('sessionData', {
 				} else if (internalId === 'esc_i') {
 					if (checkedValue < 0 || checkedValue > 200) checkedValue = null
 				} else if (internalId === 'esc_t') {
-					if (checkedValue < 10 || checkedValue > 120) checkedValue = null
+					if (checkedValue < 10 || checkedValue > 140) checkedValue = null
 				} else if (internalId === 'mc_i') {
 					// Motor current internal ID
 					if (checkedValue < 0 || checkedValue > 200) checkedValue = null
 				} else if (internalId === 'th_val') {
 					// Throttle internal ID
-					if (checkedValue < 990 || checkedValue > 2050) checkedValue = null // Adjusted throttle max
+					if (checkedValue < 990 || checkedValue > 1700) checkedValue = null // Adjusted throttle max
 				} else if (internalId.startsWith('ds_')) {
 					// DS Temp internal ID prefix
-					if (checkedValue < -10 || checkedValue > 60) checkedValue = null // Adjusted DS temp min
+					if (checkedValue < 10 || checkedValue > 120) checkedValue = null // Adjusted DS temp min
 				} else if (internalId === 'gps_speed' && entry) {
 					const gpsValues = entry.v as GpsValues
 					if (!gpsValues.fix || value === null || typeof value !== 'number' || isNaN(value)) {

@@ -50,7 +50,7 @@ if [ -z "$ESP_IP" ]; then
     exit 1
 fi
 
-UPLOAD_URL="http://$ESP_IP/upload/$TARGET_PATH"
+UPLOAD_URL="https://$ESP_IP/upload/$TARGET_PATH"
 
 # If file is smaller than CHUNK_SIZE, use regular upload instead of chunked
 if [ $FILE_SIZE -le $CHUNK_SIZE ]; then

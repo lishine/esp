@@ -44,7 +44,7 @@ IP_JSON_FILE="$SCRIPT_DIR_COMMON/ip.json"
 TIMESTAMP_FILE="$SCRIPT_DIR_COMMON/.last_sync"
 
 UPLOAD_CHUNKED_SCRIPT_PATH="$SCRIPT_DIR_COMMON/upload_chunked.sh"
-DEVICE_DIR="$PROJECT_ROOT_DIR/device" # Path to the device source files
+DEVICE_DIR="device" # Path to the device source files, relative to project root
 
 # AMPY_PORT logic removed, mpremote handles port detection automatically.
 
@@ -115,7 +115,7 @@ make_request() {
     local url="$1"
     local method="${2:-GET}"
     local output_file="${3:-}"
-    local timeout=10
+    local timeout=1000
     # Use an array for curl options for better handling of spaces/special chars
     local curl_opts_array=("-s" "-m" "$timeout") # -s: silent, -m: max time
 

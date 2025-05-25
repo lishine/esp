@@ -36,7 +36,6 @@ from io_local import gps_config
 from io_local import control
 from io_local import adc as adc_module  # Import the ADC module (device/ is root)
 from io_local import ds18b20 as ds18b20_module  # Import the DS18B20 module
-from io_local import fan
 from io_local.data_log import (
     get_current_data_log_file_path,
     get_previous_data_log_file_path,
@@ -551,7 +550,7 @@ register_live_data_routes(app)
 #         )
 
 
-@app.route("/api/data", methods=["POST"])
+@app.route("/api/data", methods=["POST", "OPTIONS"])
 def api_get_data_log_file(request: Request):
     """
     Returns the content of a JSONL data log file.
@@ -559,6 +558,19 @@ def api_get_data_log_file(request: Request):
     If 'prev: n' is provided and n > 0, it attempts to return the nth previous log file.
     Otherwise, it returns the current log file.
     """
+    # Handle OPTIONS request (CORS preflight)
+    if request.method == "OPTIONS":
+        return Response(
+            body="",
+            status=HTTP_OK,
+            headers={
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
+            },
+        )
+
+    # Handle POST request
     file_to_serve_path = None
     try:
         prev_offset = 0
@@ -880,11 +892,11 @@ def start_conditional_http_server():
     )
 
     # Wait for STA connection
-    while not is_connected():
-        time.sleep(5)  # Check every 5 seconds
-        # Add a counter or timeout if you want to give up after some time
-        # For now, it waits indefinitely for STA connection.
-        app_log("Conditional HTTP server: STA not connected, waiting...")
+    # while not is_connected():
+    #     time.sleep(5)  # Check every 5 seconds
+    #     # Add a counter or timeout if you want to give up after some time
+    #     # For now, it waits indefinitely for STA connection.
+    #     app_log("Conditional HTTP server: STA not connected, waiting...")
 
     # STA is connected (or was at last check)
     if not _http_server_started_flag:

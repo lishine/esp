@@ -383,27 +383,36 @@ async def error_log_task() -> None:
 
 
 def get_previous_data_log_file_path(offset: int = 1) -> str | None:
+    log.log(f"DataLog: ENTER get_previous_data_log_file_path with offset: {offset}")
     """
     Returns the full path of a previous data log file based on reset counter offset.
     Searches for a file named like 'YYYYMMDD_HHMMSS_{RESET_COUNT-offset}.jsonl'.
     """
     if offset <= 0:
-        log.log("DataLog: Offset must be positive for get_previous_data_log_file_path.")
+        log.log(
+            "DataLog: Offset must be positive. EXITING get_previous_data_log_file_path with None."
+        )
         return None
 
     current_reset_counter = settings_manager.get_reset_counter()
+
     if current_reset_counter < offset:
         log.log(
-            f"DataLog: Current reset counter {current_reset_counter} is less than offset {offset}."
+            f"DataLog: Current reset counter {current_reset_counter} is less than offset {offset}. EXITING get_previous_data_log_file_path with None."
         )
         return None
 
     target_reset_val = current_reset_counter - offset
     target_reset_str_prefix = f"{target_reset_val:04d}"  # e.g., "0001"
+    log.log(
+        f"DataLog: get_previous_data_log_file_path: target_reset_val = {target_reset_val}, target_reset_str_prefix = {target_reset_str_prefix}"
+    )
 
     try:
         if not SD_DATA_DIR or not _ensure_dir_exists(SD_DATA_DIR):
-            log.log("DataLog: SD_DATA_DIR is not accessible for previous log search.")
+            log.log(
+                "DataLog: SD_DATA_DIR is not accessible. EXITING get_previous_data_log_file_path with None."
+            )
             return None
 
         files_in_dir = uos.listdir(SD_DATA_DIR)
@@ -440,15 +449,19 @@ def get_previous_data_log_file_path(offset: int = 1) -> str | None:
             log.log(
                 f"DataLog: Found previous log file(s) for reset {target_reset_val}: {found_files}. Using: {found_files[0]}"
             )
-            return f"{SD_DATA_DIR}/{found_files[0]}"
+            result_path = f"{SD_DATA_DIR}/{found_files[0]}"
+            log.log(
+                f"DataLog: EXITING get_previous_data_log_file_path with path: {result_path}"
+            )
+            return result_path
 
         log.log(
-            f"DataLog: No previous log file found for reset counter {target_reset_val} (prefix {target_reset_str_prefix}, offset {offset})."
+            f"DataLog: No previous log file found for reset counter {target_reset_val} (prefix {target_reset_str_prefix}, offset {offset}). EXITING get_previous_data_log_file_path with None."
         )
         return None
     except Exception as e:
         log.log(
-            f"DataLog: Error searching for previous log file (offset {offset}): {e}"
+            f"DataLog: Error searching for previous log file (offset {offset}): {e}. EXITING get_previous_data_log_file_path with None."
         )
         return None
 

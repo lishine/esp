@@ -12,7 +12,7 @@ import {
 import SensorChart from '../components/SensorChart.vue'
 import SeriesToggle from '../components/SeriesToggle.vue' // Import the new component
 import type { EChartsCoreOption as ECOption } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
-import { NSpin, NAlert, NCard, NSpace, NGrid, NGi, NButton } from 'naive-ui' // Added NGrid, NGi and NButton for layout
+import { NSpin, NAlert, NCard, NSpace, NGrid, NGi, NButton, NUpload, type UploadFileInfo } from 'naive-ui' // Added NUpload and UploadFileInfo type
 import { formatInTimeZone } from 'date-fns-tz' // Import formatInTimeZone
 
 const sessionDataStore = useSessionDataStore()
@@ -270,8 +270,10 @@ const chartOptions = computed((): ECOption | null => {
 		}
 	})
 
-	const finalMaxCurrent = maxObservedCurrent > 0 ? Math.ceil((maxObservedCurrent * 1.1) / 10) * 10 : 100
-	const finalMaxTemp = maxObservedTemp > 0 ? Math.ceil((maxObservedTemp * 1.1) / 10) * 10 : 120
+	// const finalMaxCurrent = maxObservedCurrent > 0 ? Math.ceil((maxObservedCurrent * 1.1) / 10) * 10 : 100
+	// const finalMaxTemp = maxObservedTemp > 0 ? Math.ceil((maxObservedTemp * 1.1) / 10) * 10 : 120
+	const finalMaxCurrent = 100
+	const finalMaxTemp = 100
 	const minTemp = 0 // Or 10 if preferred
 
 	const yAxesConfig = [
@@ -326,7 +328,7 @@ const chartOptions = computed((): ECOption | null => {
 			position: 'left',
 			seriesNames: ['Speed'], // Updated series name
 			min: 0,
-			max: 20,
+			max: 35,
 			show: true,
 			axisLabel: { show: true },
 			nameTextStyle: { padding: [0, 0, 0, -35] },
@@ -398,13 +400,13 @@ const chartOptions = computed((): ECOption | null => {
 				'Motor current': '#8080ff', // Updated key (case)
 				TEsc: ' #ff0000', // Updated key
 				V: 'grey', // Updated key
-				Speed: 'yellow',
+				Speed: '#ccff66',
 				RPM: 'darkorange',
 				Throttle: 'green', // Updated key
 				// RPM, Speed, Throttle will get default colors or can be added
 			}
 			// More distinguishable shades of red for DS temps
-			const dsTempColors = ['#ffb3b3', '#ffcccc', '#660000', '#F44336', '#EF5350', '#E57373']
+			const dsTempColors = ['#ff9933', '#ffcccc', '#660000', '#F44336', '#EF5350', '#E57373']
 
 			let itemStyle = {}
 			if (colorMap[seriesName]) {
@@ -529,8 +531,8 @@ const chartOptions = computed((): ECOption | null => {
 onMounted(() => {
 	sessionDataStore.loadVisibilityPreferences()
 	// Initial fetch based on current query params
-	const initialPrev = Number(route.query.prev) || 0
-	sessionDataStore.fetchSessionData(initialPrev > 0 ? initialPrev : undefined)
+	// const initialPrev = Number(route.query.prev) || 0
+	// sessionDataStore.fetchSessionData(initialPrev > 0 ? initialPrev : undefined)
 })
 
 // Watch for changes in the 'prev' query parameter
@@ -574,6 +576,17 @@ const handleNextClick = () => {
 const handleRefreshData = () => {
 	const prevValue = Number(route.query.prev) || 0
 	sessionDataStore.fetchSessionData(prevValue > 0 ? prevValue : undefined)
+}
+
+const handleFileChange = async (options: {
+	file: Required<UploadFileInfo>
+	fileList: Required<UploadFileInfo>[]
+	event?: Event
+}) => {
+	const file = options.file.file
+	if (file) {
+		await sessionDataStore.handleFileUpload(file)
+	}
 }
 </script>
 
@@ -621,9 +634,14 @@ const handleRefreshData = () => {
 					<span>Fan: {{ sessionMetadata.fan_enabled ? 'Enabled' : 'Disabled' }}</span>
 				</n-space>
 			</n-card>
-			<n-button @click="handleRefreshData" type="primary" block style="margin-bottom: 16px; margin-top: 16px">
-				Fetch/Refresh Data (Current: {{ currentPrev === 0 ? 'Live' : `Prev ${currentPrev}` }})
-			</n-button>
+			<n-space vertical style="width: 100%; margin-top: 16px; margin-bottom: 16px">
+				<n-button @click="handleRefreshData" type="primary" block>
+					Fetch/Refresh Data (Current: {{ currentPrev === 0 ? 'Live' : `Prev ${currentPrev}` }})
+				</n-button>
+				<n-upload accept=".jsonl" :max="1" :show-file-list="false" @change="handleFileChange">
+					<n-button block>Upload JSONL File</n-button>
+				</n-upload>
+			</n-space>
 		</div>
 	</n-space>
 </template>
