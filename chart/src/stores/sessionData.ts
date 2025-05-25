@@ -342,7 +342,8 @@ export const useSessionDataStore = defineStore('sessionData', {
 			}
 		},
 
-		async fetchSessionData() {
+		async fetchSessionData(prevOffset?: number) {
+			// Added optional prevOffset parameter
 			this.loadVisibilityPreferences() // Load preferences at the start of fetching data
 			this.isLoading = true
 			this.error = null
@@ -375,13 +376,36 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 				const apiUrl = `${protocol}://${effectiveIp}/api/data`
 				console.log(
-					`Fetching data from: ${apiUrl} (DEV: ${String(import.meta.env.DEV)}, useUserApiIp: ${String(this.useUserApiIp)}, userApiIp: ${this.userApiIp})`
+					`Fetching data from: ${apiUrl} (DEV: ${String(import.meta.env.DEV)}, useUserApiIp: ${String(this.useUserApiIp)}, userApiIp: ${this.userApiIp}, prevOffset: ${prevOffset})`
 				)
 
-				const response = await ofetch(apiUrl, {
+				const fetchOptions: RequestInit = {
+					// Changed to RequestInit for broader compatibility if needed
 					method: 'POST',
+					// parseResponse: (txt) => txt, // ofetch specific, handle response directly
+					// retry: 3, // ofetch specific
+					// retryDelay: 500, // ofetch specific
+					// timeout: 10000, // ofetch specific
+					// onRequestError: ({ error }) => { // ofetch specific
+					// 	console.error('Request error:', error)
+					// 	throw error
+					// },
+					// onResponseError: ({ response }) => { // ofetch specific
+					// 	console.error('Response error:', response.status, response._data)
+					// 	throw new Error(`API error: ${response.status.toString()}`)
+					// },
+				}
+
+				if (prevOffset && prevOffset > 0) {
+					fetchOptions.body = JSON.stringify({ prev: prevOffset })
+					fetchOptions.headers = { 'Content-Type': 'application/json' }
+				}
+
+				// Using ofetch's direct options for retry and error handling
+				const response = await ofetch(apiUrl, {
+					...fetchOptions, // Spread our constructed options
 					parseResponse: (txt) => txt, // Keep as text since we handle JSONL parsing
-					retry: 3,
+					retry: 3, // ofetch specific retry
 					retryDelay: 500,
 					timeout: 10000, // Set fetch timeout to 10 seconds
 					onRequestError: ({ error }) => {

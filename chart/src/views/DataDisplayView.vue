@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, computed, ref } from 'vue'
+import { onMounted, computed, ref, watch } from 'vue' // Added watch
+import { useRoute, useRouter } from 'vue-router' // Added vue-router imports
 import {
 	useSessionDataStore,
 	type EscValues,
@@ -15,6 +16,8 @@ import { NSpin, NAlert, NCard, NSpace, NGrid, NGi, NButton } from 'naive-ui' // 
 import { formatInTimeZone } from 'date-fns-tz' // Import formatInTimeZone
 
 const sessionDataStore = useSessionDataStore()
+const route = useRoute()
+const router = useRouter()
 
 const isLoading = computed(() => sessionDataStore.isLoading)
 const error = computed(() => sessionDataStore.error)
@@ -524,13 +527,53 @@ const chartOptions = computed((): ECOption | null => {
 })
 
 onMounted(() => {
-	sessionDataStore.loadVisibilityPreferences() // Load preferences when component mounts
-	// Fetch data immediately on page load
-	sessionDataStore.fetchSessionData()
+	sessionDataStore.loadVisibilityPreferences()
+	// Initial fetch based on current query params
+	const initialPrev = Number(route.query.prev) || 0
+	sessionDataStore.fetchSessionData(initialPrev > 0 ? initialPrev : undefined)
 })
 
+// Watch for changes in the 'prev' query parameter
+watch(
+	() => route.query.prev,
+	(newPrevQuery, oldPrevQuery) => {
+		if (newPrevQuery !== oldPrevQuery) {
+			const prevValue = Number(newPrevQuery) || 0
+			sessionDataStore.fetchSessionData(prevValue > 0 ? prevValue : undefined)
+		}
+	}
+)
+
+const currentPrev = computed(() => {
+	const prev = Number(route.query.prev)
+	return isNaN(prev) || prev < 0 ? 0 : prev
+})
+
+const isNextDisabled = computed(() => {
+	return currentPrev.value <= 0
+})
+
+const handlePreviousClick = () => {
+	const newPrev = currentPrev.value + 1
+	router.push({ query: { ...route.query, prev: newPrev.toString() } })
+}
+
+const handleNextClick = () => {
+	if (currentPrev.value <= 0) return // Should be disabled, but as a safeguard
+	const newPrev = currentPrev.value - 1
+	if (newPrev <= 0) {
+		// Create a new query object without 'prev'
+		const newQuery = { ...route.query }
+		delete newQuery.prev
+		router.push({ query: newQuery })
+	} else {
+		router.push({ query: { ...route.query, prev: newPrev.toString() } })
+	}
+}
+
 const handleRefreshData = () => {
-	sessionDataStore.fetchSessionData()
+	const prevValue = Number(route.query.prev) || 0
+	sessionDataStore.fetchSessionData(prevValue > 0 ? prevValue : undefined)
 }
 </script>
 
@@ -553,7 +596,6 @@ const handleRefreshData = () => {
 					<n-card style="margin-top: 0px">
 						<div v-if="!isLoading && !error && chartFormattedData && chartFormattedData.series.length > 0">
 							<sensor-chart :options="chartOptions" :height="chartsHeight" />
-							<!-- Fixed height for desktop, responsive height handled by CSS media query -->
 						</div>
 						<div v-else-if="!isLoading && !error">
 							<p>No chart data available or data is still processing.</p>
@@ -562,9 +604,14 @@ const handleRefreshData = () => {
 				</n-gi>
 				<n-gi :span="'1 s:1 m:1 l:1 xl:1'">
 					<SeriesToggle />
-					<!-- Add the toggle component here -->
 				</n-gi>
 			</n-grid>
+
+			<!-- Navigation Buttons Row -->
+			<div style="display: flex; justify-content: space-between; margin-top: 16px; margin-bottom: 16px">
+				<n-button @click="handlePreviousClick" type="default"> &lt; Previous </n-button>
+				<n-button @click="handleNextClick" type="default" :disabled="isNextDisabled"> Next &gt; </n-button>
+			</div>
 
 			<n-card v-if="sessionMetadata" title="Session Info" style="margin-top: 16px">
 				<n-space vertical>
@@ -575,7 +622,7 @@ const handleRefreshData = () => {
 				</n-space>
 			</n-card>
 			<n-button @click="handleRefreshData" type="primary" block style="margin-bottom: 16px; margin-top: 16px">
-				Fetch/Refresh Data
+				Fetch/Refresh Data (Current: {{ currentPrev === 0 ? 'Live' : `Prev ${currentPrev}` }})
 			</n-button>
 		</div>
 	</n-space>

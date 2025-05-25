@@ -382,6 +382,77 @@ async def error_log_task() -> None:
         await asyncio.sleep(ERROR_LOG_INTERVAL_S)
 
 
+def get_previous_data_log_file_path(offset: int = 1) -> str | None:
+    """
+    Returns the full path of a previous data log file based on reset counter offset.
+    Searches for a file named like 'YYYYMMDD_HHMMSS_{RESET_COUNT-offset}.jsonl'.
+    """
+    if offset <= 0:
+        log.log("DataLog: Offset must be positive for get_previous_data_log_file_path.")
+        return None
+
+    current_reset_counter = settings_manager.get_reset_counter()
+    if current_reset_counter < offset:
+        log.log(
+            f"DataLog: Current reset counter {current_reset_counter} is less than offset {offset}."
+        )
+        return None
+
+    target_reset_val = current_reset_counter - offset
+    target_reset_str_prefix = f"{target_reset_val:04d}"  # e.g., "0001"
+
+    try:
+        if not SD_DATA_DIR or not _ensure_dir_exists(SD_DATA_DIR):
+            log.log("DataLog: SD_DATA_DIR is not accessible for previous log search.")
+            return None
+
+        files_in_dir = uos.listdir(SD_DATA_DIR)
+        found_files = []
+        for filename in files_in_dir:
+            if not filename.endswith(f".{DATA_LOG_EXTENSION}"):
+                continue
+
+            if filename.startswith(target_reset_str_prefix):
+                # Check if it's "RRRR.ext" or "RRRR_timestamp.ext"
+                name_without_ext = filename[
+                    : -(len(DATA_LOG_EXTENSION) + 1)
+                ]  # Remove ".ext"
+
+                # Case 1: "RRRR" (RTC was invalid)
+                if name_without_ext == target_reset_str_prefix:
+                    found_files.append(filename)
+                    continue
+
+                # Case 2: "RRRR_timestamp" (RTC was valid)
+                if name_without_ext.startswith(target_reset_str_prefix + "_"):
+                    # Further validation of timestamp format could be added here if strictness is needed
+                    # For now, starting with "RRRR_" is sufficient to identify the pattern
+                    found_files.append(filename)
+                    continue
+
+        if found_files:
+            # If multiple files match (e.g. due to manual copies or very quick restarts before RTC sync),
+            # we could try to pick the latest one based on timestamp if present, or just the first one.
+            # For simplicity, let's pick the first one found.
+            # Sorting could be added if more specific selection is needed.
+            # Example: sort by the timestamp part if present.
+            # For now, taking the first match is acceptable.
+            log.log(
+                f"DataLog: Found previous log file(s) for reset {target_reset_val}: {found_files}. Using: {found_files[0]}"
+            )
+            return f"{SD_DATA_DIR}/{found_files[0]}"
+
+        log.log(
+            f"DataLog: No previous log file found for reset counter {target_reset_val} (prefix {target_reset_str_prefix}, offset {offset})."
+        )
+        return None
+    except Exception as e:
+        log.log(
+            f"DataLog: Error searching for previous log file (offset {offset}): {e}"
+        )
+        return None
+
+
 def get_current_data_log_file_path() -> str | None:
     """Returns the full path of the current JSONL data log file."""
     global current_log_file_path

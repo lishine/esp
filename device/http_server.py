@@ -32,12 +32,15 @@ from globals import SD_MOUNT_POINT  # Import from globals
 from netutils import get_client_ip, get_device_info
 from upload import handle_upload
 
-import io_local.gps_config as gps_config
+from io_local import gps_config
 from io_local import control
 from io_local import adc as adc_module  # Import the ADC module (device/ is root)
 from io_local import ds18b20 as ds18b20_module  # Import the DS18B20 module
 from io_local import fan
-from io_local.data_log import get_current_data_log_file_path  # For /api/data
+from io_local.data_log import (
+    get_current_data_log_file_path,
+    get_previous_data_log_file_path,
+)  # For /api/data
 from io_local.live_data import register_live_data_routes  # UPDATED import
 
 HTTP_OK = 200
@@ -551,48 +554,108 @@ register_live_data_routes(app)
 @app.route("/api/data", methods=["POST"])
 def api_get_data_log_file(request: Request):
     """
-    Returns the content of the current JSONL data log file.
-    The request body is ignored in this version but may be used for future enhancements
-    (e.g., specifying date ranges or specific filenames).
+    Returns the content of a JSONL data log file.
+    Accepts a JSON body with an optional 'prev: n' parameter.
+    If 'prev: n' is provided and n > 0, it attempts to return the nth previous log file.
+    Otherwise, it returns the current log file.
     """
+    file_to_serve_path = None
     try:
-        current_file_path = get_current_data_log_file_path()
+        prev_offset = 0
+        if request.body:
+            try:
+                body_json = json.loads(request.body)
+                if isinstance(body_json, dict):
+                    prev_offset = body_json.get("prev", 0)
+                    if not isinstance(prev_offset, int) or prev_offset < 0:
+                        prev_offset = 0  # Invalid, so default to current
+                        log.log(
+                            f"/api/data: Invalid 'prev' value: {body_json.get('prev')}. Defaulting to current log."
+                        )
+            except Exception as json_e:
+                log.log(
+                    f"/api/data: Could not parse JSON body: {json_e}. Proceeding with current log."
+                )
+                prev_offset = 0
 
-        # Removed explicit check for file existence as per feedback.
-        # open() will raise OSError if file not found or path is None.
+        if prev_offset > 0:
+            log.log(
+                f"/api/data: Attempting to get previous log with offset: {prev_offset}"
+            )
+            file_to_serve_path = get_previous_data_log_file_path(prev_offset)
+            if not file_to_serve_path:
+                log.log(
+                    f"/api/data: Previous log with offset {prev_offset} not found. Falling back to current."
+                )
+                # Fall through to get current if previous not found
 
-        if (
-            not current_file_path
-        ):  # Still check if path itself is None (e.g. data_log init failed)
+        if not file_to_serve_path:  # If not prev_offset or previous not found
+            file_to_serve_path = get_current_data_log_file_path()
+
+        if not file_to_serve_path:
+            log.log(
+                "/api/data: Data log path (current or previous) not configured or found."
+            )
             return Response(
                 body=json.dumps(
-                    {"success": False, "error": "Data log path not configured."}
+                    {
+                        "success": False,
+                        "error": "Data log path not configured or file not found.",
+                    }
                 ),
-                status=HTTP_INTERNAL_ERROR,  # Or HTTP_NOT_FOUND, depending on desired semantics
+                status=HTTP_NOT_FOUND,
                 headers={"Content-Type": "application/json"},
             )
 
-        # Read the entire file content. For very large files, chunked transfer would be better.
-        with open(current_file_path, "rb") as f:  # Read as binary
+        log.log(f"/api/data: Serving file: {file_to_serve_path}")
+        # Read the entire file content.
+        with open(file_to_serve_path, "rb") as f:  # Read as binary
             content = f.read()
 
-        filename_only = current_file_path.split("/")[-1]
+        filename_only = file_to_serve_path.split("/")[-1]
 
         return Response(
             body=content,
             status=HTTP_OK,
             headers={
-                "Content-Type": "application/jsonl",  # Standard MIME type for JSON Lines
+                "Content-Type": "application/jsonl",
                 "Content-Disposition": f'attachment; filename="{filename_only}"',
-                "Access-Control-Allow-Origin": "*",  # Allow requests from any origin
-                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",  # Allow POST, GET, and OPTIONS methods
-                "Access-Control-Allow-Headers": "Content-Type",  # Allow Content-Type header
+                "Access-Control-Allow-Origin": "*",
+                "Access-Control-Allow-Methods": "POST, GET, OPTIONS",
+                "Access-Control-Allow-Headers": "Content-Type",
             },
         )
+    except OSError as e:
+        # Specifically handle FileNotFoundError (errno 2)
+        if e.args[0] == 2:  # ENOENT
+            log.log(
+                f"Error in POST /api/data: File not found - {file_to_serve_path if file_to_serve_path else 'path not determined'}. Error: {e}"
+            )
+            return Response(
+                body=json.dumps(
+                    {
+                        "success": False,
+                        "error": f"File not found: {file_to_serve_path.split('/')[-1] if file_to_serve_path else 'Unknown'}",
+                    }
+                ),
+                status=HTTP_NOT_FOUND,
+                headers={"Content-Type": "application/json"},
+            )
+        else:
+            log.log(
+                f"OSError in POST /api/data for {file_to_serve_path if file_to_serve_path else 'path not determined'}: {e}"
+            )
+            return Response(
+                body=json.dumps(
+                    {"success": False, "error": f"Server OS error: {str(e)}"}
+                ),
+                status=HTTP_INTERNAL_ERROR,
+                headers={"Content-Type": "application/json"},
+            )
     except Exception as e:
         log.log(
-            f"Error in POST /api/data: {e}"
-        )  # Ensure 'log' is available (it is, from top of file)
+            f"Error in POST /api/data for {file_to_serve_path if file_to_serve_path else 'path not determined'}: {e}"
+        )
         return Response(
             body=json.dumps({"success": False, "error": f"Server error: {str(e)}"}),
             status=HTTP_INTERNAL_ERROR,
