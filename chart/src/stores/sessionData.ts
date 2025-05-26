@@ -65,6 +65,7 @@ export interface ChartSeriesData {
 	data: Array<[Date, number | null]> // Array of [Date_object, value]
 	yAxisIndex?: number // Optional: if using multiple y-axes
 	showSymbol?: boolean // Optional: for line charts
+	connectNulls?: boolean // Optional: to connect null data points
 }
 
 export interface FormattedChartData {
@@ -474,12 +475,12 @@ export const useSessionDataStore = defineStore('sessionData', {
 			const finalSeries: ChartSeriesData[] = []
 
 			// Helper function to apply range checks using internal IDs
-			const applyRangeChecks = (internalId: string, value: number | null, entry?: LogEntry): number | null => {
+			const applyRangeChecks = (internalId: string, value: number | null): number | null => {
 				if (value === null || typeof value !== 'number' || isNaN(value)) return null
 
 				let checkedValue: number | null = value // Allow null
 				if (internalId === 'esc_rpm') {
-					if (checkedValue < 0 || checkedValue > 30000) checkedValue = null // Adjusted RPM max based on typical values
+					if (checkedValue < 0 || checkedValue > 5000) checkedValue = null // Adjusted RPM max based on typical values
 				} else if (internalId === 'esc_v') {
 					if (checkedValue < 30 || checkedValue > 55) checkedValue = null
 				} else if (internalId === 'esc_i') {
@@ -491,23 +492,18 @@ export const useSessionDataStore = defineStore('sessionData', {
 					if (checkedValue < 0 || checkedValue > 200) checkedValue = null
 				} else if (internalId === 'th_val') {
 					// Throttle internal ID
-					if (checkedValue < 990 || checkedValue > 1700) checkedValue = null // Adjusted throttle max
+					if (checkedValue < 990 || checkedValue > 1900) checkedValue = null // Adjusted throttle max
 				} else if (internalId.startsWith('ds_')) {
 					// DS Temp internal ID prefix
 					if (checkedValue < 10 || checkedValue > 120) checkedValue = null // Adjusted DS temp min
-				} else if (internalId === 'gps_speed' && entry) {
-					const gpsValues = entry.v as GpsValues
-					if (!gpsValues.fix || value === null || typeof value !== 'number' || isNaN(value)) {
-						checkedValue = null // No fix or invalid initial value
+				} else if (internalId === 'gps_speed') {
+					// Value is in knots, check reasonable range for our use case
+					if (value === null || typeof value !== 'number' || isNaN(value)) {
+						checkedValue = null
+					} else if (value < 0 || value > 20) {
+						checkedValue = null
 					} else {
-						const speedInKmh = value * 1.852 // Convert knots to km/h
-						// Apply range check to km/h value
-						if (speedInKmh < 0 || speedInKmh > 35) {
-							// Adjusted upper range for km/h if 20 was for kts
-							checkedValue = null
-						} else {
-							checkedValue = speedInKmh
-						}
+						checkedValue = value
 					}
 				}
 				return checkedValue
@@ -528,16 +524,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 					valueExtractorFn = (entry: LogEntry) => {
 						const gpsEntry = entry.v as GpsValues
 						const val = gpsEntry[canonConfig.dataKey as keyof GpsValues]
-						if (canonConfig.internalId === 'gps_speed') {
-							if (!gpsEntry.fix || typeof val !== 'number') {
-								// Ensure fix is true and val is number
-								return null // No valid speed if no fix or val is not a number
-							}
-							return val * 1.852 // Convert knots to km/h
-						}
-						// For other GPS properties that might be boolean (like 'fix' itself if charted)
-						// or other types, they should be handled or filtered by CANONICAL_SERIES_CONFIG
-						// to only include chartable numeric data.
+						// Return raw value - conversion and validation handled in main processing
 						return typeof val === 'number' ? val : null
 					}
 				} else if (canonConfig.sensorType === 'ds') {
@@ -564,58 +551,106 @@ export const useSessionDataStore = defineStore('sessionData', {
 			activeSeriesConfigs.forEach((config) => {
 				// Create a temporary map for the current sensor's data: timestamp -> value
 				const sensorDataMap = new Map<number, number | null>()
-				const sensorEntries = new Map<number, LogEntry>() // To store entry for range checks if needed
+				// Store all GPS entries for fix checking, regardless of the current series config
+				const gpsSensorEntries = new Map<number, LogEntry>()
 
 				state.logEntries.forEach((entry) => {
+					// Populate sensorDataMap for the current config's sensorName
 					if (entry.n === config.sensorName) {
 						const value = config.valueExtractor(entry)
-						if (typeof value === 'number') {
+						// Store value if it's a number or if extractor explicitly returned null
+						if (typeof value === 'number' || value === null) {
 							sensorDataMap.set(entry.preciseTimestamp.getTime(), value)
-							if (config.internalId === 'gps_speed') {
-								// Check against internalId
-								// Store entry for GPS fix check
-								sensorEntries.set(entry.preciseTimestamp.getTime(), entry)
-							}
-						} else {
-							// Catches both null and undefined if not a number
-							sensorDataMap.set(entry.preciseTimestamp.getTime(), null)
 						}
+					}
+					// Populate gpsSensorEntries if the entry is from a 'gps' sensor
+					if (entry.n === 'gps') {
+						gpsSensorEntries.set(entry.preciseTimestamp.getTime(), entry)
 					}
 				})
 
 				const seriesChartData: Array<[Date, number | null]> = []
-				let currentSeriesLastValidValue: number | null = null // Initialize last valid value for the series
+				let currentSeriesLastValidValue: number | null = null // For non-GPS series or general interpolation
+				let currentLastValidSpeedWithFix: number | null = null // Specific for gps_speed interpolation during fix
 
 				sortedUniqueTimestampMillis.forEach((tsMillis) => {
-					const directValue = sensorDataMap.get(tsMillis) // Raw value for this sensor at this tsMillis
-					const entryForCheck = config.internalId === 'gps_speed' ? sensorEntries.get(tsMillis) : undefined
-
 					let valueToPushForChart: number | null
-					let checkedDirectValue: number | null = null // Declare checkedDirectValue here
 
-					if (directValue !== undefined) {
-						// A data point (value or explicit null) exists for this sensor at this tsMillis
-						checkedDirectValue = applyRangeChecks(
-							config.internalId, // Use internalId for range check logic
-							directValue, // directValue could be a number or an actual null from the source data
-							entryForCheck
+					if (config.internalId === 'mc_i') {
+						const directValue = sensorDataMap.get(tsMillis)
+						const current = applyRangeChecks(
+							config.internalId,
+							directValue !== undefined ? directValue : null
+						)
+
+						if (current !== null) {
+							const actual = current * 1.732
+							valueToPushForChart = actual
+							currentLastValidSpeedWithFix = actual
+						} else {
+							valueToPushForChart = currentSeriesLastValidValue
+						}
+					} else if (config.internalId === 'gps_speed') {
+						const gpsLogEntry = gpsSensorEntries.get(tsMillis)
+						if (!gpsLogEntry) {
+							// No GPS entry at this timestamp, use last valid value for interpolation
+							valueToPushForChart = currentLastValidSpeedWithFix
+						} else {
+							const gpsValues = gpsLogEntry.v as GpsValues
+							const hasGpsFix = gpsValues.fix
+
+							if (!hasGpsFix) {
+								// No GPS fix, break the line by setting null
+								valueToPushForChart = null
+								currentLastValidSpeedWithFix = null // Reset on loss of fix
+							} else {
+								// GPS fix is present
+								const speedKnots = gpsValues.speed
+								const checkedSpeedKnots = applyRangeChecks(
+									config.internalId,
+									speedKnots !== undefined && speedKnots !== null ? speedKnots : null
+								)
+
+								if (checkedSpeedKnots !== null) {
+									// Valid speed reading during fix
+									const speedKmh = checkedSpeedKnots * 1.852
+									valueToPushForChart = speedKmh
+									currentLastValidSpeedWithFix = speedKmh // Update last valid speed
+								} else {
+									// Invalid speed reading during fix, interpolate using last valid value
+									valueToPushForChart = currentLastValidSpeedWithFix
+								}
+							}
+						}
+					} else {
+						// Logic for other series (original logic)
+						const directValue = sensorDataMap.get(tsMillis)
+						// For non-GPS series, entryForCheck would be specific to their sensor type if needed by applyRangeChecks
+						// For simplicity, if other series don't need 'entry' in applyRangeChecks, this can be undefined.
+						// If they do (e.g. another GPS field like altitude that needs fix check), use gpsSensorEntries.
+						// const entryForCheck = config.sensorName === 'gps' ? gpsSensorEntries.get(tsMillis) : undefined // Unused
+
+						const checkedDirectValue = applyRangeChecks(
+							config.internalId,
+							directValue !== undefined ? directValue : null // Ensure null if undefined
 						)
 
 						if (checkedDirectValue !== null) {
-							// If the direct value, after checking, is valid (not null)
-							currentSeriesLastValidValue = checkedDirectValue // Update the last known valid value
-							valueToPushForChart = checkedDirectValue // Use this valid direct value for the chart
+							currentSeriesLastValidValue = checkedDirectValue
+							valueToPushForChart = checkedDirectValue
 						} else {
-							// The direct value was invalid (became null after check) or was originally null.
-							// For the chart point, use the previously known valid value.
 							valueToPushForChart = currentSeriesLastValidValue
 						}
-					} else {
-						// No data point at all for this sensor at this specific tsMillis
-						// Use the last known valid value.
-						valueToPushForChart = currentSeriesLastValidValue
 					}
 					seriesChartData.push([new Date(tsMillis), valueToPushForChart])
+					// Add logging for GPS speed data points
+					if (config.internalId === 'gps_speed') {
+						const debugEntry = gpsSensorEntries.get(tsMillis)
+						const debugGpsValues = debugEntry ? (debugEntry.v as GpsValues) : null
+						console.log(
+							`[GPS_DEBUG] TS: ${new Date(tsMillis).toISOString()}, Fix: ${debugGpsValues?.fix}, SpeedKnots: ${debugGpsValues?.speed}, CheckedKnots: ${applyRangeChecks(config.internalId, debugGpsValues?.speed !== undefined && debugGpsValues?.speed !== null ? debugGpsValues.speed : null)}, LastValidFixSpeed: ${currentLastValidSpeedWithFix}, ValueToPush: ${valueToPushForChart}`
+						)
+					}
 				})
 
 				finalSeries.push({
@@ -623,6 +658,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 					type: 'line',
 					data: seriesChartData,
 					showSymbol: false,
+					connectNulls: false, // Ensure lines break on null
 				})
 			})
 			console.timeEnd('getChartFormattedData')

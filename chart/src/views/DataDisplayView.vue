@@ -141,10 +141,20 @@ const chartOptions = computed((): ECOption | null => {
 
 						if (numericValue !== null && typeof numericValue === 'number' && !isNaN(numericValue)) {
 							displayValue = numericValue.toFixed(config.decimals)
-						} else {
-							// For any series, if data is not a valid number, display '-' and no unit.
+						} else if (
+							seriesData.seriesName === 'Speed' &&
+							Array.isArray(seriesData.value) &&
+							seriesData.value[1] === null
+						) {
+							// For Speed series, show '-' only when the value is explicitly null (no GPS fix)
 							displayValue = '-'
 							unitToShow = ''
+						} else {
+							// For other series or when Speed has an interpolated value
+							displayValue = numericValue?.toFixed(config.decimals) || '-'
+							if (displayValue === '-') {
+								unitToShow = ''
+							}
 						}
 
 						tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${seriesData.marker || ''}${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">${displayValue}${unitToShow ? ' ' + unitToShow : ''}</span></div>`
@@ -272,7 +282,7 @@ const chartOptions = computed((): ECOption | null => {
 
 	// const finalMaxCurrent = maxObservedCurrent > 0 ? Math.ceil((maxObservedCurrent * 1.1) / 10) * 10 : 100
 	// const finalMaxTemp = maxObservedTemp > 0 ? Math.ceil((maxObservedTemp * 1.1) / 10) * 10 : 120
-	const finalMaxCurrent = 100
+	const finalMaxCurrent = 150
 	const finalMaxTemp = 100
 	const minTemp = 0 // Or 10 if preferred
 
@@ -439,7 +449,7 @@ const chartOptions = computed((): ECOption | null => {
 				showSymbol: false, // Ensure symbols are off for line series
 				smooth: false,
 				type: 'line',
-				connectNulls: true,
+				connectNulls: s.name === 'Speed' ? false : true, // Explicitly false for Speed, true for others (or default)
 				itemStyle: itemStyle, // Add this line
 			}
 		}),
