@@ -72,7 +72,7 @@ const themeOverrides: GlobalThemeOverrides = {
 						Fetch/Refresh Data
 					</n-button>
 				</footer>
-				<div v-if="!isMobile" style="padding: 10px 20px; margin-top: auto">
+				<div v-if="!isMobile && false" style="padding: 10px 20px; margin-top: auto">
 					<h4>Advanced Settings</h4>
 					<n-space vertical style="margin-bottom: 10px; border: 1px solid #ccc; padding: 10px">
 						<n-checkbox v-model:checked="useUserApiIpLocal"> Use Custom ESP32 IP Address </n-checkbox>

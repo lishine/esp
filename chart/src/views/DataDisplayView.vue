@@ -410,9 +410,9 @@ const chartOptions = computed((): ECOption | null => {
 				'Motor current': '#8080ff', // Updated key (case)
 				TEsc: ' #ff0000', // Updated key
 				V: 'grey', // Updated key
-				Speed: '#ccff66',
-				RPM: 'darkorange',
-				Throttle: 'green', // Updated key
+				Speed: '#fcad03',
+				RPM: 'green',
+				Throttle: '#03fcca', // Updated key
 				// RPM, Speed, Throttle will get default colors or can be added
 			}
 			// More distinguishable shades of red for DS temps
@@ -612,7 +612,9 @@ const handleFileChange = async (options: {
 		</n-alert>
 
 		<div v-if="!isLoading && !error">
-			<p v-if="!sessionMetadata && logEntries.length === 0">No data available yet. Click 'Fetch/Refresh Data'.</p>
+			<p v-if="false && !sessionMetadata && logEntries.length === 0">
+				No data available yet. Click 'Fetch/Refresh Data'.
+			</p>
 
 			<n-grid :x-gap="12" :y-gap="8" :cols="'1 s:1 m:4 l:4 xl:4'">
 				<n-gi :span="'1 s:1 m:3 l:3 xl:3'">
@@ -620,7 +622,7 @@ const handleFileChange = async (options: {
 						<div v-if="!isLoading && !error && chartFormattedData && chartFormattedData.series.length > 0">
 							<sensor-chart :options="chartOptions" :height="chartsHeight" />
 						</div>
-						<div v-else-if="!isLoading && !error">
+						<div v-else-if="false && !isLoading && !error">
 							<p>No chart data available or data is still processing.</p>
 						</div>
 					</n-card>
@@ -631,7 +633,10 @@ const handleFileChange = async (options: {
 			</n-grid>
 
 			<!-- Navigation Buttons Row -->
-			<div style="display: flex; justify-content: space-between; margin-top: 16px; margin-bottom: 16px">
+			<div
+				v-if="false && false"
+				style="display: flex; justify-content: space-between; margin-top: 16px; margin-bottom: 16px"
+			>
 				<n-button @click="handlePreviousClick" type="default"> &lt; Previous </n-button>
 				<n-button @click="handleNextClick" type="default" :disabled="isNextDisabled"> Next &gt; </n-button>
 			</div>
@@ -645,7 +650,7 @@ const handleFileChange = async (options: {
 				</n-space>
 			</n-card>
 			<n-space vertical style="width: 100%; margin-top: 16px; margin-bottom: 16px">
-				<n-button @click="handleRefreshData" type="primary" block>
+				<n-button v-if="false && false" @click="handleRefreshData" type="primary" block>
 					Fetch/Refresh Data (Current: {{ currentPrev === 0 ? 'Live' : `Prev ${currentPrev}` }})
 				</n-button>
 				<n-upload accept=".jsonl" :max="1" :show-file-list="false" @change="handleFileChange">

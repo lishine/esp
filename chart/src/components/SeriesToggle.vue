@@ -52,7 +52,7 @@ const groupedSeries = computed(() => {
 </script>
 
 <template>
-	<n-card title="Series Visibility" size="small">
+	<n-card v-if="Object.keys(groupedSeries).length > 0" title="Series Visibility" size="small">
 		<!-- This n-space will lay out the collapse items (groups) horizontally and wrap them -->
 		<n-space wrap justify="space-around" :item-style="{ 'flex-grow': 1, 'min-width': '180px' }">
 			<!-- Each n-collapse here will act as a group container. We iterate over groups to create multiple n-collapse instances or one n-collapse with multiple items -->
