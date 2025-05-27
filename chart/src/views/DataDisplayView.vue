@@ -8,11 +8,24 @@ import {
 	type LogEntry,
 	type ChartSeriesData,
 	CANONICAL_SERIES_CONFIG, // Import the centralized config
+	type LogFileListItem, // Import type for GitHub files
 } from '../stores/sessionData'
 import SensorChart from '../components/SensorChart.vue'
 import SeriesToggle from '../components/SeriesToggle.vue' // Import the new component
 import type { EChartsCoreOption as ECOption } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
-import { NSpin, NAlert, NCard, NSpace, NGrid, NGi, NButton, NUpload, type UploadFileInfo } from 'naive-ui' // Added NUpload and UploadFileInfo type
+import {
+	NSpin,
+	NAlert,
+	NCard,
+	NSpace,
+	NGrid,
+	NGi,
+	NButton,
+	NUpload,
+	type UploadFileInfo,
+	NList,
+	NListItem,
+} from 'naive-ui' // Added NUpload, NList, NListItem and UploadFileInfo type
 import { formatInTimeZone } from 'date-fns-tz' // Import formatInTimeZone
 
 const sessionDataStore = useSessionDataStore()
@@ -25,6 +38,15 @@ const sessionMetadata = computed(() => sessionDataStore.sessionMetadata)
 const logEntries = computed(() => sessionDataStore.logEntries)
 const chartFormattedData = computed(() => sessionDataStore.getChartFormattedData)
 const visibleSeriesSet = computed(() => sessionDataStore.visibleSeries)
+
+// GitHub related computed properties
+const gitHubFiles = computed(() => sessionDataStore.gitHubFiles)
+const isGitHubListLoading = computed(() => sessionDataStore.isGitHubListLoading)
+const gitHubListError = computed(() => sessionDataStore.gitHubListError)
+const isGitHubFileLoading = computed(() => sessionDataStore.isGitHubFileLoading)
+const gitHubFileError = computed(() => sessionDataStore.gitHubFileError)
+const currentFileSource = computed(() => sessionDataStore.currentFileSource)
+const currentGitHubFileName = computed(() => sessionDataStore.currentGitHubFileName)
 
 // Define a type for the ECharts params object for clarity, used in tooltip.formatter
 type EChartTooltipParam = {
@@ -91,7 +113,6 @@ const chartOptions = computed((): ECOption | null => {
 				},
 			},
 			formatter: (params: EChartTooltipParam[]) => {
-				// This is the main tooltip formatter
 				// This is the main tooltip formatter
 				// Typed params as EChartTooltipParam[]
 				if (!Array.isArray(params) || params.length === 0) {
@@ -540,6 +561,7 @@ const chartOptions = computed((): ECOption | null => {
 
 onMounted(() => {
 	sessionDataStore.loadVisibilityPreferences()
+	sessionDataStore.fetchAndSetGitHubLogFilesList() // Fetch GitHub file list on mount
 	// Initial fetch based on current query params
 	// const initialPrev = Number(route.query.prev) || 0
 	// sessionDataStore.fetchSessionData(initialPrev > 0 ? initialPrev : undefined)
@@ -598,32 +620,70 @@ const handleFileChange = async (options: {
 		await sessionDataStore.handleFileUpload(file)
 	}
 }
+
+const handleGitHubFileClick = async (file: LogFileListItem) => {
+	await sessionDataStore.loadLogFileFromGitHub(file)
+}
 </script>
 
 <template>
 	<n-space vertical class="data-display-container" style="padding: 0px; padding-top: 0px">
-		<n-space v-if="isLoading" align="center" justify="center" style="margin-top: 20px">
+		<!-- General Loading for local file or initial device data -->
+		<n-space
+			v-if="isLoading &amp;&amp; currentFileSource !== 'github' &amp;&amp; !isGitHubFileLoading"
+			align="center"
+			justify="center"
+			style="margin-top: 20px"
+		>
 			<n-spin size="large" />
 			<p>Loading session data...</p>
 		</n-space>
 
-		<n-alert v-if="error && !isLoading" title="Error Loading Data" type="error" closable>
+		<!-- General Error for local file or initial device data -->
+		<n-alert
+			v-if="error &amp;&amp; !isLoading &amp;&amp; currentFileSource !== 'github' &amp;&amp; !isGitHubFileLoading"
+			title="Error Loading Data"
+			type="error"
+			closable
+		>
 			{{ error }}
 		</n-alert>
 
-		<div v-if="!isLoading && !error">
-			<p v-if="false && !sessionMetadata && logEntries.length === 0">
-				No data available yet. Click 'Fetch/Refresh Data'.
+		<!-- GitHub File Specific Loading -->
+		<n-space v-if="isGitHubFileLoading" align="center" justify="center" style="margin-top: 20px">
+			<n-spin size="large" />
+			<p>Loading selected GitHub log file...</p>
+		</n-space>
+
+		<!-- GitHub File Specific Error -->
+		<n-alert
+			v-if="gitHubFileError &amp;&amp; !isGitHubFileLoading"
+			title="Error Loading GitHub File"
+			type="error"
+			closable
+		>
+			{{ gitHubFileError }}
+		</n-alert>
+
+		<div v-if="(!isLoading || currentFileSource === 'github') &amp;&amp; !isGitHubFileLoading">
+			<p
+				v-if="false &amp;&amp; !sessionMetadata &amp;&amp; logEntries.length === 0 &amp;&amp; !isGitHubFileLoading"
+			>
+				No data available yet. Click 'Fetch/Refresh Data', upload a file, or select from GitHub.
 			</p>
 
 			<n-grid :x-gap="12" :y-gap="8" :cols="'1 s:1 m:4 l:4 xl:4'">
 				<n-gi :span="'1 s:1 m:3 l:3 xl:3'">
 					<n-card style="margin-top: 0px">
-						<div v-if="!isLoading && !error && chartFormattedData && chartFormattedData.series.length > 0">
+						<div
+							v-if="chartFormattedData &amp;&amp; chartFormattedData.series.length > 0 &amp;&amp; !isGitHubFileLoading"
+						>
 							<sensor-chart :options="chartOptions" :height="chartsHeight" />
 						</div>
-						<div v-else-if="false && !isLoading && !error">
-							<p>No chart data available or data is still processing.</p>
+						<div
+							v-else-if="!isGitHubFileLoading &amp;&amp; !isLoading &amp;&amp; !error &amp;&amp; !gitHubFileError"
+						>
+							<p>No chart data available. Upload a local file or select one from GitHub below.</p>
 						</div>
 					</n-card>
 				</n-gi>
@@ -632,9 +692,9 @@ const handleFileChange = async (options: {
 				</n-gi>
 			</n-grid>
 
-			<!-- Navigation Buttons Row -->
+			<!-- Navigation Buttons Row (kept as is, functionality might be for device data) -->
 			<div
-				v-if="false && false"
+				v-if="false &amp;&amp; false"
 				style="display: flex; justify-content: space-between; margin-top: 16px; margin-bottom: 16px"
 			>
 				<n-button @click="handlePreviousClick" type="default"> &lt; Previous </n-button>
@@ -643,20 +703,57 @@ const handleFileChange = async (options: {
 
 			<n-card v-if="sessionMetadata" title="Session Info" style="margin-top: 16px">
 				<n-space vertical>
+					<span v-if="currentFileSource === 'github' &amp;&amp; currentGitHubFileName"
+						>Source: {{ currentGitHubFileName }}</span
+					>
+					<span v-else-if="currentFileSource === 'local'">Source: Local Upload</span>
+					<span v-else-if="currentFileSource === null &amp;&amp; sessionMetadata?.device_description"
+						>Source: Device (Live/Fetched)</span
+					>
 					<span>Device: {{ sessionMetadata.device_description || 'N/A' }}</span>
 					<span>Date: {{ sessionMetadata.date || 'N/A' }}</span>
 					<span>Restart Count: {{ sessionMetadata.restart || 'N/A' }}</span>
 					<span>Fan: {{ sessionMetadata.fan_enabled ? 'Enabled' : 'Disabled' }}</span>
 				</n-space>
 			</n-card>
+
 			<n-space vertical style="width: 100%; margin-top: 16px; margin-bottom: 16px">
-				<n-button v-if="false && false" @click="handleRefreshData" type="primary" block>
+				<n-button v-if="false &amp;&amp; false" @click="handleRefreshData" type="primary" block>
 					Fetch/Refresh Data (Current: {{ currentPrev === 0 ? 'Live' : `Prev ${currentPrev}` }})
 				</n-button>
 				<n-upload accept=".jsonl" :max="1" :show-file-list="false" @change="handleFileChange">
-					<n-button block>Upload JSONL File</n-button>
+					<n-button block>Upload Local JSONL File</n-button>
 				</n-upload>
 			</n-space>
+
+			<!-- GitHub Files Section - Placed at the bottom -->
+			<n-card title="Load Log from GitHub" style="margin-top: 16px; margin-bottom: 16px">
+				<n-space v-if="isGitHubListLoading" align="center" justify="center">
+					<n-spin size="medium" />
+					<p>Loading GitHub file list...</p>
+				</n-space>
+				<n-alert
+					v-if="gitHubListError &amp;&amp; !isGitHubListLoading"
+					title="Error Loading GitHub File List"
+					type="error"
+					closable
+				>
+					{{ gitHubListError }}
+				</n-alert>
+				<n-list
+					v-if="!isGitHubListLoading &amp;&amp; !gitHubListError &amp;&amp; gitHubFiles.length > 0"
+					hoverable
+					clickable
+					bordered
+				>
+					<n-list-item v-for="file in gitHubFiles" :key="file.name" @click="handleGitHubFileClick(file)">
+						{{ file.name }}
+					</n-list-item>
+				</n-list>
+				<p v-if="!isGitHubListLoading &amp;&amp; !gitHubListError &amp;&amp; gitHubFiles.length === 0">
+					No .jsonl files found in the GitHub directory or failed to load list.
+				</p>
+			</n-card>
 		</div>
 	</n-space>
 </template>

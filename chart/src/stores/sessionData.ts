@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ofetch, FetchError } from 'ofetch'
+import { fetchGitHubLogFilesList, fetchGitHubFileContent, type LogFileListItem } from '../services/githubService' // Added import
+export type { LogFileListItem } // Added export
 
 // Centralized Series Configuration
 export const CANONICAL_SERIES_CONFIG = [
@@ -109,6 +111,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 			userApiIp: storedUserApiIp,
 			useUserApiIp: storedUseUserApiIp,
 			visibleSeries: new Set<string>(), // Initialize with all series visible by default, or load from localStorage
+
+			// GitHub related state
+			gitHubFiles: [] as LogFileListItem[],
+			isGitHubListLoading: false,
+			gitHubListError: null as string | null,
+			isGitHubFileLoading: false,
+			gitHubFileError: null as string | null,
+			currentFileSource: null as 'local' | 'github' | null,
+			currentGitHubFileName: null as string | null,
 		}
 	},
 
@@ -188,10 +199,12 @@ export const useSessionDataStore = defineStore('sessionData', {
 		},
 
 		async handleFileUpload(file: File) {
-			this.isLoading = true
+			this.isLoading = true // Use general isLoading for local file processing
 			this.error = null
 			this.sessionMetadata = null
 			this.logEntries = []
+			this.currentFileSource = 'local' // Set source
+			this.currentGitHubFileName = null // Clear GitHub file name
 
 			try {
 				const text = await file.text()
@@ -447,6 +460,45 @@ export const useSessionDataStore = defineStore('sessionData', {
 				this.isLoading = false
 			}
 		},
+
+		async fetchAndSetGitHubLogFilesList() {
+			this.isGitHubListLoading = true
+			this.gitHubListError = null
+			try {
+				this.gitHubFiles = await fetchGitHubLogFilesList()
+			} catch (err) {
+				console.error('Error fetching GitHub log files list in store:', err)
+				this.gitHubListError = err instanceof Error ? err.message : 'Failed to fetch GitHub file list.'
+				this.gitHubFiles = [] // Clear or keep old list? Clearing for now.
+			} finally {
+				this.isGitHubListLoading = false
+			}
+		},
+
+		async loadLogFileFromGitHub(file: LogFileListItem) {
+			this.isGitHubFileLoading = true
+			this.gitHubFileError = null
+			this.sessionMetadata = null // Clear previous data
+			this.logEntries = [] // Clear previous data
+			this.error = null // Clear general error
+
+			try {
+				const rawContentString = await fetchGitHubFileContent(file.downloadUrl)
+				this._parseSessionData(rawContentString)
+				this.currentFileSource = 'github'
+				this.currentGitHubFileName = `/github/${file.name}`
+			} catch (err) {
+				console.error(`Error loading log file ${file.name} from GitHub in store:`, err)
+				this.gitHubFileError = err instanceof Error ? err.message : `Failed to load ${file.name} from GitHub.`
+				// Clear data if parsing failed or file fetch failed
+				this.sessionMetadata = null
+				this.logEntries = []
+				this.currentFileSource = null
+				this.currentGitHubFileName = null
+			} finally {
+				this.isGitHubFileLoading = false
+			}
+		},
 	},
 
 	getters: {
@@ -644,13 +696,6 @@ export const useSessionDataStore = defineStore('sessionData', {
 					}
 					seriesChartData.push([new Date(tsMillis), valueToPushForChart])
 					// Add logging for GPS speed data points
-					if (config.internalId === 'gps_speed') {
-						const debugEntry = gpsSensorEntries.get(tsMillis)
-						const debugGpsValues = debugEntry ? (debugEntry.v as GpsValues) : null
-						console.log(
-							`[GPS_DEBUG] TS: ${new Date(tsMillis).toISOString()}, Fix: ${debugGpsValues?.fix}, SpeedKnots: ${debugGpsValues?.speed}, CheckedKnots: ${applyRangeChecks(config.internalId, debugGpsValues?.speed !== undefined && debugGpsValues?.speed !== null ? debugGpsValues.speed : null)}, LastValidFixSpeed: ${currentLastValidSpeedWithFix}, ValueToPush: ${valueToPushForChart}`
-						)
-					}
 				})
 
 				finalSeries.push({
