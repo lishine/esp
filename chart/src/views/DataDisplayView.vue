@@ -282,7 +282,7 @@ const chartOptions = computed((): ECOption | null => {
 
 	// const finalMaxCurrent = maxObservedCurrent > 0 ? Math.ceil((maxObservedCurrent * 1.1) / 10) * 10 : 100
 	// const finalMaxTemp = maxObservedTemp > 0 ? Math.ceil((maxObservedTemp * 1.1) / 10) * 10 : 120
-	const finalMaxCurrent = 150
+	const finalMaxCurrent = 100
 	const finalMaxTemp = 100
 	const minTemp = 0 // Or 10 if preferred
 
@@ -315,7 +315,7 @@ const chartOptions = computed((): ECOption | null => {
 			id: 'yThrottle',
 			seriesNames: ['Throttle'], // No change
 			min: 990, // Original fixed min
-			max: 4500, // Original fixed max
+			max: 2100, // Original fixed max
 			show: false, // This axis will not be displayed
 		},
 		{
@@ -329,7 +329,7 @@ const chartOptions = computed((): ECOption | null => {
 			id: 'yEscRpm',
 			seriesNames: ['RPM'], // Updated series name
 			min: 0,
-			max: 9000,
+			max: 4500,
 			show: false,
 		},
 		{
