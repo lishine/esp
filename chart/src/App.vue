@@ -66,12 +66,6 @@ const themeOverrides: GlobalThemeOverrides = {
 				<main class="app-main">
 					<router-view />
 				</main>
-				<footer class="app-footer" v-if="isMobile">
-					<!-- Mobile specific refresh button or other controls -->
-					<n-button @click="handleRefresh" type="primary" block style="margin-top: 10px">
-						Fetch/Refresh Data
-					</n-button>
-				</footer>
 				<div v-if="!isMobile && false" style="padding: 10px 20px; margin-top: auto">
 					<h4>Advanced Settings</h4>
 					<n-space vertical style="margin-bottom: 10px; border: 1px solid #ccc; padding: 10px">
