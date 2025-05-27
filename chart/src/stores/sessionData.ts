@@ -355,14 +355,6 @@ export const useSessionDataStore = defineStore('sessionData', {
 			// Sort all entries by their new preciseTimestamp (already mostly sorted by processing sorted timestamps, but a final sort is safer)
 			entriesWithPreciseTimestamp.sort((a, b) => a.preciseTimestamp.getTime() - b.preciseTimestamp.getTime())
 
-			console.log(
-				'Sorted preciseTimestamps (first 5):',
-				entriesWithPreciseTimestamp.slice(0, 5).map((e) => e.preciseTimestamp.toISOString())
-			)
-			console.log(
-				'Sorted preciseTimestamps (last 5):',
-				entriesWithPreciseTimestamp.slice(-5).map((e) => e.preciseTimestamp.toISOString())
-			)
 			console.log('Total entries: ' + entriesWithPreciseTimestamp.length.toString())
 
 			this.logEntries = entriesWithPreciseTimestamp

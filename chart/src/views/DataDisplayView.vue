@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router' // Import useRouter
 import { useSessionDataStore, type SessionMetadata } from '../stores/sessionData'
 import SensorChart from '../components/SensorChart.vue'
 import SeriesToggle from '../components/SeriesToggle.vue'
@@ -14,6 +14,7 @@ import type { LogFileListItem } from '../stores/sessionData'
 
 const sessionDataStore = useSessionDataStore()
 const route = useRoute()
+const router = useRouter() // Get router instance
 const isLoading = computed(() => sessionDataStore.isLoading)
 const error = computed(() => sessionDataStore.error)
 const sessionMetadata = computed((): SessionMetadata | null => {
@@ -45,9 +46,41 @@ const isMobile = computed(() => screenWidth.value < 1024)
 
 const { chartsHeight, chartOptions } = useChartOptions(chartFormattedData, visibleSeriesSet, logEntries, isMobile)
 
-onMounted(() => {
+// Function to load GitHub file based on route parameter
+const loadGitHubFileFromRouteParam = async () => {
+	const filenameFromRoute = route.params.filename as string
+	if (filenameFromRoute) {
+		sessionDataStore.isGitHubFileLoading = true
+		sessionDataStore.gitHubFileError = null
+
+		// Wait for the GitHub file list to be loaded if it's currently loading.
+		// fetchAndSetGitHubLogFilesList is called in onMounted.
+		while (sessionDataStore.isGitHubListLoading) {
+			await new Promise((resolve) => setTimeout(resolve, 100))
+		}
+
+		if (sessionDataStore.gitHubListError) {
+			sessionDataStore.gitHubFileError = `Cannot display file: GitHub file list failed to load. Error: ${sessionDataStore.gitHubListError}`
+			sessionDataStore.isGitHubFileLoading = false
+			return
+		}
+
+		const fileToLoad = sessionDataStore.gitHubFiles.find((f) => f.name === filenameFromRoute)
+
+		if (fileToLoad) {
+			await sessionDataStore.loadLogFileFromGitHub(fileToLoad)
+		} else {
+			sessionDataStore.gitHubFileError = `File "${filenameFromRoute}" not found in the GitHub repository.`
+			sessionDataStore.isGitHubFileLoading = false
+		}
+	}
+}
+
+onMounted(async () => {
 	sessionDataStore.loadVisibilityPreferences()
+	// Initiates fetching the list. loadGitHubFileFromRouteParam will wait if needed.
 	sessionDataStore.fetchAndSetGitHubLogFilesList()
+	await loadGitHubFileFromRouteParam() // Load file if filename in route on initial mount
 })
 
 // Watch for changes in the 'prev' query parameter
@@ -59,6 +92,20 @@ watch(
 			sessionDataStore.fetchSessionData(prevValue > 0 ? prevValue : undefined)
 		}
 	}
+)
+
+// Watch for changes in the filename route parameter
+watch(
+	() => route.params.filename,
+	async (newFilename, oldFilename) => {
+		if (newFilename && newFilename !== oldFilename) {
+			await loadGitHubFileFromRouteParam()
+		} else if (!newFilename && oldFilename) {
+			// Optional: Clear data if navigating away from a GitHub file route
+			// For now, let other data sources (like 'prev' or local upload) handle it
+		}
+	},
+	{ immediate: false } // onMounted handles initial load
 )
 
 const currentPrev = computed(() => {
@@ -82,8 +129,9 @@ const handleFileChange = async (options: {
 	}
 }
 
-const handleGitHubFileClick = async (file: LogFileListItem) => {
-	await sessionDataStore.loadLogFileFromGitHub(file)
+const handleGitHubFileClick = (file: LogFileListItem) => {
+	// Just navigate. The watcher on route.params.filename will handle loading.
+	router.push(`/github/${file.name}`)
 }
 </script>
 
