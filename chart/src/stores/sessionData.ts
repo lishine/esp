@@ -491,6 +491,18 @@ export const useSessionDataStore = defineStore('sessionData', {
 				this.isGitHubFileLoading = false
 			}
 		},
+
+		clearGitHubData() {
+			this.sessionMetadata = null
+			this.logEntries = []
+			this.currentFileSource = null
+			this.currentGitHubFileName = null
+			this.gitHubFileError = null
+			// Do not clear this.error as it might be a general error
+			// Do not clear this.isLoading as it's for general loading state
+			// Do not clear isGitHubListLoading or gitHubFiles or gitHubListError
+			console.log('Cleared GitHub specific file data.')
+		},
 	},
 
 	getters: {

@@ -100,9 +100,10 @@ watch(
 	async (newFilename, oldFilename) => {
 		if (newFilename && newFilename !== oldFilename) {
 			await loadGitHubFileFromRouteParam()
-		} else if (!newFilename && oldFilename) {
-			// Optional: Clear data if navigating away from a GitHub file route
-			// For now, let other data sources (like 'prev' or local upload) handle it
+		} else if (!newFilename && oldFilename && sessionDataStore.currentFileSource === 'github') {
+			// Navigated away from a GitHub file route (e.g., back to /)
+			// and the current data source was GitHub.
+			sessionDataStore.clearGitHubData()
 		}
 	},
 	{ immediate: false } // onMounted handles initial load
@@ -126,6 +127,11 @@ const handleFileChange = async (options: {
 	const file = options.file.file
 	if (file) {
 		await sessionDataStore.handleFileUpload(file)
+		// After successful local file upload, navigate to root
+		if (!sessionDataStore.error) {
+			// Check if upload was successful
+			router.push('/')
+		}
 	}
 }
 
