@@ -1,4 +1,5 @@
 import type { LogEntry, ChartSeriesData, FormattedChartData } from './types'
+import { BATTERY_CURRENT_THRESHOLD_AMPS } from './sessionDataStore'
 import { CANONICAL_SERIES_CONFIG, type SeriesConfig } from './seriesConfig'
 import type { GpsValues, EscValues, DsValues } from './types'
 
@@ -88,12 +89,12 @@ export const chartFormatters = {
 				const escIValue = escISensorDataMap.get(tsMillis)
 
 				if (escIValue !== null && escIValue !== undefined) {
-					if (escIValue < 2) {
+					if (escIValue < BATTERY_CURRENT_THRESHOLD_AMPS) {
 						shouldCurrentlyNullify = true
-					} else if (escIValue > 2) {
+					} else if (escIValue > BATTERY_CURRENT_THRESHOLD_AMPS) {
 						shouldCurrentlyNullify = false
 					}
-					// If escIValue is exactly 2, shouldCurrentlyNullify remains unchanged
+					// If escIValue is exactly BATTERY_CURRENT_THRESHOLD_AMPS, shouldCurrentlyNullify remains unchanged
 				}
 				// If escIValue is null or undefined, shouldCurrentlyNullify remains unchanged
 

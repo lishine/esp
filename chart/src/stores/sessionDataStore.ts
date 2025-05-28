@@ -1,5 +1,6 @@
+export const BATTERY_CURRENT_THRESHOLD_AMPS = 3
 import { defineStore } from 'pinia'
-import type { SessionState, SessionMetadata, LogEntry } from './types'
+import type { SessionState, SessionMetadata, LogEntry, EscValues } from './types'
 import { visibilityActions } from './visibilityActions'
 import { fileActions } from './fileActions'
 import { chartFormatters } from './chartFormatters'
@@ -188,7 +189,65 @@ export const useSessionDataStore = defineStore('sessionData', {
 		getMetadata: (state): SessionMetadata | null => state.sessionMetadata,
 		getLogEntries: (state): LogEntry[] => state.logEntries,
 		getVisibleSeries: (state): string[] => Array.from(state.visibleSeries),
-		getChartFormattedData: chartFormatters.getChartFormattedData,
+		getFilteredLogEntries: (state): LogEntry[] => {
+			if (!state.logEntries.length) {
+				return []
+			}
+
+			const firstLogEntryTimestamp = state.logEntries[0]?.preciseTimestamp.getTime() || -Infinity
+			const lastLogEntryTimestamp =
+				state.logEntries[state.logEntries.length - 1]?.preciseTimestamp.getTime() || Infinity
+
+			let firstRelevantEntry: LogEntry | null = null
+			let lastRelevantEntry: LogEntry | null = null
+
+			// Find the first relevant entry
+			for (let i = 0; i < state.logEntries.length; i++) {
+				const entry = state.logEntries[i]
+				if (entry.n === 'esc' && (entry.v as EscValues).i > BATTERY_CURRENT_THRESHOLD_AMPS) {
+					firstRelevantEntry = entry
+					break
+				}
+			}
+
+			// Find the last relevant entry
+			for (let i = state.logEntries.length - 1; i >= 0; i--) {
+				const entry = state.logEntries[i]
+				if (entry.n === 'esc' && (entry.v as EscValues).i > BATTERY_CURRENT_THRESHOLD_AMPS) {
+					lastRelevantEntry = entry
+					break
+				}
+			}
+
+			if (!firstRelevantEntry || !lastRelevantEntry) {
+				console.warn(
+					'Could not determine dynamic time range based on battery current threshold. Displaying full time range.'
+				)
+				return state.logEntries
+			}
+
+			const firstRelevantTimestamp = firstRelevantEntry.preciseTimestamp.getTime()
+			const lastRelevantTimestamp = lastRelevantEntry.preciseTimestamp.getTime()
+
+			// Calculate start and end times, ensuring they are within the overall log entry range
+			const startTimeMs = Math.max(firstRelevantTimestamp - 30 * 1000, firstLogEntryTimestamp)
+			const endTimeMs = Math.min(lastRelevantTimestamp + 30 * 1000, lastLogEntryTimestamp)
+
+			// Filter entries based on the calculated time range
+			const filteredResult = state.logEntries.filter(
+				(entry) =>
+					entry.preciseTimestamp.getTime() >= startTimeMs && entry.preciseTimestamp.getTime() <= endTimeMs
+			)
+
+			return filteredResult
+		},
+		getChartFormattedData(state): ReturnType<typeof chartFormatters.getChartFormattedData> {
+			const filteredEntries = this.getFilteredLogEntries // Use the filtered entries
+			return chartFormatters.getChartFormattedData.call({
+				logEntries: filteredEntries,
+				filterSeriesByBatCurrent: state.filterSeriesByBatCurrent as boolean,
+			})
+		},
 	},
 })
 
