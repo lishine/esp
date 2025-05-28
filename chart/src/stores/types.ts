@@ -81,4 +81,5 @@ export interface SessionState {
 	currentFileSource: 'local' | 'github' | null
 	currentGitHubFileName: string | null
 	filterSeriesByBatCurrent?: boolean // Added for battery current filtering
+	totalGpsDistance: number // Added for total GPS distance
 }

@@ -5,6 +5,7 @@ defineProps<{
 	sessionMetadata: SessionMetadata | null
 	currentFileSource: 'local' | 'github' | null
 	currentGitHubFileName: string | null
+	totalGpsDistance: number
 }>()
 
 const getSourceIcon = (source: 'local' | 'github' | null) => {
@@ -84,6 +85,14 @@ const getSourceColor = (source: 'local' | 'github' | null) => {
 				>
 					{{ sessionMetadata.fan_enabled ? 'Enabled' : 'Disabled' }}
 				</div>
+			</div>
+
+			<div class="info-item">
+				<div class="info-label">
+					<span class="info-icon">🗺️</span>
+					GPS Distance
+				</div>
+				<div class="info-value">{{ totalGpsDistance.toFixed(2) }} m</div>
 			</div>
 		</div>
 	</div>

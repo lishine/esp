@@ -5,6 +5,7 @@ import { visibilityActions } from './visibilityActions'
 import { fileActions } from './fileActions'
 import { chartFormatters } from './chartFormatters'
 import { applyRangeChecks } from './rangeChecks'
+import { calculateSessionDistance } from '../utils/gpsDistance'
 
 export const useSessionDataStore = defineStore('sessionData', {
 	state: (): SessionState => {
@@ -35,6 +36,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			currentFileSource: null,
 			currentGitHubFileName: null,
 			filterSeriesByBatCurrent: true, // Added for battery current filtering
+			totalGpsDistance: 0, // Added for total GPS distance
 		}
 	},
 
@@ -180,6 +182,9 @@ export const useSessionDataStore = defineStore('sessionData', {
 			if (this.visibleSeries.size === 0 && this.logEntries.length > 0) {
 				this.initializeDefaultVisibility()
 			}
+
+			// Calculate total GPS distance
+			this.totalGpsDistance = calculateSessionDistance(this.logEntries)
 		},
 
 		...visibilityActions,
@@ -190,6 +195,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 		getMetadata: (state): SessionMetadata | null => state.sessionMetadata,
 		getLogEntries: (state): LogEntry[] => state.logEntries,
 		getVisibleSeries: (state): string[] => Array.from(state.visibleSeries),
+		getTotalGpsDistance: (state): number => state.totalGpsDistance, // Getter for total GPS distance
 		getFilteredLogEntries: (state): LogEntry[] => {
 			return state.logEntries // Simply return all log entries
 		},

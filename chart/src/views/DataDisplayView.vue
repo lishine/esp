@@ -30,6 +30,7 @@ const sessionMetadata = computed((): SessionMetadata | null => {
 const logEntries = computed(() => sessionDataStore.logEntries)
 const chartFormattedData = computed(() => sessionDataStore.getChartFormattedData)
 const visibleSeriesSet = computed(() => sessionDataStore.visibleSeries)
+const totalGpsDistance = computed(() => sessionDataStore.getTotalGpsDistance) // Get total GPS distance
 
 // GitHub related computed properties
 const gitHubFiles = computed(() => sessionDataStore.gitHubFiles)
@@ -171,6 +172,7 @@ const handleGitHubFileClick = (file: LogFile) => {
 				:session-metadata="sessionMetadata"
 				:current-file-source="currentFileSource"
 				:current-git-hub-file-name="currentGitHubFileName"
+				:total-gps-distance="totalGpsDistance"
 			/>
 
 			<file-handling
