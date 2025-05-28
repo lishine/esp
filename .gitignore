@@ -62,4 +62,3 @@ prepare-commit-msg
 *.code-workspace
 .aider*
 
-*.bin
