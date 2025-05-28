@@ -641,8 +641,8 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 						if (current !== null) {
 							const actual = current * 1.732
+							currentSeriesLastValidValue = actual
 							valueToPushForChart = actual
-							currentLastValidSpeedWithFix = actual
 						} else {
 							valueToPushForChart = currentSeriesLastValidValue
 						}

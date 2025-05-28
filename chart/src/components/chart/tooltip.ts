@@ -1,11 +1,12 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { CANONICAL_SERIES_CONFIG } from '../../stores/sessionData'
-import type { EChartTooltipParam } from './types'
+import type { EChartTooltipParam, ChartFormattedDataRef } from './types' // Import ChartFormattedDataRef
 import type { YAxisConfig } from './axes' // Assuming YAxisConfig will be defined in axes.ts
 
 export function createTooltipFormatter(
 	yAxesConfig: YAxisConfig[], // Pass yAxesConfig if needed for axis label formatting
-	visibleYAxisIds: Set<string> // Pass visibleYAxisIds if needed
+	visibleYAxisIds: Set<string>, // Pass visibleYAxisIds if needed
+	chartFormattedData: ChartFormattedDataRef // Pass the formatted data
 ) {
 	return {
 		trigger: 'axis', // Explicitly set trigger type
@@ -38,12 +39,14 @@ export function createTooltipFormatter(
 			},
 		},
 		formatter: (params: EChartTooltipParam[]): string => {
-			if (!Array.isArray(params) || params.length === 0) return ''
+			if (!Array.isArray(params) || params.length === 0 || !chartFormattedData.value) return '' // Add check for chartFormattedData
 
 			const firstPoint = params[0]
 			let tooltipHtml = ''
-			if (firstPoint.axisValue !== undefined) {
-				const xAxisDate = new Date(firstPoint.axisValue)
+			const timestampMillis = firstPoint.axisValue as number // Get the timestamp from the axis pointer
+
+			if (timestampMillis !== undefined && !isNaN(timestampMillis)) {
+				const xAxisDate = new Date(timestampMillis)
 				if (!isNaN(xAxisDate.getTime())) {
 					tooltipHtml += `<div style="margin-bottom: -15px;text-align: center;">${formatInTimeZone(xAxisDate, 'Asia/Jerusalem', 'HH:mm:ss')}</div><br/>`
 				} else {
@@ -60,37 +63,50 @@ export function createTooltipFormatter(
 				decimals: csc.decimals,
 			}))
 
+			// Create a map from the ECharts params for easy access to marker colors
 			const paramsMap = new Map<string, EChartTooltipParam>()
 			params.forEach((p: EChartTooltipParam) => {
 				paramsMap.set(p.seriesName, p)
 			})
 
 			tooltipSeriesConfig.forEach((config) => {
-				const seriesData = paramsMap.get(config.originalName)
-				if (seriesData) {
-					const numericValue = Array.isArray(seriesData.value) ? seriesData.value[1] : seriesData.value
-					let displayValue: string
-					let unitToShow = config.unit || ''
+				// Find the series data in the store's formatted data
+				const seriesDataInStore = chartFormattedData.value?.series.find((s) => s.name === config.originalName)
 
-					if (numericValue !== null && typeof numericValue === 'number' && !isNaN(numericValue)) {
-						displayValue = numericValue.toFixed(config.decimals)
-					} else if (
-						seriesData.seriesName === 'Speed' &&
-						Array.isArray(seriesData.value) &&
-						seriesData.value[1] === null
-					) {
-						displayValue = '-'
-						unitToShow = ''
-					} else {
-						displayValue = numericValue?.toFixed(config.decimals) || '-'
-						if (displayValue === '-') {
+				let displayValue: string = '-'
+				let unitToShow = config.unit || ''
+				let marker = '' // Initialize marker
+
+				if (seriesDataInStore) {
+					// Find the data point for the current timestamp
+					const dataPoint = seriesDataInStore.data.find(([date]) => date.getTime() === timestampMillis)
+
+					if (dataPoint) {
+						const numericValue = dataPoint[1] // The value is the second element of the tuple [Date, value]
+
+						if (numericValue !== null && typeof numericValue === 'number' && !isNaN(numericValue)) {
+							displayValue = numericValue.toFixed(config.decimals)
+							// Get the marker from the original params array if available
+							const param = paramsMap.get(config.originalName)
+							if (param) {
+								marker = param.marker || ''
+							}
+						} else {
+							displayValue = '-'
 							unitToShow = ''
 						}
+					} else {
+						// Data point not found at this exact timestamp in the formatted data
+						displayValue = '-'
+						unitToShow = ''
 					}
-					tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${seriesData.marker || ''}${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">${displayValue}${unitToShow ? ' ' + unitToShow : ''}</span></div>`
 				} else {
-					tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">-</span></div>`
+					// Series not found in chartFormattedData (shouldn't happen if config is based on available data)
+					displayValue = '-'
+					unitToShow = ''
 				}
+
+				tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${marker}${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">${displayValue}${unitToShow ? ' ' + unitToShow : ''}</span></div>`
 			})
 			return tooltipHtml
 		},

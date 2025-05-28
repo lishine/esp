@@ -42,8 +42,8 @@ export function useChartOptions(
 
 		const visibleYAxisIds = calculateVisibleYAxisIds(currentVisibleSeries, yAxesConfig)
 
-		// Now create the tooltip object with the necessary context
-		const tooltip = createTooltipFormatter(yAxesConfig, visibleYAxisIds)
+		// Now create the tooltip object with the necessary context, passing chartFormattedData
+		const tooltip = createTooltipFormatter(yAxesConfig, visibleYAxisIds, chartFormattedData)
 
 		const baseChartOptions: ECOption = {
 			title: { text: '' },
