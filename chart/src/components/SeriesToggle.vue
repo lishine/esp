@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useSessionDataStore } from '../stores'
+import { NCheckbox } from 'naive-ui'
 
 const store = useSessionDataStore()
 
@@ -15,9 +16,16 @@ const toggleSeriesVisibility = (seriesName: string) => {
 	store.toggleSeries(seriesName)
 }
 
+// Battery current filtering state
+const filterSeriesByBatCurrentLocal = computed({
+	get: () => store.filterSeriesByBatCurrent,
+	set: (value: boolean) => store.setFilterSeriesByBatCurrent(value),
+})
+
 // Group series for display
 const groupedSeries = computed(() => {
 	const groups: Record<string, string[]> = {
+		Custom: [],
 		Temperature: [],
 		Others: [],
 	}
@@ -42,6 +50,7 @@ const groupedSeries = computed(() => {
 
 const getGroupIcon = (groupName: string) => {
 	const icons: Record<string, string> = {
+		Custom: '⚙️',
 		Temperature: '🌡️',
 		Others: '📊',
 	}
@@ -50,6 +59,7 @@ const getGroupIcon = (groupName: string) => {
 
 const getGroupColor = (groupName: string) => {
 	const colors: Record<string, string> = {
+		Custom: '#8b5cf6',
 		Temperature: '#ef4444',
 		Others: '#6b7280',
 	}
@@ -67,10 +77,27 @@ const getGroupColor = (groupName: string) => {
 		</div>
 
 		<div class="groups-container">
+			<!-- Custom group with special content -->
+			<div class="group-card" :style="{ '--group-color': getGroupColor('Custom') }">
+				<div class="group-header">
+					<span class="group-icon">{{ getGroupIcon('Custom') }}</span>
+					<h4 class="group-title">Custom</h4>
+				</div>
+
+				<div class="toggles-container">
+					<div class="toggle-item custom-checkbox">
+						<n-checkbox v-model:checked="filterSeriesByBatCurrentLocal">
+							Dynamic Series Nullification (Bat. Current &lt; 2A)
+						</n-checkbox>
+					</div>
+				</div>
+			</div>
+
+			<!-- Other groups -->
 			<template v-for="(seriesList, groupName) in groupedSeries" :key="String(groupName)">
 				<div
+					v-if="groupName !== 'Custom'"
 					class="group-card"
-					:class="{ 'group-card-wide': groupName === 'Others' }"
 					:style="{ '--group-color': getGroupColor(String(groupName)) }"
 				>
 					<div class="group-header">
@@ -131,7 +158,7 @@ const getGroupColor = (groupName: string) => {
 
 .groups-container {
 	display: grid;
-	grid-template-columns: 1fr 2fr;
+	grid-template-columns: repeat(3, 1fr);
 	gap: 20px;
 }
 
@@ -256,6 +283,19 @@ const getGroupColor = (groupName: string) => {
 .toggle-active .toggle-label {
 	color: #1e293b;
 	font-weight: 600;
+}
+
+.custom-checkbox {
+	padding: 12px;
+	border-radius: 8px;
+	background-color: #f8fafc;
+	border: 1px solid #e2e8f0;
+	transition: all 0.2s ease;
+}
+
+.custom-checkbox:hover {
+	background-color: #f1f5f9;
+	border-color: #cbd5e1;
 }
 
 @media (max-width: 768px) {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, onMounted, onBeforeUnmount } from 'vue'
 import { useSessionDataStore } from './stores'
 import {
 	NCheckbox,
@@ -21,12 +21,6 @@ watch(userApiIpLocal, (newValue) => {
 })
 watch(useUserApiIpLocal, (newValue) => {
 	sessionDataStore.setUseUserApiIp(newValue)
-})
-
-// --- UI State for Battery Current Filtering ---
-const filterSeriesByBatCurrentLocal = computed({
-	get: () => sessionDataStore.filterSeriesByBatCurrent,
-	set: (value: boolean) => sessionDataStore.setFilterSeriesByBatCurrent(value),
 })
 
 // --- Responsive UI for settings visibility ---
@@ -66,7 +60,7 @@ const themeOverrides: GlobalThemeOverrides = {
 				<main class="app-main">
 					<router-view />
 				</main>
-				<div style="padding: 10px 20px; margin-top: auto">
+				<div v-if="false && false" style="padding: 10px 20px; margin-top: auto">
 					<h4>Advanced Settings</h4>
 					<n-space vertical style="margin-bottom: 10px; border: 1px solid #ccc; padding: 10px">
 						<n-checkbox v-model:checked="useUserApiIpLocal"> Use Custom ESP32 IP Address </n-checkbox>
@@ -76,9 +70,6 @@ const themeOverrides: GlobalThemeOverrides = {
 							:disabled="!useUserApiIpLocal"
 							style="max-width: 300px"
 						/>
-						<n-checkbox v-model:checked="filterSeriesByBatCurrentLocal">
-							Dynamic Series Nullification (Bat. Current < 2A)
-						</n-checkbox>
 					</n-space>
 				</div>
 			</div>
