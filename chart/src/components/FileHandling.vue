@@ -1,12 +1,12 @@
 <script setup lang="ts">
 import type { UploadFileInfo } from 'naive-ui'
-import type { LogFileListItem } from '../stores/sessionData'
+import type { LogFile } from '../stores'
 
 defineProps<{
 	currentPrev: number
 	isGitHubListLoading: boolean
 	gitHubListError: string | null
-	gitHubFiles: LogFileListItem[]
+	gitHubFiles: LogFile[]
 }>()
 
 const emit = defineEmits<{
@@ -15,7 +15,7 @@ const emit = defineEmits<{
 		options: { file: Required<UploadFileInfo>; fileList: Required<UploadFileInfo>[]; event?: Event }
 	): void
 	(e: 'refreshData'): void
-	(e: 'gitHubFileClick', file: LogFileListItem): void
+	(e: 'gitHubFileClick', file: LogFile): void
 }>()
 
 const handleFileChange = (event: Event) => {
@@ -42,7 +42,7 @@ const handleFileChange = (event: Event) => {
 	}
 }
 
-const handleGitHubFileClick = (file: LogFileListItem) => {
+const handleGitHubFileClick = (file: LogFile) => {
 	emit('gitHubFileClick', file)
 }
 </script>

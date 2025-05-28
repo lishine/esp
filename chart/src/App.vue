@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
-import { useSessionDataStore } from './stores/sessionData'
+import { useSessionDataStore } from './stores'
 import {
 	NCheckbox,
 	NInput,

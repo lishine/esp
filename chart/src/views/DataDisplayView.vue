@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router' // Import useRouter
-import { useSessionDataStore, type SessionMetadata } from '../stores/sessionData'
+import { useSessionDataStore, type SessionMetadata, type LogFile } from '../stores'
 import SensorChart from '../components/SensorChart.vue'
 import SeriesToggle from '../components/SeriesToggle.vue'
 import LoadingStates from '../components/LoadingStates.vue'
@@ -10,7 +10,6 @@ import FileHandling from '../components/FileHandling.vue'
 import { useChartOptions } from '../components/ChartOptions'
 import { NGrid, NGi, NCard, NSpace } from 'naive-ui'
 import type { UploadFileInfo } from 'naive-ui'
-import type { LogFileListItem } from '../stores/sessionData'
 
 const sessionDataStore = useSessionDataStore()
 const route = useRoute()
@@ -135,7 +134,7 @@ const handleFileChange = async (options: {
 	}
 }
 
-const handleGitHubFileClick = (file: LogFileListItem) => {
+const handleGitHubFileClick = (file: LogFile) => {
 	// Just navigate. The watcher on route.params.filename will handle loading.
 	router.push(`/github/${file.name}`)
 }

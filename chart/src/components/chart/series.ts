@@ -1,5 +1,5 @@
 import type { EChartsCoreOption } from 'echarts/core'
-import type { ChartSeriesData } from '../../stores/sessionData'
+import type { ChartSeriesData } from '../../stores'
 import type { YAxisConfig } from './axes'
 
 const SERIES_COLORS: Record<string, string> = {

@@ -1,5 +1,5 @@
 import type { EChartsCoreOption } from 'echarts/core'
-import type { LogEntry, EscValues, DsValues, ChartSeriesData } from '../../stores/sessionData'
+import type { LogEntry, EscValues, DsValues, ChartSeriesData } from '../../stores'
 
 export interface YAxisConfig {
 	id: string

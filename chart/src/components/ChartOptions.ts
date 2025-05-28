@@ -11,7 +11,7 @@ import {
 	type YAxisConfig,
 } from './chart/axes'
 import { buildSeriesOptions } from './chart/series'
-import type { ChartSeriesData } from '../stores/sessionData' // Keep this if ChartSeriesData is used directly here
+import type { ChartSeriesData } from '../stores' // Keep this if ChartSeriesData is used directly here
 
 export function useChartOptions(
 	chartFormattedData: ChartFormattedDataRef,

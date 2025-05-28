@@ -1,5 +1,5 @@
 import { formatInTimeZone } from 'date-fns-tz'
-import { CANONICAL_SERIES_CONFIG } from '../../stores/sessionData'
+import { CANONICAL_SERIES_CONFIG } from '../../stores'
 import type { EChartTooltipParam, ChartFormattedDataRef } from './types' // Import ChartFormattedDataRef
 import type { YAxisConfig } from './axes' // Assuming YAxisConfig will be defined in axes.ts
 

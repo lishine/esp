@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useSessionDataStore } from '../stores/sessionData'
+import { useSessionDataStore } from '../stores'
 
 const store = useSessionDataStore()
 

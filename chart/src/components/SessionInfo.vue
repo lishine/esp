@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { SessionMetadata } from '../stores/sessionData'
+import type { SessionMetadata } from '../stores'
 
 defineProps<{
 	sessionMetadata: SessionMetadata | null

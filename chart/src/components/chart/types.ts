@@ -1,4 +1,4 @@
-import type { ChartSeriesData, LogEntry } from '../../stores/sessionData'
+import type { ChartSeriesData, LogEntry } from '../../stores'
 
 export type EChartTooltipParam = {
 	seriesName: string
