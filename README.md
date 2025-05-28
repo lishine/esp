@@ -54,22 +54,22 @@ The general data flow is as follows:
 
 ```mermaid
 graph LR
-    subgraph Sensors
+    subgraph "Sensors"
         A1[ESC Telemetry]
         A2[GPS]
-        A3[DS18B20 Temp]
+        A3["DS18B20 Temp"]
         A4[Throttle]
-        A5[Analog Motor Current Sensor]
+        A5["Analog Motor Current Sensor"]
     end
 
-    subgraph Processing Units
-        B1[ESP32-C6 (Arduino)]
-        B2[ESP32-S3 (MicroPython)]
+    subgraph "Processing Units"
+        B1["ESP32-C6 (Arduino)"]
+        B2["ESP32-S3 (MicroPython)"]
     end
 
-    subgraph Data Storage & Presentation
-        C1[SD Card / Flash (JSONL Logs)]
-        C2[Vue.js Frontend]
+    subgraph "Data Storage & Presentation"
+        C1["SD Card / Flash (JSONL Logs)"]
+        C2["Vue.js Frontend"]
     end
 
     A1 --> B2
