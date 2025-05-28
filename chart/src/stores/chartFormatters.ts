@@ -4,6 +4,7 @@ import type { GpsValues, EscValues, DsValues } from './types'
 
 export interface ChartFormatterContext {
 	logEntries: LogEntry[]
+	filterSeriesByBatCurrent: boolean // Added for battery current filtering
 }
 
 const applyRangeChecks = (internalId: string, value: number | null): number | null => {
@@ -70,6 +71,36 @@ export const chartFormatters = {
 
 		const finalSeries: ChartSeriesData[] = []
 
+		// Pre-calculate esc_i values and nullify flags if filtering is enabled
+		const timestampNullifyFlags = new Map<number, boolean>()
+		if (this.filterSeriesByBatCurrent) {
+			const escISensorDataMap = new Map<number, number | null>()
+			this.logEntries.forEach((entry) => {
+				if (entry.n === 'esc') {
+					const escValues = entry.v as EscValues
+					const escIValue = applyRangeChecks('esc_i', escValues.i !== undefined ? escValues.i : null)
+					escISensorDataMap.set(entry.preciseTimestamp.getTime(), escIValue)
+				}
+			})
+
+			let shouldCurrentlyNullify = false
+			sortedUniqueTimestampMillis.forEach((tsMillis) => {
+				const escIValue = escISensorDataMap.get(tsMillis)
+
+				if (escIValue !== null && escIValue !== undefined) {
+					if (escIValue < 2) {
+						shouldCurrentlyNullify = true
+					} else if (escIValue > 2) {
+						shouldCurrentlyNullify = false
+					}
+					// If escIValue is exactly 2, shouldCurrentlyNullify remains unchanged
+				}
+				// If escIValue is null or undefined, shouldCurrentlyNullify remains unchanged
+
+				timestampNullifyFlags.set(tsMillis, shouldCurrentlyNullify)
+			})
+		}
+
 		// 2. Build series configurations from CANONICAL_SERIES_CONFIG
 		const activeSeriesConfigs = CANONICAL_SERIES_CONFIG.map((config) => ({
 			seriesName: config.displayName,
@@ -102,58 +133,128 @@ export const chartFormatters = {
 			sortedUniqueTimestampMillis.forEach((tsMillis) => {
 				let valueToPushForChart: number | null
 
-				if (config.internalId === 'mc_i') {
-					const directValue = sensorDataMap.get(tsMillis)
-					const current = applyRangeChecks(config.internalId, directValue !== undefined ? directValue : null)
-
-					if (current !== null) {
-						const actual = current * 1.732
-						currentSeriesLastValidValue = actual
-						valueToPushForChart = actual
+				// Apply nullification if filter is enabled
+				if (this.filterSeriesByBatCurrent) {
+					const shouldNullify = timestampNullifyFlags.get(tsMillis)
+					if (shouldNullify) {
+						valueToPushForChart = null
 					} else {
-						valueToPushForChart = currentSeriesLastValidValue
-					}
-				} else if (config.internalId === 'gps_speed') {
-					const gpsLogEntry = gpsSensorEntries.get(tsMillis)
-					if (!gpsLogEntry) {
-						valueToPushForChart = currentLastValidSpeedWithFix
-					} else {
-						const gpsValues = gpsLogEntry.v as GpsValues
-						const hasGpsFix = gpsValues.fix
-
-						if (!hasGpsFix) {
-							valueToPushForChart = null
-							currentLastValidSpeedWithFix = null
-						} else {
-							const speedKnots = gpsValues.speed
-							const checkedSpeedKnots = applyRangeChecks(
+						// Proceed with normal value extraction if not nullifying
+						if (config.internalId === 'mc_i') {
+							const directValue = sensorDataMap.get(tsMillis)
+							const current = applyRangeChecks(
 								config.internalId,
-								speedKnots !== undefined && speedKnots !== null ? speedKnots : null
+								directValue !== undefined ? directValue : null
 							)
 
-							if (checkedSpeedKnots !== null) {
-								const speedKmh = checkedSpeedKnots * 1.852
-								valueToPushForChart = speedKmh
-								currentLastValidSpeedWithFix = speedKmh
+							if (current !== null) {
+								const actual = current * 1.732
+								currentSeriesLastValidValue = actual
+								valueToPushForChart = actual
 							} else {
+								valueToPushForChart = currentSeriesLastValidValue
+							}
+						} else if (config.internalId === 'gps_speed') {
+							const gpsLogEntry = gpsSensorEntries.get(tsMillis)
+							if (!gpsLogEntry) {
 								valueToPushForChart = currentLastValidSpeedWithFix
+							} else {
+								const gpsValues = gpsLogEntry.v as GpsValues
+								const hasGpsFix = gpsValues.fix
+
+								if (!hasGpsFix) {
+									valueToPushForChart = null
+									currentLastValidSpeedWithFix = null
+								} else {
+									const speedKnots = gpsValues.speed
+									const checkedSpeedKnots = applyRangeChecks(
+										config.internalId,
+										speedKnots !== undefined && speedKnots !== null ? speedKnots : null
+									)
+
+									if (checkedSpeedKnots !== null) {
+										const speedKmh = checkedSpeedKnots * 1.852
+										valueToPushForChart = speedKmh
+										currentLastValidSpeedWithFix = speedKmh
+									} else {
+										valueToPushForChart = currentLastValidSpeedWithFix
+									}
+								}
+							}
+						} else {
+							const directValue = sensorDataMap.get(tsMillis)
+							const checkedDirectValue = applyRangeChecks(
+								config.internalId,
+								directValue !== undefined ? directValue : null
+							)
+
+							if (checkedDirectValue !== null) {
+								currentSeriesLastValidValue = checkedDirectValue
+								valueToPushForChart = checkedDirectValue
+							} else {
+								valueToPushForChart = currentSeriesLastValidValue
 							}
 						}
 					}
 				} else {
-					const directValue = sensorDataMap.get(tsMillis)
-					const checkedDirectValue = applyRangeChecks(
-						config.internalId,
-						directValue !== undefined ? directValue : null
-					)
+					// If filter is disabled, proceed with existing logic
+					if (config.internalId === 'mc_i') {
+						const directValue = sensorDataMap.get(tsMillis)
+						const current = applyRangeChecks(
+							config.internalId,
+							directValue !== undefined ? directValue : null
+						)
 
-					if (checkedDirectValue !== null) {
-						currentSeriesLastValidValue = checkedDirectValue
-						valueToPushForChart = checkedDirectValue
+						if (current !== null) {
+							const actual = current * 1.732
+							currentSeriesLastValidValue = actual
+							valueToPushForChart = actual
+						} else {
+							valueToPushForChart = currentSeriesLastValidValue
+						}
+					} else if (config.internalId === 'gps_speed') {
+						const gpsLogEntry = gpsSensorEntries.get(tsMillis)
+						if (!gpsLogEntry) {
+							valueToPushForChart = currentLastValidSpeedWithFix
+						} else {
+							const gpsValues = gpsLogEntry.v as GpsValues
+							const hasGpsFix = gpsValues.fix
+
+							if (!hasGpsFix) {
+								valueToPushForChart = null
+								currentLastValidSpeedWithFix = null
+							} else {
+								const speedKnots = gpsValues.speed
+								const checkedSpeedKnots = applyRangeChecks(
+									config.internalId,
+									speedKnots !== undefined && speedKnots !== null ? speedKnots : null
+								)
+
+								if (checkedSpeedKnots !== null) {
+									const speedKmh = checkedSpeedKnots * 1.852
+									valueToPushForChart = speedKmh
+									currentLastValidSpeedWithFix = speedKmh
+								} else {
+									valueToPushForChart = currentLastValidSpeedWithFix
+								}
+							}
+						}
 					} else {
-						valueToPushForChart = currentSeriesLastValidValue
+						const directValue = sensorDataMap.get(tsMillis)
+						const checkedDirectValue = applyRangeChecks(
+							config.internalId,
+							directValue !== undefined ? directValue : null
+						)
+
+						if (checkedDirectValue !== null) {
+							currentSeriesLastValidValue = checkedDirectValue
+							valueToPushForChart = checkedDirectValue
+						} else {
+							valueToPushForChart = currentSeriesLastValidValue
+						}
 					}
 				}
+
 				seriesChartData.push([new Date(tsMillis), valueToPushForChart])
 			})
 

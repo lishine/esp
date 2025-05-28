@@ -84,7 +84,7 @@ export function buildSeriesOptions(
 			showSymbol: false,
 			smooth: false,
 			type: 'line',
-			connectNulls: s.name === 'Speed' ? false : true,
+			connectNulls: false,
 			itemStyle: itemStyle,
 		}
 	})

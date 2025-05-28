@@ -32,6 +32,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			gitHubFileError: null,
 			currentFileSource: null,
 			currentGitHubFileName: null,
+			filterSeriesByBatCurrent: true, // Added for battery current filtering
 		}
 	},
 
@@ -48,6 +49,10 @@ export const useSessionDataStore = defineStore('sessionData', {
 			if (typeof localStorage !== 'undefined') {
 				localStorage.setItem('espChartUseUserApiIp', String(use))
 			}
+		},
+
+		setFilterSeriesByBatCurrent(value: boolean) {
+			this.filterSeriesByBatCurrent = value
 		},
 
 		_parseSessionData(fullDataString: string) {

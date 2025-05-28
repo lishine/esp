@@ -80,4 +80,5 @@ export interface SessionState {
 	gitHubFileError: string | null
 	currentFileSource: 'local' | 'github' | null
 	currentGitHubFileName: string | null
+	filterSeriesByBatCurrent?: boolean // Added for battery current filtering
 }
