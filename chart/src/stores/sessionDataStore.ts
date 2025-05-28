@@ -1,6 +1,6 @@
 export const BATTERY_CURRENT_THRESHOLD_AMPS = 3
 import { defineStore } from 'pinia'
-import type { SessionState, SessionMetadata, LogEntry, EscValues, GpsValues, DsValues, LogEntryValue } from './types'
+import type { SessionState, SessionMetadata, LogEntry, EscValues, GpsValues, DsValues } from './types'
 import { visibilityActions } from './visibilityActions'
 import { fileActions } from './fileActions'
 import { chartFormatters } from './chartFormatters'
@@ -241,18 +241,18 @@ export const useSessionDataStore = defineStore('sessionData', {
 			let firstRelevantEntry: LogEntry | null = null
 			let lastRelevantEntry: LogEntry | null = null
 
+			// Helper function to check if entry has valid ESC current above threshold
+			const isEscEntryAboveThreshold = (entry: LogEntry): boolean => {
+				if (entry.n !== 'esc' || !entry.v || typeof entry.v !== 'object') {
+					return false
+				}
+				const escValues = entry.v as EscValues
+				return typeof escValues.i === 'number' && escValues.i > BATTERY_CURRENT_THRESHOLD_AMPS
+			}
+
 			// Find the first relevant entry in rangeValidatedEntries
-			for (let i = 0; i < rangeValidatedEntries.length; i++) {
-				const entry = rangeValidatedEntries[i]
-				// Check if entry.v is EscValues and not null before accessing .i
-				if (
-					entry.n === 'esc' &&
-					entry.v !== null && // Check if entry.v is not null
-					typeof entry.v === 'object' && // Check if entry.v is an object
-					'i' in entry.v && // Check if 'i' property exists
-					typeof (entry.v as EscValues).i === 'number' && // Check if 'i' is a number
-					(entry.v as EscValues).i > BATTERY_CURRENT_THRESHOLD_AMPS
-				) {
+			for (const entry of rangeValidatedEntries) {
+				if (isEscEntryAboveThreshold(entry)) {
 					firstRelevantEntry = entry
 					break
 				}
@@ -261,15 +261,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			// Find the last relevant entry in rangeValidatedEntries
 			for (let i = rangeValidatedEntries.length - 1; i >= 0; i--) {
 				const entry = rangeValidatedEntries[i]
-				// Check if entry.v is EscValues and not null before accessing .i
-				if (
-					entry.n === 'esc' &&
-					entry.v !== null && // Check if entry.v is not null
-					typeof entry.v === 'object' && // Check if entry.v is an object
-					'i' in entry.v && // Check if 'i' property exists
-					typeof (entry.v as EscValues).i === 'number' && // Check if 'i' is a number
-					(entry.v as EscValues).i > BATTERY_CURRENT_THRESHOLD_AMPS
-				) {
+				if (isEscEntryAboveThreshold(entry)) {
 					lastRelevantEntry = entry
 					break
 				}
