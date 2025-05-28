@@ -2,31 +2,31 @@ import type { LogFileListItem } from '../services/githubService'
 
 // Value types for different sensors
 export interface EscValues {
-	rpm: number
-	mah: number
-	t: number // Temperature
-	i: number // Current
-	v: number // Voltage
+	rpm: number | null
+	mah: number | null
+	t: number | null // Temperature
+	i: number | null // Current
+	v: number | null // Voltage
 }
 
 export interface GpsValues {
-	seen: number
-	active: number
-	fix: boolean
-	lon?: number
-	speed?: number
-	lat?: number
-	alt?: number
-	hdg?: number
+	seen: number | null
+	active: number | null
+	fix: boolean | null
+	lon?: number | null
+	speed?: number | null
+	lat?: number | null
+	alt?: number | null
+	hdg?: number | null
 }
 
 // For DS sensors, 'v' is an object with dynamic keys (aq, bq, etc.)
 export interface DsValues {
-	[key: string]: number
+	[key: string]: number | null
 }
 
 // Union type for the 'v' field in a log entry
-export type LogEntryValue = EscValues | GpsValues | DsValues | number
+export type LogEntryValue = EscValues | GpsValues | DsValues | (number | null)
 
 // Structure for a single log entry
 export interface LogEntry {

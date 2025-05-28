@@ -1,9 +1,10 @@
 export const BATTERY_CURRENT_THRESHOLD_AMPS = 3
 import { defineStore } from 'pinia'
-import type { SessionState, SessionMetadata, LogEntry, EscValues } from './types'
+import type { SessionState, SessionMetadata, LogEntry, EscValues, GpsValues, DsValues, LogEntryValue } from './types'
 import { visibilityActions } from './visibilityActions'
 import { fileActions } from './fileActions'
 import { chartFormatters } from './chartFormatters'
+import { applyRangeChecks } from './rangeChecks'
 
 export const useSessionDataStore = defineStore('sessionData', {
 	state: (): SessionState => {
@@ -190,61 +191,115 @@ export const useSessionDataStore = defineStore('sessionData', {
 		getLogEntries: (state): LogEntry[] => state.logEntries,
 		getVisibleSeries: (state): string[] => Array.from(state.visibleSeries),
 		getFilteredLogEntries: (state): LogEntry[] => {
+			return state.logEntries // Simply return all log entries
+		},
+		getChartFormattedData(state): ReturnType<typeof chartFormatters.getChartFormattedData> {
 			if (!state.logEntries.length) {
-				return []
+				return { series: [] }
 			}
 
-			const firstLogEntryTimestamp = state.logEntries[0]?.preciseTimestamp.getTime() || -Infinity
+			// Apply range validation to all log entries first
+			const rangeValidatedEntries: LogEntry[] = state.logEntries.map((entry) => {
+				const validatedEntry = { ...entry }
+				if (validatedEntry.n === 'esc') {
+					const escValues = validatedEntry.v as EscValues
+					validatedEntry.v = {
+						...escValues,
+						rpm: applyRangeChecks('esc_rpm', escValues.rpm),
+						v: applyRangeChecks('esc_v', escValues.v),
+						i: applyRangeChecks('esc_i', escValues.i),
+						t: applyRangeChecks('esc_t', escValues.t),
+					}
+				} else if (validatedEntry.n === 'gps') {
+					const gpsValues = validatedEntry.v as GpsValues
+					validatedEntry.v = {
+						...gpsValues,
+						speed: applyRangeChecks('gps_speed', gpsValues.speed !== undefined ? gpsValues.speed : null),
+					}
+				} else if (validatedEntry.n === 'ds') {
+					const dsValues = validatedEntry.v as DsValues
+					const validatedDsValues: DsValues = {}
+					for (const key in dsValues) {
+						if (Object.prototype.hasOwnProperty.call(dsValues, key)) {
+							validatedDsValues[key] = applyRangeChecks(`ds_${key}`, dsValues[key])
+						}
+					}
+					validatedEntry.v = validatedDsValues
+				} else if (validatedEntry.n === 'mc') {
+					validatedEntry.v = applyRangeChecks('mc_i', validatedEntry.v as number | null)
+				} else if (validatedEntry.n === 'th') {
+					validatedEntry.v = applyRangeChecks('th_val', validatedEntry.v as number | null)
+				}
+				return validatedEntry
+			})
+
+			// Now apply the filtering logic to rangeValidatedEntries
+			const firstLogEntryTimestamp = rangeValidatedEntries[0]?.preciseTimestamp.getTime() || -Infinity
 			const lastLogEntryTimestamp =
-				state.logEntries[state.logEntries.length - 1]?.preciseTimestamp.getTime() || Infinity
+				rangeValidatedEntries[rangeValidatedEntries.length - 1]?.preciseTimestamp.getTime() || Infinity
 
 			let firstRelevantEntry: LogEntry | null = null
 			let lastRelevantEntry: LogEntry | null = null
 
-			// Find the first relevant entry
-			for (let i = 0; i < state.logEntries.length; i++) {
-				const entry = state.logEntries[i]
-				if (entry.n === 'esc' && (entry.v as EscValues).i > BATTERY_CURRENT_THRESHOLD_AMPS) {
+			// Find the first relevant entry in rangeValidatedEntries
+			for (let i = 0; i < rangeValidatedEntries.length; i++) {
+				const entry = rangeValidatedEntries[i]
+				// Check if entry.v is EscValues and not null before accessing .i
+				if (
+					entry.n === 'esc' &&
+					entry.v !== null && // Check if entry.v is not null
+					typeof entry.v === 'object' && // Check if entry.v is an object
+					'i' in entry.v && // Check if 'i' property exists
+					typeof (entry.v as EscValues).i === 'number' && // Check if 'i' is a number
+					(entry.v as EscValues).i > BATTERY_CURRENT_THRESHOLD_AMPS
+				) {
 					firstRelevantEntry = entry
 					break
 				}
 			}
 
-			// Find the last relevant entry
-			for (let i = state.logEntries.length - 1; i >= 0; i--) {
-				const entry = state.logEntries[i]
-				if (entry.n === 'esc' && (entry.v as EscValues).i > BATTERY_CURRENT_THRESHOLD_AMPS) {
+			// Find the last relevant entry in rangeValidatedEntries
+			for (let i = rangeValidatedEntries.length - 1; i >= 0; i--) {
+				const entry = rangeValidatedEntries[i]
+				// Check if entry.v is EscValues and not null before accessing .i
+				if (
+					entry.n === 'esc' &&
+					entry.v !== null && // Check if entry.v is not null
+					typeof entry.v === 'object' && // Check if entry.v is an object
+					'i' in entry.v && // Check if 'i' property exists
+					typeof (entry.v as EscValues).i === 'number' && // Check if 'i' is a number
+					(entry.v as EscValues).i > BATTERY_CURRENT_THRESHOLD_AMPS
+				) {
 					lastRelevantEntry = entry
 					break
 				}
 			}
 
+			let finalFilteredAndValidatedEntries: LogEntry[]
+
 			if (!firstRelevantEntry || !lastRelevantEntry) {
 				console.warn(
-					'Could not determine dynamic time range based on battery current threshold. Displaying full time range.'
+					'Could not determine dynamic time range based on battery current threshold after range validation. Displaying full time range.'
 				)
-				return state.logEntries
+				finalFilteredAndValidatedEntries = rangeValidatedEntries // Use rangeValidatedEntries if filtering fails
+			} else {
+				const firstRelevantTimestamp = firstRelevantEntry.preciseTimestamp.getTime()
+				const lastRelevantTimestamp = lastRelevantEntry.preciseTimestamp.getTime()
+
+				// Calculate start and end times, ensuring they are within the overall log entry range
+				const startTimeMs = Math.max(firstRelevantTimestamp - 30 * 1000, firstLogEntryTimestamp)
+				const endTimeMs = Math.min(lastRelevantTimestamp + 30 * 1000, lastLogEntryTimestamp)
+
+				// Filter entries based on the calculated time range
+				finalFilteredAndValidatedEntries = rangeValidatedEntries.filter(
+					// Filter rangeValidatedEntries
+					(entry) =>
+						entry.preciseTimestamp.getTime() >= startTimeMs && entry.preciseTimestamp.getTime() <= endTimeMs
+				)
 			}
 
-			const firstRelevantTimestamp = firstRelevantEntry.preciseTimestamp.getTime()
-			const lastRelevantTimestamp = lastRelevantEntry.preciseTimestamp.getTime()
-
-			// Calculate start and end times, ensuring they are within the overall log entry range
-			const startTimeMs = Math.max(firstRelevantTimestamp - 30 * 1000, firstLogEntryTimestamp)
-			const endTimeMs = Math.min(lastRelevantTimestamp + 30 * 1000, lastLogEntryTimestamp)
-
-			// Filter entries based on the calculated time range
-			const filteredResult = state.logEntries.filter(
-				(entry) =>
-					entry.preciseTimestamp.getTime() >= startTimeMs && entry.preciseTimestamp.getTime() <= endTimeMs
-			)
-
-			return filteredResult
-		},
-		getChartFormattedData(state): ReturnType<typeof chartFormatters.getChartFormattedData> {
-			const filteredEntries = this.getFilteredLogEntries // Use the filtered entries
 			return chartFormatters.getChartFormattedData.call({
-				logEntries: filteredEntries,
+				logEntries: finalFilteredAndValidatedEntries, // Pass the final filtered and validated entries
 				filterSeriesByBatCurrent: state.filterSeriesByBatCurrent as boolean,
 			})
 		},
