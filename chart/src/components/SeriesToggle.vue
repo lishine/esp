@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useSessionDataStore } from '../stores'
+import { useSessionDataStore, BATTERY_CURRENT_THRESHOLD_AMPS } from '../stores'
 import { NCheckbox } from 'naive-ui'
 
 const store = useSessionDataStore()
@@ -87,7 +87,7 @@ const getGroupColor = (groupName: string) => {
 				<div class="toggles-container">
 					<div class="toggle-item custom-checkbox">
 						<n-checkbox v-model:checked="filterSeriesByBatCurrentLocal">
-							Dynamic Series Nullification (Bat. Current &lt; 2A)
+							Dynamic Series Nullification (Bat. Current &lt; {{ BATTERY_CURRENT_THRESHOLD_AMPS }}A)
 						</n-checkbox>
 					</div>
 				</div>
