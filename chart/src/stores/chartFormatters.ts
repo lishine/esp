@@ -3,8 +3,6 @@ import { BATTERY_CURRENT_THRESHOLD_AMPS } from './sessionDataStore'
 import { CANONICAL_SERIES_CONFIG, type SeriesConfig } from './seriesConfig'
 import type { GpsValues, EscValues, DsValues } from './types'
 
-const MIN_BAT_DURATION = 3
-
 export interface ChartFormatterContext {
 	logEntries: LogEntry[]
 	filterSeriesByBatCurrent: boolean // Added for battery current filtering
@@ -56,108 +54,9 @@ export const chartFormatters = {
 				}
 			})
 
-			// Apply duration-based filtering to escISensorDataMap
-			const minDurationMs = MIN_BAT_DURATION * 1000
-			const modifiedEscISensorDataMap = new Map(escISensorDataMap)
-
-			// Find continuous segments above threshold and check their duration
-			let segmentStart = -1
-			let segmentTimestamps: number[] = []
-
-			for (let i = 0; i < sortedUniqueTimestampMillis.length; i++) {
-				const tsMillis = sortedUniqueTimestampMillis[i]
-				const escIValue = escISensorDataMap.get(tsMillis)
-
-				if (escIValue !== null && escIValue !== undefined && escIValue > BATTERY_CURRENT_THRESHOLD_AMPS) {
-					// Start or continue a segment above threshold
-					if (segmentStart === -1) {
-						segmentStart = tsMillis
-						segmentTimestamps = [tsMillis]
-					} else {
-						segmentTimestamps.push(tsMillis)
-					}
-				} else {
-					// End of segment above threshold (or no data)
-					if (segmentStart !== -1) {
-						// Check if segment duration is less than minimum
-						const segmentDuration = tsMillis - segmentStart
-						if (segmentDuration < minDurationMs) {
-							// Mark all timestamps in this segment as below threshold
-							segmentTimestamps.forEach((segmentTs) => {
-								modifiedEscISensorDataMap.set(segmentTs, BATTERY_CURRENT_THRESHOLD_AMPS - 0.1)
-							})
-						}
-						segmentStart = -1
-						segmentTimestamps = []
-					}
-				}
-			}
-
-			// Handle case where segment extends to the end
-			if (segmentStart !== -1) {
-				const lastTs = sortedUniqueTimestampMillis[sortedUniqueTimestampMillis.length - 1]
-				const segmentDuration = lastTs - segmentStart
-				if (segmentDuration < minDurationMs) {
-					segmentTimestamps.forEach((segmentTs) => {
-						modifiedEscISensorDataMap.set(segmentTs, BATTERY_CURRENT_THRESHOLD_AMPS - 0.1)
-					})
-				}
-			}
-
-			// Apply reverse logic: short interruptions below threshold surrounded by above threshold
-			segmentStart = -1
-			segmentTimestamps = []
-
-			for (let i = 0; i < sortedUniqueTimestampMillis.length; i++) {
-				const tsMillis = sortedUniqueTimestampMillis[i]
-				const escIValue = modifiedEscISensorDataMap.get(tsMillis)
-
-				if (escIValue !== null && escIValue !== undefined && escIValue <= BATTERY_CURRENT_THRESHOLD_AMPS) {
-					// Start or continue a segment below/at threshold
-					if (segmentStart === -1) {
-						segmentStart = tsMillis
-						segmentTimestamps = [tsMillis]
-					} else {
-						segmentTimestamps.push(tsMillis)
-					}
-				} else {
-					// End of segment below threshold (or no data)
-					if (segmentStart !== -1) {
-						// Check if this segment is surrounded by above-threshold periods
-						const prevIndex = sortedUniqueTimestampMillis.indexOf(segmentTimestamps[0]) - 1
-						const nextIndex = i
-
-						const prevValue =
-							prevIndex >= 0
-								? modifiedEscISensorDataMap.get(sortedUniqueTimestampMillis[prevIndex])
-								: null
-						const nextValue =
-							nextIndex < sortedUniqueTimestampMillis.length
-								? modifiedEscISensorDataMap.get(sortedUniqueTimestampMillis[nextIndex])
-								: null
-
-						const prevAboveThreshold =
-							prevValue !== null && prevValue !== undefined && prevValue > BATTERY_CURRENT_THRESHOLD_AMPS
-						const nextAboveThreshold =
-							nextValue !== null && nextValue !== undefined && nextValue > BATTERY_CURRENT_THRESHOLD_AMPS
-
-						// Check if segment duration is less than minimum and surrounded by above-threshold values
-						const segmentDuration = tsMillis - segmentStart
-						if (segmentDuration < minDurationMs && prevAboveThreshold && nextAboveThreshold) {
-							// Mark all timestamps in this segment as above threshold
-							segmentTimestamps.forEach((segmentTs) => {
-								modifiedEscISensorDataMap.set(segmentTs, BATTERY_CURRENT_THRESHOLD_AMPS + 0.1)
-							})
-						}
-						segmentStart = -1
-						segmentTimestamps = []
-					}
-				}
-			}
-
 			let shouldCurrentlyNullify = false
 			sortedUniqueTimestampMillis.forEach((tsMillis) => {
-				const escIValue = modifiedEscISensorDataMap.get(tsMillis)
+				const escIValue = escISensorDataMap.get(tsMillis)
 
 				if (escIValue !== null && escIValue !== undefined) {
 					if (escIValue < BATTERY_CURRENT_THRESHOLD_AMPS) {
