@@ -5,7 +5,6 @@ import {
 	NCheckbox,
 	NInput,
 	NSpace,
-	NButton,
 	NMessageProvider,
 	NConfigProvider,
 	type GlobalThemeOverrides, // Added type keyword here
@@ -42,10 +41,6 @@ onMounted(() => {
 onBeforeUnmount(() => {
 	window.removeEventListener('resize', updateScreenWidth)
 })
-
-const handleRefresh = () => {
-	sessionDataStore.fetchSessionData()
-}
 
 // Theme overrides for Naive UI (optional, for consistency)
 const themeOverrides: GlobalThemeOverrides = {
