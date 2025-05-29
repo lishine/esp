@@ -41,7 +41,6 @@ export const useSessionDataStore = defineStore('sessionData', {
 			gitHubFileError: null,
 			currentFileSource: null,
 			currentGitHubFileName: null,
-			filterSeriesByBatCurrent: true, // Added for battery current filtering
 			totalGpsDistance: 0, // Added for total GPS distance
 		}
 	},
@@ -59,10 +58,6 @@ export const useSessionDataStore = defineStore('sessionData', {
 			if (typeof localStorage !== 'undefined') {
 				localStorage.setItem('espChartUseUserApiIp', String(use))
 			}
-		},
-
-		setFilterSeriesByBatCurrent(value: boolean) {
-			this.filterSeriesByBatCurrent = value
 		},
 
 		_parseSessionData(fullDataString: string) {
@@ -287,8 +282,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			}
 
 			return chartFormatters.getChartFormattedData.call({
-				logEntries: finalFilteredAndValidatedEntries, // Pass the final filtered and validated entries
-				filterSeriesByBatCurrent: state.filterSeriesByBatCurrent as boolean,
+				logEntries: finalFilteredAndValidatedEntries,
 			})
 		},
 	},

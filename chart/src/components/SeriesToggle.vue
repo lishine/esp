@@ -17,10 +17,6 @@ const toggleSeriesVisibility = (seriesName: string) => {
 }
 
 // Battery current filtering state
-const filterSeriesByBatCurrentLocal = computed({
-	get: () => store.filterSeriesByBatCurrent,
-	set: (value: boolean) => store.setFilterSeriesByBatCurrent(value),
-})
 
 // Group series for display
 const groupedSeries = computed(() => {
@@ -78,20 +74,7 @@ const getGroupColor = (groupName: string) => {
 
 		<div class="groups-container">
 			<!-- Custom group with special content -->
-			<div class="group-card" :style="{ '--group-color': getGroupColor('Custom') }">
-				<div class="group-header">
-					<span class="group-icon">{{ getGroupIcon('Custom') }}</span>
-					<h4 class="group-title">Custom</h4>
-				</div>
-
-				<div class="toggles-container">
-					<div class="toggle-item custom-checkbox">
-						<n-checkbox v-model:checked="filterSeriesByBatCurrentLocal">
-							Dynamic Series Nullification (Bat. Current &lt; {{ BATTERY_CURRENT_THRESHOLD_AMPS }}A)
-						</n-checkbox>
-					</div>
-				</div>
-			</div>
+			<div class="group-card" :style="{ '--group-color': getGroupColor('Custom') }">...</div>
 
 			<!-- Other groups -->
 			<template v-for="(seriesList, groupName) in groupedSeries" :key="String(groupName)">
