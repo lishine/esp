@@ -21,7 +21,13 @@ export const useSessionDataStore = defineStore('sessionData', {
 		}
 
 		return {
-			sessionMetadata: null,
+			sessionMetadata: {
+				device_description: '',
+				fan_enabled: false,
+				ds_associations: [],
+				date: '',
+				restart: '',
+			},
 			logEntries: [],
 			isLoading: false,
 			error: null,
@@ -63,39 +69,24 @@ export const useSessionDataStore = defineStore('sessionData', {
 			const lines = fullDataString.trim().split('\n')
 			if (lines.length === 0) {
 				this.error = 'No data received.'
-				this.sessionMetadata = null
-				this.logEntries = []
 				return
 			}
 
 			// Parse metadata (first line)
-			let metadata: SessionMetadata | null = null
 			try {
 				const parsedFirstLine = JSON.parse(lines[0])
-				metadata = {
+				this.sessionMetadata = {
 					device_description: parsedFirstLine.device_description,
 					fan_enabled: parsedFirstLine.fan_enabled,
 					ds_associations: parsedFirstLine.ds_associations,
 					date: parsedFirstLine.date,
 					restart: parsedFirstLine.restart,
 				}
-				this.sessionMetadata = metadata
 			} catch (e) {
 				console.error('Failed to parse session metadata:', e)
 				this.error = 'Failed to parse session metadata.'
-				this.sessionMetadata = null
 				return
 			}
-
-			if (!metadata.date) {
-				console.error('Metadata is missing or does not contain date.')
-				this.error = 'Metadata is missing or does not contain date.'
-				this.sessionMetadata = null
-				this.logEntries = []
-				return
-			}
-
-			const sessionDate = metadata.date
 
 			// Parse log entries (remaining lines)
 			const rawLogEntryArrays: Array<Array<Omit<LogEntry, 'preciseTimestamp'>>> = []
@@ -147,7 +138,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 				group.forEach((entry, index) => {
 					const formattedTimePart = timestampKey.replace(/-/g, ':')
-					const isoTimestampStr = `${sessionDate}T${formattedTimePart}`
+					const isoTimestampStr = `${this.sessionMetadata.date}T${formattedTimePart}`
 					const baseDate = new Date(isoTimestampStr + 'Z')
 
 					if (isNaN(baseDate.getTime())) {
@@ -155,7 +146,6 @@ export const useSessionDataStore = defineStore('sessionData', {
 							'Invalid date parsed for entry:',
 							entry,
 							'from date:',
-							sessionDate,
 							'and timestampKey:',
 							timestampKey
 						)

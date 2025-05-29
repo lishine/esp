@@ -62,11 +62,11 @@ export interface SessionMetadata {
 	fan_enabled: boolean
 	ds_associations: DsAssociation[]
 	date: string // Added date field
-	restart?: string // Added restart field
+	restart: string // Added restart field
 }
 
 export interface SessionState {
-	sessionMetadata: SessionMetadata | null
+	sessionMetadata: SessionMetadata
 	logEntries: LogEntry[]
 	isLoading: boolean
 	error: string | null

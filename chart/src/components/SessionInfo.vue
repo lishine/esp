@@ -2,7 +2,7 @@
 import type { SessionMetadata } from '../stores'
 
 defineProps<{
-	sessionMetadata: SessionMetadata | null
+	sessionMetadata: SessionMetadata
 	currentFileSource: 'local' | 'github' | null
 	currentGitHubFileName: string | null
 	totalGpsDistance: number
