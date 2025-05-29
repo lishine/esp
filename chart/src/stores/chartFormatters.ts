@@ -23,6 +23,56 @@ const createValueExtractor = (config: SeriesConfig) => {
 	return () => undefined
 }
 
+// Helper function to check if there's valid (non-null) data within the previous 5 seconds
+const hasValidDataWithin5Seconds = (
+	currentTimestamp: number,
+	sensorDataMap: Map<number, number | null>,
+	sortedTimestamps: number[]
+): boolean => {
+	const fiveSecondsMs = 5000
+	const cutoffTime = currentTimestamp - fiveSecondsMs
+
+	// Check timestamps in reverse order (most recent first)
+	for (let i = sortedTimestamps.length - 1; i >= 0; i--) {
+		const ts = sortedTimestamps[i]
+		if (ts >= currentTimestamp) continue // Skip future timestamps
+		if (ts < cutoffTime) break // Stop if we've gone back too far
+
+		const value = sensorDataMap.get(ts)
+		if (value !== null && value !== undefined) {
+			return true
+		}
+	}
+	return false
+}
+
+// Helper function to check if GPS has valid data within 5 seconds
+const hasValidGpsDataWithin5Seconds = (
+	currentTimestamp: number,
+	gpsSensorEntries: Map<number, LogEntry>,
+	sortedTimestamps: number[]
+): boolean => {
+	const fiveSecondsMs = 5000
+	const cutoffTime = currentTimestamp - fiveSecondsMs
+
+	// Check timestamps in reverse order (most recent first)
+	for (let i = sortedTimestamps.length - 1; i >= 0; i--) {
+		const ts = sortedTimestamps[i]
+		if (ts >= currentTimestamp) continue // Skip future timestamps
+		if (ts < cutoffTime) break // Stop if we've gone back too far
+
+		const gpsEntry = gpsSensorEntries.get(ts)
+		if (gpsEntry) {
+			const gpsValues = gpsEntry.v as GpsValues
+			const speedKnots = gpsValues.speed
+			if (speedKnots !== undefined && speedKnots !== null) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 export const chartFormatters = {
 	getChartFormattedData(this: ChartFormatterContext): FormattedChartData {
 		if (this.logEntries.length === 0) {
@@ -81,12 +131,26 @@ export const chartFormatters = {
 						currentSeriesLastValidValue = actual
 						valueToPushForChart = actual
 					} else {
-						valueToPushForChart = currentSeriesLastValidValue
+						// Check if there's valid data within the previous 5 seconds
+						if (hasValidDataWithin5Seconds(tsMillis, sensorDataMap, sortedUniqueTimestampMillis)) {
+							valueToPushForChart = currentSeriesLastValidValue
+						} else {
+							// No valid data within 5 seconds, don't interpolate
+							currentSeriesLastValidValue = null
+							valueToPushForChart = null
+						}
 					}
 				} else if (config.internalId === 'gps_speed') {
 					const gpsLogEntry = gpsSensorEntries.get(tsMillis)
 					if (!gpsLogEntry) {
-						valueToPushForChart = currentLastValidSpeedWithFix
+						// Check if there's valid GPS data within the previous 5 seconds
+						if (hasValidGpsDataWithin5Seconds(tsMillis, gpsSensorEntries, sortedUniqueTimestampMillis)) {
+							valueToPushForChart = currentLastValidSpeedWithFix
+						} else {
+							// No valid GPS data within 5 seconds, don't interpolate
+							currentLastValidSpeedWithFix = null
+							valueToPushForChart = null
+						}
 					} else {
 						const gpsValues = gpsLogEntry.v as GpsValues
 
@@ -98,7 +162,16 @@ export const chartFormatters = {
 							valueToPushForChart = speedKmh
 							currentLastValidSpeedWithFix = speedKmh
 						} else {
-							valueToPushForChart = currentLastValidSpeedWithFix
+							// Check if there's valid GPS data within the previous 5 seconds
+							if (
+								hasValidGpsDataWithin5Seconds(tsMillis, gpsSensorEntries, sortedUniqueTimestampMillis)
+							) {
+								valueToPushForChart = currentLastValidSpeedWithFix
+							} else {
+								// No valid GPS data within 5 seconds, don't interpolate
+								currentLastValidSpeedWithFix = null
+								valueToPushForChart = null
+							}
 						}
 					}
 				} else {
@@ -109,7 +182,14 @@ export const chartFormatters = {
 						currentSeriesLastValidValue = checkedDirectValue
 						valueToPushForChart = checkedDirectValue
 					} else {
-						valueToPushForChart = currentSeriesLastValidValue
+						// Check if there's valid data within the previous 5 seconds
+						if (hasValidDataWithin5Seconds(tsMillis, sensorDataMap, sortedUniqueTimestampMillis)) {
+							valueToPushForChart = currentSeriesLastValidValue
+						} else {
+							// No valid data within 5 seconds, don't interpolate
+							currentSeriesLastValidValue = null
+							valueToPushForChart = null
+						}
 					}
 				}
 				seriesChartData.push([new Date(tsMillis), valueToPushForChart])
