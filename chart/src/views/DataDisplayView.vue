@@ -16,13 +16,12 @@ const route = useRoute()
 const router = useRouter() // Get router instance
 const isLoading = computed(() => sessionDataStore.isLoading)
 const error = computed(() => sessionDataStore.error)
-const sessionMetadata = computed((): SessionMetadata | null => {
-	if (!sessionDataStore.sessionMetadata) return null
+const sessionMetadata = computed((): SessionMetadata => {
 	const metadata = sessionDataStore.sessionMetadata
 	return {
 		device_description: metadata.device_description,
 		date: metadata.date,
-		restart: metadata.restart ? String(metadata.restart) : undefined,
+		restart: metadata.restart,
 		fan_enabled: metadata.fan_enabled,
 		ds_associations: metadata.ds_associations || [],
 	}

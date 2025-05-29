@@ -26,7 +26,6 @@ export const fileActions = {
 	async handleFileUpload(this: FileActionContext, file: File) {
 		this.isLoading = true
 		this.error = null
-		this.sessionMetadata = null
 		this.logEntries = []
 		this.currentFileSource = 'local'
 		this.currentGitHubFileName = null
@@ -45,7 +44,6 @@ export const fileActions = {
 	async fetchSessionData(this: FileActionContext, prevOffset?: number) {
 		this.isLoading = true
 		this.error = null
-		this.sessionMetadata = null
 		this.logEntries = []
 
 		try {
@@ -119,7 +117,6 @@ export const fileActions = {
 	async loadLogFileFromGitHub(this: FileActionContext, file: LogFileListItem) {
 		this.isGitHubFileLoading = true
 		this.gitHubFileError = null
-		this.sessionMetadata = null
 		this.logEntries = []
 		this.error = null
 
@@ -131,7 +128,6 @@ export const fileActions = {
 		} catch (err) {
 			console.error(`Error loading log file ${file.name} from GitHub in store:`, err)
 			this.gitHubFileError = err instanceof Error ? err.message : `Failed to load ${file.name} from GitHub.`
-			this.sessionMetadata = null
 			this.logEntries = []
 			this.currentFileSource = null
 			this.currentGitHubFileName = null
@@ -141,7 +137,6 @@ export const fileActions = {
 	},
 
 	clearGitHubData(this: FileActionContext) {
-		this.sessionMetadata = null
 		this.logEntries = []
 		this.currentFileSource = null
 		this.currentGitHubFileName = null

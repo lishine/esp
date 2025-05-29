@@ -2,6 +2,10 @@ import type { LogEntry, ChartSeriesData, FormattedChartData } from './types'
 import { CANONICAL_SERIES_CONFIG, type SeriesConfig } from './seriesConfig'
 import type { GpsValues, EscValues, DsValues } from './types'
 
+export interface FormattedChartDataWithActiveTimestamps extends FormattedChartData {
+	activeTimestamps: number[]
+}
+
 export interface ChartFormatterContext {
 	logEntries: LogEntry[]
 }
@@ -74,9 +78,9 @@ const hasValidGpsDataWithin5Seconds = (
 }
 
 export const chartFormatters = {
-	getChartFormattedData(this: ChartFormatterContext): FormattedChartData {
+	getChartFormattedData(this: ChartFormatterContext): FormattedChartDataWithActiveTimestamps {
 		if (this.logEntries.length === 0) {
-			return { series: [] }
+			return { series: [], activeTimestamps: [] }
 		}
 
 		console.time('getChartFormattedData')
@@ -89,6 +93,7 @@ export const chartFormatters = {
 		const sortedUniqueTimestampMillis = Array.from(uniqueTimestampMillis).sort((a, b) => a - b)
 
 		const finalSeries: ChartSeriesData[] = []
+		const activeTimestamps: number[] = []
 
 		// 2. Build series configurations from CANONICAL_SERIES_CONFIG
 		const activeSeriesConfigs = CANONICAL_SERIES_CONFIG.map((config) => ({
@@ -202,9 +207,18 @@ export const chartFormatters = {
 				showSymbol: false,
 				connectNulls: false,
 			})
+
+			// Extract active timestamps from GPS speed series
+			if (config.internalId === 'gps_speed') {
+				seriesChartData.forEach(([date, value]) => {
+					if (value !== null) {
+						activeTimestamps.push(date.getTime())
+					}
+				})
+			}
 		})
 
 		console.timeEnd('getChartFormattedData')
-		return { series: finalSeries }
+		return { series: finalSeries, activeTimestamps }
 	},
 }

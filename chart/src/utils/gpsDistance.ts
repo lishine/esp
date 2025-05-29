@@ -92,3 +92,33 @@ export function calculateSessionDistance(logEntries: LogEntry[]): number {
 	console.log(`[GPS Debug] Final calculated distance: ${totalDistance.toFixed(2)}m`)
 	return totalDistance
 }
+
+/**
+ * Filters GPS entries to only include those from active timestamps.
+ * @param logEntries An array of log entries.
+ * @param activeTimestamps Array of timestamps (in milliseconds) representing active periods.
+ * @returns Filtered array of GPS log entries from active periods only.
+ */
+export function extractActiveGpsEntries(logEntries: LogEntry[], activeTimestamps: number[]): LogEntry[] {
+	if (activeTimestamps.length === 0) {
+		return []
+	}
+
+	const activeTimestampSet = new Set(activeTimestamps)
+
+	return logEntries.filter((entry) => {
+		return entry.n === 'gps' && activeTimestampSet.has(entry.preciseTimestamp.getTime())
+	})
+}
+
+/**
+ * Calculates the total GPS distance covered during active periods only.
+ * Uses the same logic as calculateSessionDistance but only processes GPS entries from active timestamps.
+ * @param logEntries An array of log entries.
+ * @param activeTimestamps Array of timestamps (in milliseconds) representing active periods.
+ * @returns The total distance in meters during active periods only.
+ */
+export function calculateActiveSessionDistance(logEntries: LogEntry[], activeTimestamps: number[]): number {
+	const activeGpsEntries = extractActiveGpsEntries(logEntries, activeTimestamps)
+	return calculateSessionDistance(activeGpsEntries)
+}

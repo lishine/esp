@@ -3,9 +3,9 @@ import { defineStore } from 'pinia'
 import type { SessionState, SessionMetadata, LogEntry, EscValues, GpsValues, DsValues } from './types'
 import { visibilityActions } from './visibilityActions'
 import { fileActions } from './fileActions'
-import { chartFormatters } from './chartFormatters'
+import { chartFormatters, type FormattedChartDataWithActiveTimestamps } from './chartFormatters'
 import { applyRangeChecks } from './rangeChecks'
-import { calculateSessionDistance } from '../utils/gpsDistance'
+import { calculateActiveSessionDistance } from '../utils/gpsDistance'
 
 export const useSessionDataStore = defineStore('sessionData', {
 	state: (): SessionState => {
@@ -29,6 +29,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 				restart: '',
 			},
 			logEntries: [],
+			activeEntries: [],
 			isLoading: false,
 			error: null,
 			userApiIp: storedUserApiIp,
@@ -41,7 +42,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			gitHubFileError: null,
 			currentFileSource: null,
 			currentGitHubFileName: null,
-			totalGpsDistance: 0, // Added for total GPS distance
+			totalGpsDistance: 0,
 		}
 	},
 
@@ -168,8 +169,9 @@ export const useSessionDataStore = defineStore('sessionData', {
 				this.initializeDefaultVisibility()
 			}
 
-			// Calculate total GPS distance
-			this.totalGpsDistance = calculateSessionDistance(this.logEntries)
+			// GPS distance will be calculated in getChartFormattedData getter based on active periods
+			this.totalGpsDistance = 0
+			this.activeEntries = []
 		},
 
 		...visibilityActions,
@@ -179,14 +181,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 	getters: {
 		getMetadata: (state): SessionMetadata | null => state.sessionMetadata,
 		getLogEntries: (state): LogEntry[] => state.logEntries,
+		getActiveEntries: (state): LogEntry[] => state.activeEntries,
 		getVisibleSeries: (state): string[] => Array.from(state.visibleSeries),
-		getTotalGpsDistance: (state): number => state.totalGpsDistance, // Getter for total GPS distance
+		getTotalGpsDistance: (state): number => state.totalGpsDistance,
 		getFilteredLogEntries: (state): LogEntry[] => {
 			return state.logEntries // Simply return all log entries
 		},
-		getChartFormattedData(state): ReturnType<typeof chartFormatters.getChartFormattedData> {
+		getChartFormattedData(state): FormattedChartDataWithActiveTimestamps {
 			if (!state.logEntries.length) {
-				return { series: [] }
+				return { series: [], activeTimestamps: [] }
 			}
 
 			// Apply range validation to all log entries first
@@ -349,9 +352,19 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 			const nullifiedEntries = applyDataNullification(finalFilteredAndValidatedEntries)
 
-			return chartFormatters.getChartFormattedData.call({
+			const chartData = chartFormatters.getChartFormattedData.call({
 				logEntries: nullifiedEntries,
 			})
+
+			// Update activeEntries based on active timestamps from chart data
+			this.activeEntries = nullifiedEntries.filter((entry) =>
+				chartData.activeTimestamps.includes(entry.preciseTimestamp.getTime())
+			)
+
+			// Calculate GPS distance using only active periods
+			this.totalGpsDistance = calculateActiveSessionDistance(this.logEntries, chartData.activeTimestamps)
+
+			return chartData
 		},
 	},
 })
