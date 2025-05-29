@@ -1,5 +1,4 @@
 import type { LogEntry, ChartSeriesData, FormattedChartData } from './types'
-import { BATTERY_CURRENT_THRESHOLD_AMPS } from './sessionDataStore'
 import { CANONICAL_SERIES_CONFIG, type SeriesConfig } from './seriesConfig'
 import type { GpsValues, EscValues, DsValues } from './types'
 
@@ -41,34 +40,6 @@ export const chartFormatters = {
 
 		const finalSeries: ChartSeriesData[] = []
 
-		// Pre-calculate esc_i values and nullify flags if filtering is enabled
-		const timestampNullifyFlags = new Map<number, boolean>()
-		const escISensorDataMap = new Map<number, number | null>()
-		this.logEntries.forEach((entry) => {
-			if (entry.n === 'esc') {
-				const escValues = entry.v as EscValues
-				const escIValue = escValues.i !== undefined ? escValues.i : null
-				escISensorDataMap.set(entry.preciseTimestamp.getTime(), escIValue)
-			}
-		})
-
-		let shouldCurrentlyNullify = false
-		sortedUniqueTimestampMillis.forEach((tsMillis) => {
-			const escIValue = escISensorDataMap.get(tsMillis)
-
-			if (escIValue !== null && escIValue !== undefined) {
-				if (escIValue < BATTERY_CURRENT_THRESHOLD_AMPS) {
-					shouldCurrentlyNullify = true
-				} else if (escIValue > BATTERY_CURRENT_THRESHOLD_AMPS) {
-					shouldCurrentlyNullify = false
-				}
-				// If escIValue is exactly BATTERY_CURRENT_THRESHOLD_AMPS, shouldCurrentlyNullify remains unchanged
-			}
-			// If escIValue is null or undefined, shouldCurrentlyNullify remains unchanged
-
-			timestampNullifyFlags.set(tsMillis, shouldCurrentlyNullify)
-		})
-
 		// 2. Build series configurations from CANONICAL_SERIES_CONFIG
 		const activeSeriesConfigs = CANONICAL_SERIES_CONFIG.map((config) => ({
 			seriesName: config.displayName,
@@ -101,52 +72,44 @@ export const chartFormatters = {
 			sortedUniqueTimestampMillis.forEach((tsMillis) => {
 				let valueToPushForChart: number | null
 
-				// Apply nullification if filter is enabled
-				const shouldNullify = timestampNullifyFlags.get(tsMillis)
-				if (shouldNullify) {
-					valueToPushForChart = null
-				} else {
-					// Proceed with normal value extraction if not nullifying
-					if (config.internalId === 'mc_i') {
-						const directValue = sensorDataMap.get(tsMillis)
-						const current = directValue !== undefined ? directValue : null
+				if (config.internalId === 'mc_i') {
+					const directValue = sensorDataMap.get(tsMillis)
+					const current = directValue !== undefined ? directValue : null
 
-						if (current !== null) {
-							const actual = current * 1.732
-							currentSeriesLastValidValue = actual
-							valueToPushForChart = actual
-						} else {
-							valueToPushForChart = currentSeriesLastValidValue
-						}
-					} else if (config.internalId === 'gps_speed') {
-						const gpsLogEntry = gpsSensorEntries.get(tsMillis)
-						if (!gpsLogEntry) {
-							valueToPushForChart = currentLastValidSpeedWithFix
-						} else {
-							const gpsValues = gpsLogEntry.v as GpsValues
-
-							const speedKnots = gpsValues.speed
-							const checkedSpeedKnots =
-								speedKnots !== undefined && speedKnots !== null ? speedKnots : null
-
-							if (checkedSpeedKnots !== null) {
-								const speedKmh = checkedSpeedKnots * 1.852
-								valueToPushForChart = speedKmh
-								currentLastValidSpeedWithFix = speedKmh
-							} else {
-								valueToPushForChart = currentLastValidSpeedWithFix
-							}
-						}
+					if (current !== null) {
+						const actual = current * 1.732
+						currentSeriesLastValidValue = actual
+						valueToPushForChart = actual
 					} else {
-						const directValue = sensorDataMap.get(tsMillis)
-						const checkedDirectValue = directValue !== undefined ? directValue : null
+						valueToPushForChart = currentSeriesLastValidValue
+					}
+				} else if (config.internalId === 'gps_speed') {
+					const gpsLogEntry = gpsSensorEntries.get(tsMillis)
+					if (!gpsLogEntry) {
+						valueToPushForChart = currentLastValidSpeedWithFix
+					} else {
+						const gpsValues = gpsLogEntry.v as GpsValues
 
-						if (checkedDirectValue !== null) {
-							currentSeriesLastValidValue = checkedDirectValue
-							valueToPushForChart = checkedDirectValue
+						const speedKnots = gpsValues.speed
+						const checkedSpeedKnots = speedKnots !== undefined && speedKnots !== null ? speedKnots : null
+
+						if (checkedSpeedKnots !== null) {
+							const speedKmh = checkedSpeedKnots * 1.852
+							valueToPushForChart = speedKmh
+							currentLastValidSpeedWithFix = speedKmh
 						} else {
-							valueToPushForChart = currentSeriesLastValidValue
+							valueToPushForChart = currentLastValidSpeedWithFix
 						}
+					}
+				} else {
+					const directValue = sensorDataMap.get(tsMillis)
+					const checkedDirectValue = directValue !== undefined ? directValue : null
+
+					if (checkedDirectValue !== null) {
+						currentSeriesLastValidValue = checkedDirectValue
+						valueToPushForChart = checkedDirectValue
+					} else {
+						valueToPushForChart = currentSeriesLastValidValue
 					}
 				}
 				seriesChartData.push([new Date(tsMillis), valueToPushForChart])

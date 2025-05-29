@@ -281,8 +281,76 @@ export const useSessionDataStore = defineStore('sessionData', {
 				)
 			}
 
+			// Apply data nullification based on battery current threshold
+			const applyDataNullification = (entries: LogEntry[]): LogEntry[] => {
+				if (entries.length === 0) return entries
+
+				let shouldNullify = false
+				return entries.map((entry) => {
+					// Update nullification state based on ESC current
+					if (entry.n === 'esc') {
+						const escValues = entry.v as EscValues
+						const escIValue = escValues.i
+						if (escIValue !== null && escIValue !== undefined) {
+							if (escIValue < BATTERY_CURRENT_THRESHOLD_AMPS) {
+								shouldNullify = true
+							} else if (escIValue > BATTERY_CURRENT_THRESHOLD_AMPS) {
+								shouldNullify = false
+							}
+							// If escIValue equals threshold, shouldNullify remains unchanged
+						}
+						// If escIValue is null/undefined, shouldNullify remains unchanged
+					}
+
+					// Return nullified or original entry
+					if (!shouldNullify) {
+						return entry
+					}
+
+					// Create nullified copy of the entry
+					const nullifiedEntry: LogEntry = { ...entry }
+
+					if (entry.n === 'esc') {
+						const escValues = entry.v as EscValues
+						nullifiedEntry.v = {
+							...escValues,
+							rpm: null,
+							mah: null,
+							t: null,
+							i: null,
+							v: null,
+						}
+					} else if (entry.n === 'gps') {
+						const gpsValues = entry.v as GpsValues
+						nullifiedEntry.v = {
+							...gpsValues,
+							speed: null,
+							lon: null,
+							lat: null,
+							alt: null,
+							hdg: null,
+						}
+					} else if (entry.n === 'ds') {
+						const dsValues = entry.v as DsValues
+						const nullifiedDsValues: DsValues = {}
+						for (const key in dsValues) {
+							if (Object.prototype.hasOwnProperty.call(dsValues, key)) {
+								nullifiedDsValues[key] = null
+							}
+						}
+						nullifiedEntry.v = nullifiedDsValues
+					} else if (entry.n === 'mc' || entry.n === 'th') {
+						nullifiedEntry.v = null
+					}
+
+					return nullifiedEntry
+				})
+			}
+
+			const nullifiedEntries = applyDataNullification(finalFilteredAndValidatedEntries)
+
 			return chartFormatters.getChartFormattedData.call({
-				logEntries: finalFilteredAndValidatedEntries,
+				logEntries: nullifiedEntries,
 			})
 		},
 	},
