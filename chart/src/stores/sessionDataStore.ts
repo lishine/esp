@@ -390,15 +390,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 					if (entry.n === 'gps') {
 						const gpsValues = entry.v as GpsValues
 						const gpsSpeed = gpsValues.speed
-						if (gpsSpeed !== null && gpsSpeed !== undefined) {
-							if (gpsSpeed < speedThreshold) {
-								shouldCurrentlyNullify = true
-							} else if (gpsSpeed > speedThreshold) {
-								shouldCurrentlyNullify = false
-							}
-							// If gpsSpeed equals threshold, maintain current state
+						if (gpsSpeed === null || gpsSpeed === undefined) {
+							// No GPS fix or null speed - treat as too low speed, nullify
+							shouldCurrentlyNullify = true
+						} else if (gpsSpeed < speedThreshold) {
+							shouldCurrentlyNullify = true
+						} else if (gpsSpeed > speedThreshold) {
+							shouldCurrentlyNullify = false
 						}
-						// If gpsSpeed is null/undefined, shouldCurrentlyNullify remains unchanged
+						// If gpsSpeed equals threshold, maintain current state
 					}
 
 					// Return original entry if not nullifying
@@ -462,7 +462,8 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 			this.totalGpsDistance = calculateSessionDistance(speedNullifiedEntries)
 
-			this.totalTimeOnFoil = calculateTimeOnFoil(speedNullifiedEntries, MIN_SPEED_ON_FOIL / 1.852)
+			this.totalTimeOnFoil = calculateTimeOnFoil(speedNullifiedEntries)
+			console.log(this.totalTimeOnFoil, 'seconds on foil')
 
 			return chartData
 		},

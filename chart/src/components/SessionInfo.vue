@@ -112,7 +112,7 @@ const formatTimeOnFoil = (seconds: number): string => {
 			<div class="info-item">
 				<div class="info-label">
 					<span class="info-icon">🗺️</span>
-					GPS Distance
+					GPS Distance on foil with motor
 				</div>
 				<div class="info-value">{{ totalGpsDistance.toFixed(2) }} m</div>
 			</div>
@@ -120,7 +120,7 @@ const formatTimeOnFoil = (seconds: number): string => {
 			<div class="info-item">
 				<div class="info-label">
 					<span class="info-icon">🏄</span>
-					Time on Foil
+					Time on Foil with motor
 				</div>
 				<div class="info-value">{{ formatTimeOnFoil(totalTimeOnFoil) }}</div>
 			</div>
