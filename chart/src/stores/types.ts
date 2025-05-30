@@ -68,7 +68,6 @@ export interface SessionMetadata {
 export interface SessionState {
 	sessionMetadata: SessionMetadata
 	logEntries: LogEntry[]
-	activeEntries: LogEntry[]
 	isLoading: boolean
 	error: string | null
 	userApiIp: string
@@ -82,4 +81,5 @@ export interface SessionState {
 	currentFileSource: 'local' | 'github' | null
 	currentGitHubFileName: string | null
 	totalGpsDistance: number
+	totalTimeOnFoil: number
 }

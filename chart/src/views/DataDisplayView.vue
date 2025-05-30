@@ -30,6 +30,7 @@ const logEntries = computed(() => sessionDataStore.logEntries)
 const chartFormattedData = computed(() => sessionDataStore.getChartFormattedData)
 const visibleSeriesSet = computed(() => sessionDataStore.visibleSeries)
 const totalGpsDistance = computed(() => sessionDataStore.getTotalGpsDistance) // Get total GPS distance
+const totalTimeOnFoil = computed(() => sessionDataStore.getTotalTimeOnFoil) // Get total time on foil
 
 // GitHub related computed properties
 const gitHubFiles = computed(() => sessionDataStore.gitHubFiles)
@@ -172,6 +173,7 @@ const handleGitHubFileClick = (file: LogFile) => {
 				:current-file-source="currentFileSource"
 				:current-git-hub-file-name="currentGitHubFileName"
 				:total-gps-distance="totalGpsDistance"
+				:total-time-on-foil="totalTimeOnFoil"
 			/>
 
 			<file-handling

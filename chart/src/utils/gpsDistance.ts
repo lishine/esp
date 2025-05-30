@@ -119,6 +119,5 @@ export function extractActiveGpsEntries(logEntries: LogEntry[], activeTimestamps
  * @returns The total distance in meters during active periods only.
  */
 export function calculateActiveSessionDistance(logEntries: LogEntry[], activeTimestamps: number[]): number {
-	const activeGpsEntries = extractActiveGpsEntries(logEntries, activeTimestamps)
-	return calculateSessionDistance(activeGpsEntries)
+	return calculateSessionDistance(logEntries)
 }

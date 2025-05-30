@@ -1,11 +1,22 @@
 export const BATTERY_CURRENT_THRESHOLD_AMPS = 3
+export const MIN_SPEED_ON_FOIL = 8 // km/h
+
 import { defineStore } from 'pinia'
-import type { SessionState, SessionMetadata, LogEntry, EscValues, GpsValues, DsValues } from './types'
+import type {
+	SessionState,
+	SessionMetadata,
+	LogEntry,
+	EscValues,
+	GpsValues,
+	DsValues,
+	FormattedChartData,
+} from './types'
 import { visibilityActions } from './visibilityActions'
 import { fileActions } from './fileActions'
-import { chartFormatters, type FormattedChartDataWithActiveTimestamps } from './chartFormatters'
+import { chartFormatters } from './chartFormatters'
 import { applyRangeChecks } from './rangeChecks'
-import { calculateActiveSessionDistance } from '../utils/gpsDistance'
+import { calculateSessionDistance } from '../utils/gpsDistance'
+import { calculateTimeOnFoil } from '../utils/timeOnFoil'
 
 export const useSessionDataStore = defineStore('sessionData', {
 	state: (): SessionState => {
@@ -29,7 +40,6 @@ export const useSessionDataStore = defineStore('sessionData', {
 				restart: '',
 			},
 			logEntries: [],
-			activeEntries: [],
 			isLoading: false,
 			error: null,
 			userApiIp: storedUserApiIp,
@@ -43,6 +53,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			currentFileSource: null,
 			currentGitHubFileName: null,
 			totalGpsDistance: 0,
+			totalTimeOnFoil: 0,
 		}
 	},
 
@@ -169,9 +180,9 @@ export const useSessionDataStore = defineStore('sessionData', {
 				this.initializeDefaultVisibility()
 			}
 
-			// GPS distance will be calculated in getChartFormattedData getter based on active periods
+			// GPS distance and time on foil will be calculated in getChartFormattedData getter based on active periods
 			this.totalGpsDistance = 0
-			this.activeEntries = []
+			this.totalTimeOnFoil = 0
 		},
 
 		...visibilityActions,
@@ -181,15 +192,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 	getters: {
 		getMetadata: (state): SessionMetadata | null => state.sessionMetadata,
 		getLogEntries: (state): LogEntry[] => state.logEntries,
-		getActiveEntries: (state): LogEntry[] => state.activeEntries,
 		getVisibleSeries: (state): string[] => Array.from(state.visibleSeries),
 		getTotalGpsDistance: (state): number => state.totalGpsDistance,
+		getTotalTimeOnFoil: (state): number => state.totalTimeOnFoil,
 		getFilteredLogEntries: (state): LogEntry[] => {
 			return state.logEntries // Simply return all log entries
 		},
-		getChartFormattedData(state): FormattedChartDataWithActiveTimestamps {
+		getChartFormattedData(state): FormattedChartData {
 			if (!state.logEntries.length) {
-				return { series: [], activeTimestamps: [] }
+				return { series: [] }
 			}
 
 			// Apply range validation to all log entries first
@@ -206,9 +217,12 @@ export const useSessionDataStore = defineStore('sessionData', {
 					}
 				} else if (validatedEntry.n === 'gps') {
 					const gpsValues = validatedEntry.v as GpsValues
+					const originalSpeed = gpsValues.speed !== undefined ? gpsValues.speed : null
+					const checkedSpeed = applyRangeChecks('gps_speed', originalSpeed)
+					// console.log(`[SessionDataStore] GPS Speed Check: original=${originalSpeed}, checked=${checkedSpeed}, ts=${validatedEntry.preciseTimestamp.toISOString()}`);
 					validatedEntry.v = {
 						...gpsValues,
-						speed: applyRangeChecks('gps_speed', gpsValues.speed !== undefined ? gpsValues.speed : null),
+						speed: checkedSpeed,
 					}
 				} else if (validatedEntry.n === 'ds') {
 					const dsValues = validatedEntry.v as DsValues
@@ -283,13 +297,18 @@ export const useSessionDataStore = defineStore('sessionData', {
 						entry.preciseTimestamp.getTime() >= startTimeMs && entry.preciseTimestamp.getTime() <= endTimeMs
 				)
 			}
+			console.log(
+				`[SessionDataStore] Initial logEntries: ${state.logEntries.length}, RangeValidated: ${rangeValidatedEntries.length}, FilteredByTime: ${finalFilteredAndValidatedEntries.length}`
+			)
 
 			// Apply data nullification based on battery current threshold
 			const applyDataNullification = (entries: LogEntry[]): LogEntry[] => {
 				if (entries.length === 0) return entries
 
 				let shouldNullify = false
-				return entries.map((entry) => {
+				let nullificationChanges = 0
+				const mappedEntries = entries.map((entry) => {
+					const originalShouldNullify = shouldNullify
 					// Update nullification state based on ESC current
 					if (entry.n === 'esc') {
 						const escValues = entry.v as EscValues
@@ -300,18 +319,20 @@ export const useSessionDataStore = defineStore('sessionData', {
 							} else if (escIValue > BATTERY_CURRENT_THRESHOLD_AMPS) {
 								shouldNullify = false
 							}
-							// If escIValue equals threshold, shouldNullify remains unchanged
+							// console.log(`[SessionDataStore] Nullification: ts=${entry.preciseTimestamp.toISOString()}, esc.i=${escIValue}, threshold=${BATTERY_CURRENT_THRESHOLD_AMPS}, prevShouldNullify=${originalShouldNullify}, newShouldNullify=${shouldNullify}`);
 						}
 						// If escIValue is null/undefined, shouldNullify remains unchanged
 					}
 
 					// Return nullified or original entry
 					if (!shouldNullify) {
+						if (originalShouldNullify !== shouldNullify) nullificationChanges++
 						return entry
 					}
 
 					// Create nullified copy of the entry
 					const nullifiedEntry: LogEntry = { ...entry }
+					if (originalShouldNullify !== shouldNullify) nullificationChanges++
 
 					if (entry.n === 'esc') {
 						const escValues = entry.v as EscValues
@@ -348,21 +369,100 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 					return nullifiedEntry
 				})
+				console.log(
+					`[SessionDataStore] Nullification: Applied to ${entries.length} entries. Nullify state changed ${nullificationChanges} times.`
+				)
+				return mappedEntries
+			}
+
+			// Apply speed-based nullification function
+			const applySpeedNullification = (entries: LogEntry[]): LogEntry[] => {
+				if (entries.length === 0) return entries
+
+				const speedThreshold = MIN_SPEED_ON_FOIL / 1.852 // Convert km/h to knots
+				let shouldCurrentlyNullify = false
+				let nullificationChanges = 0
+
+				const mappedEntries = entries.map((entry) => {
+					const originalShouldNullify = shouldCurrentlyNullify
+
+					// Update nullification state based on GPS speed
+					if (entry.n === 'gps') {
+						const gpsValues = entry.v as GpsValues
+						const gpsSpeed = gpsValues.speed
+						if (gpsSpeed !== null && gpsSpeed !== undefined) {
+							if (gpsSpeed < speedThreshold) {
+								shouldCurrentlyNullify = true
+							} else if (gpsSpeed > speedThreshold) {
+								shouldCurrentlyNullify = false
+							}
+							// If gpsSpeed equals threshold, maintain current state
+						}
+						// If gpsSpeed is null/undefined, shouldCurrentlyNullify remains unchanged
+					}
+
+					// Return original entry if not nullifying
+					if (!shouldCurrentlyNullify) {
+						if (originalShouldNullify !== shouldCurrentlyNullify) nullificationChanges++
+						return entry
+					}
+
+					// Create nullified copy of the entry
+					const nullifiedEntry: LogEntry = { ...entry }
+					if (originalShouldNullify !== shouldCurrentlyNullify) nullificationChanges++
+
+					if (entry.n === 'esc') {
+						const escValues = entry.v as EscValues
+						nullifiedEntry.v = {
+							...escValues,
+							rpm: null,
+							mah: null,
+							t: null,
+							i: null,
+							v: null,
+						}
+					} else if (entry.n === 'gps') {
+						const gpsValues = entry.v as GpsValues
+						nullifiedEntry.v = {
+							...gpsValues,
+							speed: null,
+							lon: null,
+							lat: null,
+							alt: null,
+							hdg: null,
+						}
+					} else if (entry.n === 'ds') {
+						const dsValues = entry.v as DsValues
+						const nullifiedDsValues: DsValues = {}
+						for (const key in dsValues) {
+							if (Object.prototype.hasOwnProperty.call(dsValues, key)) {
+								nullifiedDsValues[key] = null
+							}
+						}
+						nullifiedEntry.v = nullifiedDsValues
+					} else if (entry.n === 'mc' || entry.n === 'th') {
+						nullifiedEntry.v = null
+					}
+
+					return nullifiedEntry
+				})
+
+				console.log(
+					`[SessionDataStore] Speed Nullification: Applied to ${entries.length} entries with threshold ${speedThreshold.toFixed(2)} knots. Nullify state changed ${nullificationChanges} times.`
+				)
+				return mappedEntries
 			}
 
 			const nullifiedEntries = applyDataNullification(finalFilteredAndValidatedEntries)
+			const speedNullifiedEntries = applySpeedNullification(nullifiedEntries)
 
 			const chartData = chartFormatters.getChartFormattedData.call({
-				logEntries: nullifiedEntries,
+				logEntries: speedNullifiedEntries,
 			})
 
-			// Update activeEntries based on active timestamps from chart data
-			this.activeEntries = nullifiedEntries.filter((entry) =>
-				chartData.activeTimestamps.includes(entry.preciseTimestamp.getTime())
-			)
+			this.totalGpsDistance = calculateSessionDistance(speedNullifiedEntries)
 
-			// Calculate GPS distance using only active periods
-			this.totalGpsDistance = calculateActiveSessionDistance(this.logEntries, chartData.activeTimestamps)
+			this.totalTimeOnFoil = calculateTimeOnFoil(speedNullifiedEntries, MIN_SPEED_ON_FOIL / 1.852)
 
 			return chartData
 		},
