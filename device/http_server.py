@@ -878,45 +878,45 @@ def start_https_server():
         sys.print_exception(e)
 
 
-_http_server_started_flag = False
+# _http_server_started_flag = False
 
 
-def start_conditional_http_server():
-    """
-    Monitors STA Wi-Fi connection. If connected, starts the HTTP server on port 80
-    in a new thread. Designed to be run in its own thread.
-    """
-    global _http_server_started_flag
-    app_log(
-        "Conditional HTTP server monitor thread started (will become HTTP server thread if STA connects)."
-    )
+# def start_conditional_http_server():
+#     """
+#     Monitors STA Wi-Fi connection. If connected, starts the HTTP server on port 80
+#     in a new thread. Designed to be run in its own thread.
+#     """
+#     global _http_server_started_flag
+#     app_log(
+#         "Conditional HTTP server monitor thread started (will become HTTP server thread if STA connects)."
+#     )
 
-    # Wait for STA connection
-    # while not is_connected():
-    #     time.sleep(5)  # Check every 5 seconds
-    #     # Add a counter or timeout if you want to give up after some time
-    #     # For now, it waits indefinitely for STA connection.
-    #     app_log("Conditional HTTP server: STA not connected, waiting...")
+#     # Wait for STA connection
+#     # while not is_connected():
+#     #     time.sleep(5)  # Check every 5 seconds
+#     #     # Add a counter or timeout if you want to give up after some time
+#     #     # For now, it waits indefinitely for STA connection.
+#     #     app_log("Conditional HTTP server: STA not connected, waiting...")
 
-    # STA is connected (or was at last check)
-    if not _http_server_started_flag:
-        app_log(
-            "STA Wi-Fi connected. Starting HTTP server on port 80 directly in this thread."
-        )
-        try:
-            # The app instance is global. app.run() is blocking and will take over this thread.
-            _http_server_started_flag = True  # Set flag before starting blocking call
-            app.run(port=80, ssl_context=None)
-            # The log below will only be reached if app.run() somehow exits, which it normally doesn't
-            app_log("HTTP Web server (app.run) exited.")
-        except Exception as e:
-            _http_server_started_flag = False  # Reset flag on error
-            app_log(f"Failed to start or run HTTP server: {e}")
-            sys.print_exception(e)
-    else:
-        app_log(
-            "HTTP server already marked as started. Conditional monitor thread exiting without starting a new one."
-        )
+#     # STA is connected (or was at last check)
+#     if not _http_server_started_flag:
+#         app_log(
+#             "STA Wi-Fi connected. Starting HTTP server on port 80 directly in this thread."
+#         )
+#         try:
+#             # The app instance is global. app.run() is blocking and will take over this thread.
+#             _http_server_started_flag = True  # Set flag before starting blocking call
+#             app.run(port=80, ssl_context=None)
+#             # The log below will only be reached if app.run() somehow exits, which it normally doesn't
+#             app_log("HTTP Web server (app.run) exited.")
+#         except Exception as e:
+#             _http_server_started_flag = False  # Reset flag on error
+#             app_log(f"Failed to start or run HTTP server: {e}")
+#             sys.print_exception(e)
+#     else:
+#         app_log(
+#             "HTTP server already marked as started. Conditional monitor thread exiting without starting a new one."
+#         )
 
-    # This thread's purpose is now either fulfilled by app.run() or it exits if server was already started.
-    app_log("Conditional HTTP server (monitor/starter) thread logic complete.")
+#     # This thread's purpose is now either fulfilled by app.run() or it exits if server was already started.
+#     app_log("Conditional HTTP server (monitor/starter) thread logic complete.")
