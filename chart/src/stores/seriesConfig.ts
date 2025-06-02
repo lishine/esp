@@ -17,6 +17,7 @@ export const CANONICAL_SERIES_CONFIG = [
 	{ displayName: 'RPM', internalId: 'esc_rpm', sensorType: 'esc', dataKey: 'rpm', unit: '', decimals: 0 },
 	{ displayName: 'Throttle', internalId: 'th_val', sensorType: 'th', dataKey: 'value', unit: '', decimals: 0 },
 	{ displayName: 'V', internalId: 'esc_v', sensorType: 'esc', dataKey: 'v', unit: 'V', decimals: 2 },
+	{ displayName: 'mAh', internalId: 'esc_mah', sensorType: 'esc', dataKey: 'mah', unit: 'mAh', decimals: 0 },
 ] as const
 
 export interface SeriesConfig {

@@ -214,6 +214,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 						v: applyRangeChecks('esc_v', escValues.v),
 						i: applyRangeChecks('esc_i', escValues.i),
 						t: applyRangeChecks('esc_t', escValues.t),
+						mah: applyRangeChecks('esc_mah', escValues.mah),
 					}
 				} else if (validatedEntry.n === 'gps') {
 					const gpsValues = validatedEntry.v as GpsValues
@@ -455,6 +456,8 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 			const nullifiedEntries = applyDataNullification(finalFilteredAndValidatedEntries)
 			const speedNullifiedEntries = applySpeedNullification(nullifiedEntries)
+
+			console.log({ nullifiedEntries: nullifiedEntries })
 
 			const chartData = chartFormatters.getChartFormattedData.call({
 				logEntries: nullifiedEntries,

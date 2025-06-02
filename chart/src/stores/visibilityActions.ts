@@ -38,15 +38,33 @@ export const visibilityActions: VisibilityActions = {
 				try {
 					const visibleArray = JSON.parse(storedVisibility)
 					this.visibleSeries = new Set(visibleArray)
+					console.log(
+						'[visibilityActions] Loaded from localStorage:',
+						visibleArray,
+						'Current visibleSeries:',
+						Array.from(this.visibleSeries)
+					)
 				} catch (e) {
 					console.error('Failed to parse visible series from localStorage:', e)
 					this.visibleSeries = new Set<string>()
+					console.log(
+						'[visibilityActions] Failed to parse localStorage, set to empty. Current visibleSeries:',
+						Array.from(this.visibleSeries)
+					)
 				}
 			} else {
 				this.visibleSeries = new Set<string>()
+				console.log(
+					'[visibilityActions] No "espChartVisibleSeries" in localStorage, set to empty. Current visibleSeries:',
+					Array.from(this.visibleSeries)
+				)
 			}
 		} else {
 			this.visibleSeries = new Set<string>()
+			console.log(
+				'[visibilityActions] localStorage not available, set to empty. Current visibleSeries:',
+				Array.from(this.visibleSeries)
+			)
 		}
 	},
 
@@ -57,18 +75,42 @@ export const visibilityActions: VisibilityActions = {
 	},
 
 	initializeDefaultVisibility(this: VisibilityActionContext) {
+		console.log(
+			'[visibilityActions] Attempting initializeDefaultVisibility. Current visibleSeries (start):',
+			Array.from(this.visibleSeries),
+			'logEntries count:',
+			this.logEntries.length
+		)
 		if (this.logEntries.length > 0 && this.visibleSeries.size === 0) {
-			console.log('Initializing default visibility: making all series visible.')
+			console.log('[visibilityActions] Condition met: Initializing default visibility (visibleSeries.size is 0).')
 			const availableSeriesNamesInChartData = new Set(
 				this.getChartFormattedData.series.map((s: ChartSeriesData) => s.name)
+			)
+			console.log(
+				'[visibilityActions] Available series names in chart data for default init:',
+				Array.from(availableSeriesNamesInChartData)
 			)
 
 			CANONICAL_SERIES_CONFIG.forEach((config) => {
 				if (availableSeriesNamesInChartData.has(config.displayName)) {
 					this.visibleSeries.add(config.displayName)
+					console.log(`[visibilityActions] Default init: Added "${config.displayName}" to visibleSeries.`)
+				} else {
+					console.log(
+						`[visibilityActions] Default init: Did NOT add "${config.displayName}" as it's not in availableSeriesNamesInChartData.`
+					)
 				}
 			})
 			this.saveVisibilityPreferences()
+			console.log(
+				'[visibilityActions] Default visibility initialized. Current visibleSeries (end):',
+				Array.from(this.visibleSeries)
+			)
+		} else {
+			console.log(
+				'[visibilityActions] Condition NOT met for default init. Either no log entries or visibleSeries.size is not 0. Current visibleSeries.size:',
+				this.visibleSeries.size
+			)
 		}
 	},
 

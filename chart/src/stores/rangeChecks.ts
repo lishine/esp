@@ -10,6 +10,8 @@ export const applyRangeChecks = (internalId: string, value: number | null): numb
 		if (checkedValue < 0 || checkedValue > 200) checkedValue = null
 	} else if (internalId === 'esc_t') {
 		if (checkedValue < 10 || checkedValue > 140) checkedValue = null
+	} else if (internalId === 'esc_mah') {
+		if (checkedValue < 0 || checkedValue > 20000) checkedValue = null
 	} else if (internalId === 'mc_i') {
 		if (checkedValue < 0 || checkedValue > 200) checkedValue = null
 	} else if (internalId === 'th_val') {

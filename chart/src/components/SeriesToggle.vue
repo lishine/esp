@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useSessionDataStore, BATTERY_CURRENT_THRESHOLD_AMPS } from '../stores'
-import { NCheckbox } from 'naive-ui'
+import { useSessionDataStore } from '../stores'
 
 const store = useSessionDataStore()
 

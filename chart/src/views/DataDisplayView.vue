@@ -3,7 +3,6 @@ import { onMounted, computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router' // Import useRouter
 import { useSessionDataStore, type SessionMetadata, type LogFile } from '../stores'
 import SensorChart from '../components/SensorChart.vue'
-import SeriesToggle from '../components/SeriesToggle.vue'
 import LoadingStates from '../components/LoadingStates.vue'
 import SessionInfo from '../components/SessionInfo.vue'
 import FileHandling from '../components/FileHandling.vue'
@@ -165,7 +164,7 @@ const handleGitHubFileClick = (file: LogFile) => {
 					</n-card>
 				</n-gi>
 				<n-gi :span="'1 s:1 m:1 l:1 xl:1'">
-					<series-toggle />
+					<!-- <series-toggle /> -->
 				</n-gi>
 			</n-grid>
 

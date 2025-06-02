@@ -204,6 +204,7 @@ export const chartFormatters = {
 			})
 		})
 
+		console.log('------', finalSeries)
 		console.timeEnd('getChartFormattedData')
 		return { series: finalSeries }
 	},

@@ -10,6 +10,7 @@ const SERIES_COLORS: Record<string, string> = {
 	Speed: '#fcad03',
 	RPM: 'green',
 	Throttle: '#03fcca',
+	mAh: 'magenta',
 }
 
 const DS_TEMP_COLORS = ['#ff9933', '#ffcccc', '#660000', '#F44336', '#EF5350', '#E57373']
