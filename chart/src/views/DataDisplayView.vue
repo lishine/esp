@@ -91,7 +91,8 @@ watch(
 			const prevValue = Number(newPrevQuery) || 0
 			sessionDataStore.fetchSessionData(prevValue > 0 ? prevValue : undefined)
 		}
-	}
+	},
+	{ immediate: true } // Fetch data immediately on mount if 'prev' is present
 )
 
 // Watch for changes in the filename route parameter

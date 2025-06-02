@@ -77,7 +77,7 @@ export const fileActions = {
 				parseResponse: (txt) => txt,
 				retry: 3,
 				retryDelay: 500,
-				timeout: 10,
+				timeout: 100000,
 				onRequestError: ({ error }) => {
 					console.error('Request error:', error)
 					throw error
