@@ -3,6 +3,7 @@ import { CANONICAL_SERIES_CONFIG } from './seriesConfig'
 import type { SeriesConfig } from './seriesConfig' // Import SeriesConfig for casting
 import { haversineDistance } from '../utils/gpsDistance'
 import { applyRangeChecks } from './rangeChecks'
+import { calculateEfficiencySeries } from '../utils/calcSeries' // Added import
 
 // Interface to hold all relevant data for a single timestamp
 interface AggregatedDataPoint {
@@ -245,9 +246,6 @@ export const chartFormatters = {
 							)
 						if (sConfig.internalId === 'esc_mah' || sConfig.internalId === 'esc_v') {
 							// Log for these specific series when valToProcess is initially null/undefined
-							console.log(
-								`[ESC Interpolate Debug ts=${tsMillis}, series=${sConfig.internalId}] valToProcess: ${valToProcess}, canInterpolate: ${canInterpolate}, lastValid: ${lastValidValues.get(sConfig.internalId)}`
-							)
 						}
 						if (canInterpolate) {
 							dp[key] = lastValidValues.get(sConfig.internalId)!
@@ -264,86 +262,43 @@ export const chartFormatters = {
 			})
 		})
 
-		// 4. Calculate Wh/km and W/speed
-		for (let i = 0; i < sortedUniqueTimestampMillis.length; i++) {
-			const tsMillis = sortedUniqueTimestampMillis[i]
-			const currentDp = dataPointsMap.get(tsMillis)
+		// 4. Prepare data maps for calculateEfficiencySeries
+		const escVMap = new Map<number, number | null>()
+		const escIMap = new Map<number, number | null>()
+		const escMahMap = new Map<number, number | null>()
+		const gpsLatMap = new Map<number, number | null>()
+		const gpsLonMap = new Map<number, number | null>()
+		const gpsSpeedMap = new Map<number, number | null>() // This should be in knots for calcSeries
 
-			if (!currentDp) continue
-
-			// Wh/km calculation
-			if (i > 0) {
-				const prevTsMillis = sortedUniqueTimestampMillis[i - 1]
-				const prevDp = dataPointsMap.get(prevTsMillis)
-
-				// Wh/km calculation pre-conditions
-				if (
-					prevDp &&
-					currentDp.esc_mah !== null &&
-					currentDp.esc_mah !== undefined &&
-					prevDp.esc_mah !== null &&
-					prevDp.esc_mah !== undefined &&
-					currentDp.esc_v !== null &&
-					currentDp.esc_v !== undefined &&
-					prevDp.esc_v !== null &&
-					prevDp.esc_v !== undefined &&
-					currentDp.gps_lat !== null &&
-					currentDp.gps_lat !== undefined &&
-					currentDp.gps_lon !== null &&
-					currentDp.gps_lon !== undefined &&
-					prevDp.gps_lat !== null &&
-					prevDp.gps_lat !== undefined &&
-					prevDp.gps_lon !== null &&
-					prevDp.gps_lon !== undefined
-				) {
-					const deltaMah = currentDp.esc_mah - prevDp.esc_mah
-					if (deltaMah > 0) {
-						// Only if mAh increased
-						const avgVoltage = (currentDp.esc_v + prevDp.esc_v) / 2
-						const energyWh = (avgVoltage * deltaMah) / 1000
-						const distanceM = haversineDistance(
-							prevDp.gps_lat,
-							prevDp.gps_lon,
-							currentDp.gps_lat,
-							currentDp.gps_lon
-						)
-						const distanceKm = distanceM / 1000
-
-						if (distanceM > 0.01) {
-							// Check if distance in meters is greater than 1cm
-							currentDp.wh_per_km = applyRangeChecks('wh_per_km', energyWh / distanceKm)
-						} else {
-							currentDp.wh_per_km = null
-						}
-					} else {
-						currentDp.wh_per_km = null
-					}
-				} else {
-					currentDp.wh_per_km = null
-				}
+		sortedUniqueTimestampMillis.forEach((tsMillis) => {
+			const dp = dataPointsMap.get(tsMillis)
+			if (dp) {
+				escVMap.set(tsMillis, dp.esc_v ?? null)
+				escIMap.set(tsMillis, dp.esc_i ?? null) // Assuming esc_i is battery current after any processing
+				escMahMap.set(tsMillis, dp.esc_mah ?? null)
+				gpsLatMap.set(tsMillis, dp.gps_lat ?? null)
+				gpsLonMap.set(tsMillis, dp.gps_lon ?? null)
+				gpsSpeedMap.set(tsMillis, dp.gps_speed ?? null) // Use raw gps_speed (knots)
 			} else {
-				currentDp.wh_per_km = null // No previous data point for the first one
+				escVMap.set(tsMillis, null)
+				escIMap.set(tsMillis, null)
+				escMahMap.set(tsMillis, null)
+				gpsLatMap.set(tsMillis, null)
+				gpsLonMap.set(tsMillis, null)
+				gpsSpeedMap.set(tsMillis, null)
 			}
+		})
 
-			// W/speed calculation
-			if (
-				currentDp.esc_v !== null &&
-				currentDp.esc_v !== undefined &&
-				currentDp.esc_i !== null &&
-				currentDp.esc_i !== undefined && // Using direct esc_i, assuming it's battery current
-				currentDp.gps_speed_kmh !== null &&
-				currentDp.gps_speed_kmh !== undefined
-			) {
-				const powerW = currentDp.esc_v * currentDp.esc_i
-				if (currentDp.gps_speed_kmh > 0) {
-					currentDp.w_per_speed = applyRangeChecks('w_per_speed', powerW / currentDp.gps_speed_kmh)
-				} else {
-					currentDp.w_per_speed = null
-				}
-			} else {
-				currentDp.w_per_speed = null
-			}
-		}
+		console.log(
+			'Sample gpsSpeedMap entries (knots, before calculateEfficiencySeries):',
+			Array.from(gpsSpeedMap.entries()).slice(0, 10)
+		)
+		// Call the new calculation function
+		const { whPerKmMap, wPerSpeedMap } = calculateEfficiencySeries(
+			{ escVMap, escIMap, escMahMap, gpsLatMap, gpsLonMap, gpsSpeedMap },
+			sortedUniqueTimestampMillis,
+			haversineDistance
+		)
 
 		// 5. Format data for ECharts
 		const finalSeries: ChartSeriesData[] = []
@@ -364,11 +319,14 @@ export const chartFormatters = {
 				let value: number | null | undefined = null
 
 				if (dp) {
-					if (config.internalId === 'wh_per_km') value = dp.wh_per_km
-					else if (config.internalId === 'w_per_speed') value = dp.w_per_speed
-					else if (config.internalId === 'gps_speed')
-						value = dp.gps_speed_kmh // Display km/h
-					else if (config.internalId === 'gps_hdg') value = dp.gps_hdg
+					// dp might still be useful for other non-calculated series
+					if (config.internalId === 'wh_per_km') {
+						value = applyRangeChecks('wh_per_km', whPerKmMap.get(tsMillis) ?? null)
+					} else if (config.internalId === 'w_per_speed') {
+						value = applyRangeChecks('w_per_speed', wPerSpeedMap.get(tsMillis) ?? null)
+					} else if (config.internalId === 'gps_speed') {
+						value = dp.gps_speed_kmh // Display km/h, already calculated and interpolated
+					} else if (config.internalId === 'gps_hdg') value = dp.gps_hdg
 					else if (config.internalId === 'mc_i') value = dp.mc_i
 					else if (config.sensorType === 'esc')
 						value = dp[`esc_${config.dataKey}` as keyof AggregatedDataPoint] as number | null

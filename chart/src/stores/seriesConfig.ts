@@ -28,7 +28,7 @@ export const CANONICAL_SERIES_CONFIG = [
 		yAxisIndex: 1,
 	},
 	{
-		displayName: 'W/speed',
+		displayName: 'W/(km/h)',
 		internalId: 'w_per_speed',
 		sensorType: 'calculated',
 		dataKey: 'w_per_speed',
