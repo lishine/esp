@@ -1,5 +1,5 @@
-export const CALC_WHKM_WV_SERIES_WINDOW_LEN = 15
-export const CALC_WHKM_WV_SERIES_WINDOW_SHIFT = 3
+export const CALC_WHKM_WV_SERIES_WINDOW_LEN = 10
+export const CALC_WHKM_WV_SERIES_WINDOW_SHIFT = 1
 
 export function calculateMovingAverage(data: (number | null)[], windowSize: number): (number | null)[] {
 	if (windowSize <= 0 || data.length === 0) {
@@ -51,20 +51,22 @@ export function calculateEfficiencySeries(
 	sortedTimestamps: number[],
 	haversineDistance: (lat1: number, lon1: number, lat2: number, lon2: number) => number
 ): { whPerKmMap: Map<number, number | null>; wPerSpeedMap: Map<number, number | null> } {
-	const rawVoltageArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.escVMap.get(ts) ?? null)
-	const rawCurrentArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.escIMap.get(ts) ?? null)
-	const rawMahArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.escMahMap.get(ts) ?? null)
-	const rawGpsLatArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.gpsLatMap.get(ts) ?? null)
-	const rawGpsLonArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.gpsLonMap.get(ts) ?? null)
-	const rawGpsSpeedKnotsArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.gpsSpeedMap.get(ts) ?? null)
+	const voltageArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.escVMap.get(ts) ?? null)
+	const currentArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.escIMap.get(ts) ?? null)
+	const mahArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.escMahMap.get(ts) ?? null)
+	const gpsLatArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.gpsLatMap.get(ts) ?? null)
+	const gpsLonArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.gpsLonMap.get(ts) ?? null)
+	// gpsSpeedMap now provides speed in km/h, interpolated
+	const gpsSpeedArray: (number | null)[] = sortedTimestamps.map((ts) => dataMaps.gpsSpeedMap.get(ts) ?? null)
+	// console.log({ gpsSpeedArray: gpsSpeedArray }) // Keep for debugging if needed
 
-	const smoothedVoltageArray = calculateMovingAverage(rawVoltageArray, CALC_WHKM_WV_SERIES_WINDOW_LEN)
-	const smoothedCurrentArray = calculateMovingAverage(rawCurrentArray, CALC_WHKM_WV_SERIES_WINDOW_LEN)
-	const smoothedMahArray = calculateMovingAverage(rawMahArray, CALC_WHKM_WV_SERIES_WINDOW_LEN)
-	console.log('Raw GPS Speed Knots Array:', rawGpsSpeedKnotsArray.slice(0, 50))
-	console.log('Number of non-null raw GPS speeds:', rawGpsSpeedKnotsArray.filter((v) => v !== null).length)
-	const smoothedGpsSpeedKnotsArray = calculateMovingAverage(rawGpsSpeedKnotsArray, CALC_WHKM_WV_SERIES_WINDOW_LEN)
-	console.log('~~~~~~~~~~~~', smoothedGpsSpeedKnotsArray.filter((v) => v !== null).length)
+	const smoothedVoltageArray = calculateMovingAverage(voltageArray, CALC_WHKM_WV_SERIES_WINDOW_LEN)
+	const smoothedCurrentArray = calculateMovingAverage(currentArray, CALC_WHKM_WV_SERIES_WINDOW_LEN)
+	const smoothedMahArray = calculateMovingAverage(mahArray, CALC_WHKM_WV_SERIES_WINDOW_LEN)
+	// console.log('GPS Speed Array (km/h):', gpsSpeedArray.slice(0, 50))
+	// console.log('Number of non-null GPS speeds:', gpsSpeedArray.filter((v) => v !== null).length)
+	const smoothedGpsSpeedArray = calculateMovingAverage(gpsSpeedArray, CALC_WHKM_WV_SERIES_WINDOW_LEN)
+	// console.log('Smoothed GPS Speed Array non-null count:', smoothedGpsSpeedArray.filter((v) => v !== null).length)
 
 	const whPerKmMap = new Map<number, number | null>()
 	const wPerSpeedMap = new Map<number, number | null>()
@@ -92,10 +94,10 @@ export function calculateEfficiencySeries(
 
 		// Calculate "Wh/km"
 		let whPerKmVal: number | null = null
-		const gpsLatStart = rawGpsLatArray[windowStartIdx]
-		const gpsLonStart = rawGpsLonArray[windowStartIdx]
-		const gpsLatEnd = rawGpsLatArray[windowEndIdx]
-		const gpsLonEnd = rawGpsLonArray[windowEndIdx]
+		const gpsLatStart = gpsLatArray[windowStartIdx]
+		const gpsLonStart = gpsLonArray[windowStartIdx]
+		const gpsLatEnd = gpsLatArray[windowEndIdx]
+		const gpsLonEnd = gpsLonArray[windowEndIdx]
 
 		if (gpsLatStart != null && gpsLonStart != null && gpsLatEnd != null && gpsLonEnd != null) {
 			const distanceMetersWindow = haversineDistance(gpsLatStart, gpsLonStart, gpsLatEnd, gpsLonEnd)
@@ -141,13 +143,10 @@ export function calculateEfficiencySeries(
 		if (countPowerWShiftedWindow > 0) {
 			// Ensure some data points for average
 			const avgPowerWShiftedWindow = sumPowerWShiftedWindow / countPowerWShiftedWindow
-			const avgSpeedKnotsWindow = smoothedGpsSpeedKnotsArray[i]
+			const avgSpeedKmhWindow = smoothedGpsSpeedArray[i] // This is now already in km/h
 
-			if (avgSpeedKnotsWindow != null) {
-				const avgSpeedKmhWindow = avgSpeedKnotsWindow * 1.852
-				if (avgSpeedKmhWindow > 0 && avgPowerWShiftedWindow != null) {
-					wPerSpeedVal = avgPowerWShiftedWindow / avgSpeedKmhWindow
-				}
+			if (avgSpeedKmhWindow != null && avgSpeedKmhWindow > 0 && avgPowerWShiftedWindow != null) {
+				wPerSpeedVal = avgPowerWShiftedWindow / avgSpeedKmhWindow
 			}
 		}
 		wPerSpeedMap.set(t_center, wPerSpeedVal)

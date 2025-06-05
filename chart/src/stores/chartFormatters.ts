@@ -16,8 +16,7 @@ interface AggregatedDataPoint {
 	// Raw GPS values
 	gps_lat?: number | null
 	gps_lon?: number | null
-	gps_speed?: number | null // Original speed in knots (value from log)
-	gps_speed_kmh?: number | null // Speed converted to km/h (used for display and w_per_speed calc)
+	gps_speed?: number | null // Speed in km/h (value from log, converted and interpolated)
 	gps_hdg?: number | null // GPS heading
 	// Raw DS values
 	ds_ambient?: number | null
@@ -80,8 +79,13 @@ export const chartFormatters = {
 					const gpsVals = entry.v as GpsValues
 					if (gpsVals.lat !== undefined) dp.gps_lat = gpsVals.lat
 					if (gpsVals.lon !== undefined) dp.gps_lon = gpsVals.lon
-					if (gpsVals.speed !== undefined) dp.gps_speed = gpsVals.speed // Store raw knots
+					if (gpsVals.speed !== undefined && gpsVals.speed !== null) {
+						dp.gps_speed = gpsVals.speed * 1.852 // Convert to km/h immediately
+					} else if (gpsVals.speed === null) {
+						dp.gps_speed = null // Explicitly set to null if source is null
+					}
 					if (gpsVals.hdg !== undefined) dp.gps_hdg = gpsVals.hdg
+					// console.log(`After initial set, ts: ${tsMillis}, dp.gps_speed: ${dp.gps_speed}`);
 					break
 				case 'ds':
 					const dsVals = entry.v as DsValues
@@ -120,7 +124,7 @@ export const chartFormatters = {
 					if (config.sensorType === 'esc')
 						val = dp[`esc_${config.dataKey}` as keyof AggregatedDataPoint] as number | null
 					else if (config.internalId === 'gps_speed')
-						val = dp.gps_speed // use raw knots for gps_speed's own interpolation
+						val = dp.gps_speed // Now in km/h
 					else if (config.sensorType === 'ds')
 						val = dp[`ds_${config.dataKey}` as keyof AggregatedDataPoint] as number | null
 					else if (config.internalId === 'mc_i') val = dp.mc_i_raw
@@ -158,31 +162,20 @@ export const chartFormatters = {
 				dp.mc_i = null
 			}
 
-			// gps_speed_kmh: speedKnots * 1.852
-			const speedKnots = dp.gps_speed
-			// const gpsMapForSpeed = tempSensorMapsForInterpolation.get('gps_speed')! // Unused
-
-			if (speedKnots !== null && speedKnots !== undefined) {
-				dp.gps_speed_kmh = speedKnots * 1.852
-				lastValidValues.set('gps_speed_kmh', dp.gps_speed_kmh)
-				if (dp.gps_lat !== undefined && dp.gps_lon !== undefined) {
-					// Consider it valid GPS data if lat/lon also present
-					lastValidGpsDataTimestamp.set('gps_speed_kmh', tsMillis)
-				}
-			} else {
-				const lastSeenGpsTs = lastValidGpsDataTimestamp.get('gps_speed_kmh')
-				if (lastValidValues.has('gps_speed_kmh') && lastSeenGpsTs && tsMillis - lastSeenGpsTs <= 5000) {
-					dp.gps_speed_kmh = lastValidValues.get('gps_speed_kmh')!
-				} else {
-					lastValidValues.delete('gps_speed_kmh')
-					lastValidGpsDataTimestamp.delete('gps_speed_kmh')
-					dp.gps_speed_kmh = null
-				}
+			// gps_speed (now in km/h) will be handled by the generic interpolation loop later.
+			// We still need to manage lastValidGpsDataTimestamp for other GPS components.
+			if (
+				dp.gps_speed !== null &&
+				dp.gps_speed !== undefined &&
+				dp.gps_lat !== undefined &&
+				dp.gps_lon !== undefined
+			) {
+				lastValidGpsDataTimestamp.set('gps_speed', tsMillis) // Track timestamp of good GPS fix using 'gps_speed' key
 			}
 
-			const lastSeenGoodFixTs = lastValidGpsDataTimestamp.get('gps_speed_kmh') // Timestamp of last comprehensive GPS fix
+			const lastSeenGoodFixTs = lastValidGpsDataTimestamp.get('gps_speed') // Timestamp of last comprehensive GPS fix, now keyed by 'gps_speed'
 
-			// Interpolate gps_lat (aligned with gps_speed_kmh logic)
+			// Interpolate gps_lat (aligned with gps_speed logic)
 			if (dp.gps_lat !== null && dp.gps_lat !== undefined) {
 				lastValidValues.set('gps_lat', dp.gps_lat)
 			} else if (lastValidValues.has('gps_lat') && lastSeenGoodFixTs && tsMillis - lastSeenGoodFixTs <= 5000) {
@@ -219,8 +212,8 @@ export const chartFormatters = {
 			// Interpolate other direct sensor values (excluding gps components now handled above and calculated series)
 			CANONICAL_SERIES_CONFIG.forEach((sConfig) => {
 				if (
-					sConfig.internalId !== 'mc_i' &&
-					sConfig.internalId !== 'gps_speed' &&
+					sConfig.internalId !== 'mc_i' && // mc_i is handled separately
+					// gps_speed is now handled by this generic loop
 					sConfig.sensorType !== 'calculated'
 				) {
 					const key = sConfig.internalId as keyof AggregatedDataPoint
@@ -231,6 +224,13 @@ export const chartFormatters = {
 					else if (sConfig.sensorType === 'ds')
 						valToProcess = dp[`ds_${sConfig.dataKey}` as keyof AggregatedDataPoint] as number | null
 					else if (sConfig.sensorType === 'th') valToProcess = dp.th_val
+					else if (sConfig.sensorType === 'gps' && sConfig.internalId === 'gps_speed') {
+						valToProcess = dp.gps_speed // Ensure gps_speed is picked up
+					}
+
+					if (sConfig.internalId === 'gps_speed') {
+						// console.log(`ts: ${tsMillis}, before gps_speed interp, dp.gps_speed: ${dp.gps_speed}, valToProcess: ${valToProcess}`);
+					}
 
 					if (valToProcess !== null && valToProcess !== undefined) {
 						dp[key] = valToProcess
@@ -254,11 +254,12 @@ export const chartFormatters = {
 							dp[key] = null
 						}
 					}
-				} else if (sConfig.internalId === 'gps_speed') {
-					// gps_speed for display is gps_speed_kmh, already handled
-					// but we need to ensure dp.gps_speed (knots) is also interpolated if needed by other calcs
-					// This specific interpolation logic for raw gps_speed might need refinement if other calcs depend on interpolated knots
+					if (sConfig.internalId === 'gps_speed') {
+						// console.log(`ts: ${tsMillis}, after gps_speed interp, dp.gps_speed: ${dp.gps_speed}, lastValid: ${lastValidValues.get('gps_speed')}`);
+					}
 				}
+				// Removed else if for 'gps_speed' as it's now part of the main loop.
+				// The dp.gps_speed (now in km/h) is interpolated directly.
 			})
 		})
 
@@ -268,7 +269,7 @@ export const chartFormatters = {
 		const escMahMap = new Map<number, number | null>()
 		const gpsLatMap = new Map<number, number | null>()
 		const gpsLonMap = new Map<number, number | null>()
-		const gpsSpeedMap = new Map<number, number | null>() // This should be in knots for calcSeries
+		const gpsSpeedMap = new Map<number, number | null>() // This will be in km/h, interpolated
 
 		sortedUniqueTimestampMillis.forEach((tsMillis) => {
 			const dp = dataPointsMap.get(tsMillis)
@@ -278,7 +279,7 @@ export const chartFormatters = {
 				escMahMap.set(tsMillis, dp.esc_mah ?? null)
 				gpsLatMap.set(tsMillis, dp.gps_lat ?? null)
 				gpsLonMap.set(tsMillis, dp.gps_lon ?? null)
-				gpsSpeedMap.set(tsMillis, dp.gps_speed ?? null) // Use raw gps_speed (knots)
+				gpsSpeedMap.set(tsMillis, dp.gps_speed ?? null)
 			} else {
 				escVMap.set(tsMillis, null)
 				escIMap.set(tsMillis, null)
@@ -290,8 +291,10 @@ export const chartFormatters = {
 		})
 
 		console.log(
-			'Sample gpsSpeedMap entries (knots, before calculateEfficiencySeries):',
-			Array.from(gpsSpeedMap.entries()).slice(0, 10)
+			'Sample gpsSpeedMap entries (km/h, before calculateEfficiencySeries):',
+			// Array.from(gpsSpeedMap.entries()).slice(0, 10)
+			// Log dp.gps_speed from dataPointsMap directly for a sample:
+			sortedUniqueTimestampMillis.slice(0, 10).map((ts) => dataPointsMap.get(ts)?.gps_speed)
 		)
 		// Call the new calculation function
 		const { whPerKmMap, wPerSpeedMap } = calculateEfficiencySeries(
@@ -325,7 +328,7 @@ export const chartFormatters = {
 					} else if (config.internalId === 'w_per_speed') {
 						value = applyRangeChecks('w_per_speed', wPerSpeedMap.get(tsMillis) ?? null)
 					} else if (config.internalId === 'gps_speed') {
-						value = dp.gps_speed_kmh // Display km/h, already calculated and interpolated
+						value = dp.gps_speed // Display km/h, already calculated and interpolated
 					} else if (config.internalId === 'gps_hdg') value = dp.gps_hdg
 					else if (config.internalId === 'mc_i') value = dp.mc_i
 					else if (config.sensorType === 'esc')
