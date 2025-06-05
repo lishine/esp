@@ -1,5 +1,5 @@
-export const CALC_WHKM_WV_SERIES_WINDOW_LEN = 10
-export const CALC_WHKM_WV_SERIES_WINDOW_SHIFT = 1
+export const CALC_WHKM_WV_SERIES_WINDOW_LEN = 5
+export const CALC_WHKM_WV_SERIES_WINDOW_SHIFT = 3
 
 export function calculateMovingAverage(data: (number | null)[], windowSize: number): (number | null)[] {
 	if (windowSize <= 0 || data.length === 0) {

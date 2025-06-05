@@ -34,9 +34,18 @@ export const CANONICAL_SERIES_CONFIG = [
 		dataKey: 'w_per_speed',
 		unit: 'W/(km/h)',
 		decimals: 2,
-		yAxisIndex: 2,
+		yAxisIndex: 1, // Temporarily put on same axis as Wh/km for testing
+		color: '#FF8C00', // DarkOrange for W/(km/h)
 	},
-	{ displayName: 'Heading', internalId: 'gps_hdg', sensorType: 'gps', dataKey: 'hdg', unit: '°', decimals: 0 },
+	{
+		displayName: 'Heading',
+		internalId: 'gps_hdg',
+		sensorType: 'gps',
+		dataKey: 'hdg',
+		unit: '°',
+		decimals: 0,
+		color: '#20B2AA' /* LightSeaGreen */,
+	},
 ] as const
 
 export interface SeriesConfig {
@@ -47,6 +56,7 @@ export interface SeriesConfig {
 	unit: string
 	decimals: number
 	yAxisIndex?: number
+	color?: string
 }
 
 export type CanonicalSeriesConfig = (typeof CANONICAL_SERIES_CONFIG)[number]

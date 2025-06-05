@@ -347,6 +347,7 @@ export const chartFormatters = {
 				yAxisIndex: (config as SeriesConfig).yAxisIndex ?? 0, // Default to 0 if not specified
 				showSymbol: false,
 				connectNulls: false, // Important for calculated data that might have gaps
+				...((config as SeriesConfig).color && { color: (config as SeriesConfig).color }), // Add color if defined in config
 			})
 		})
 
