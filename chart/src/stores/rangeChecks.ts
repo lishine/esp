@@ -30,6 +30,8 @@ export const applyRangeChecks = (internalId: string, value: number | null): numb
 		if (checkedValue < 0 || checkedValue > 1000) checkedValue = null // Max 1000 Wh/km
 	} else if (internalId === 'w_per_speed') {
 		if (checkedValue < 0 || checkedValue > 500) checkedValue = null // Max 500 W/(km/h)
+	} else if (internalId === 'gps_hdg') {
+		if (checkedValue < 0 || checkedValue > 360) checkedValue = null // 0-360 degrees
 	}
 	return checkedValue
 }

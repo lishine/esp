@@ -17,6 +17,7 @@ interface AggregatedDataPoint {
 	gps_lon?: number | null
 	gps_speed?: number | null // Original speed in knots (value from log)
 	gps_speed_kmh?: number | null // Speed converted to km/h (used for display and w_per_speed calc)
+	gps_hdg?: number | null // GPS heading
 	// Raw DS values
 	ds_ambient?: number | null
 	ds_alum?: number | null
@@ -79,6 +80,7 @@ export const chartFormatters = {
 					if (gpsVals.lat !== undefined) dp.gps_lat = gpsVals.lat
 					if (gpsVals.lon !== undefined) dp.gps_lon = gpsVals.lon
 					if (gpsVals.speed !== undefined) dp.gps_speed = gpsVals.speed // Store raw knots
+					if (gpsVals.hdg !== undefined) dp.gps_hdg = gpsVals.hdg
 					break
 				case 'ds':
 					const dsVals = entry.v as DsValues
@@ -105,6 +107,7 @@ export const chartFormatters = {
 				tempSensorMapsForInterpolation.set(config.internalId, new Map<number, number | null>())
 			}
 		})
+		// No longer need separate temp maps for raw_gps_lat/lon with the new approach
 
 		sortedUniqueTimestampMillis.forEach((tsMillis) => {
 			const dp = getOrCreateDataPoint(dataPointsMap, tsMillis)
@@ -124,6 +127,7 @@ export const chartFormatters = {
 					map.set(tsMillis, typeof val === 'number' ? val : null)
 				}
 			})
+			// No longer need to populate separate temp maps for raw_gps_lat/lon
 		})
 
 		// Apply interpolation and special calculations
@@ -175,7 +179,43 @@ export const chartFormatters = {
 				}
 			}
 
-			// Interpolate other direct sensor values
+			const lastSeenGoodFixTs = lastValidGpsDataTimestamp.get('gps_speed_kmh') // Timestamp of last comprehensive GPS fix
+
+			// Interpolate gps_lat (aligned with gps_speed_kmh logic)
+			if (dp.gps_lat !== null && dp.gps_lat !== undefined) {
+				lastValidValues.set('gps_lat', dp.gps_lat)
+			} else if (lastValidValues.has('gps_lat') && lastSeenGoodFixTs && tsMillis - lastSeenGoodFixTs <= 5000) {
+				dp.gps_lat = lastValidValues.get('gps_lat')!
+			} else {
+				lastValidValues.delete('gps_lat')
+				dp.gps_lat = null
+			}
+
+			// Interpolate gps_lon (aligned with gps_speed_kmh logic)
+			if (dp.gps_lon !== null && dp.gps_lon !== undefined) {
+				lastValidValues.set('gps_lon', dp.gps_lon)
+			} else if (lastValidValues.has('gps_lon') && lastSeenGoodFixTs && tsMillis - lastSeenGoodFixTs <= 5000) {
+				dp.gps_lon = lastValidValues.get('gps_lon')!
+			} else {
+				lastValidValues.delete('gps_lon')
+				dp.gps_lon = null
+			}
+
+			// Interpolate gps_hdg (aligned with gps_speed_kmh logic)
+			if (dp.gps_hdg !== null && dp.gps_hdg !== undefined) {
+				lastValidValues.set('gps_hdg', dp.gps_hdg)
+			} else if (lastValidValues.has('gps_hdg') && lastSeenGoodFixTs && tsMillis - lastSeenGoodFixTs <= 5000) {
+				dp.gps_hdg = lastValidValues.get('gps_hdg')!
+			} else {
+				lastValidValues.delete('gps_hdg')
+				dp.gps_hdg = null
+			}
+			// Apply range check for heading after interpolation
+			if (dp.gps_hdg !== null) {
+				dp.gps_hdg = applyRangeChecks('gps_hdg', dp.gps_hdg)
+			}
+
+			// Interpolate other direct sensor values (excluding gps components now handled above and calculated series)
 			CANONICAL_SERIES_CONFIG.forEach((sConfig) => {
 				if (
 					sConfig.internalId !== 'mc_i' &&
@@ -194,19 +234,27 @@ export const chartFormatters = {
 					if (valToProcess !== null && valToProcess !== undefined) {
 						dp[key] = valToProcess
 						lastValidValues.set(sConfig.internalId, valToProcess)
-					} else if (
-						lastValidValues.has(sConfig.internalId) &&
-						hasValidDataWithin5Seconds(
-							tsMillis,
-							tempSensorMapsForInterpolation.get(sConfig.internalId)!,
-							sortedUniqueTimestampMillis,
-							lastValidValues.get(sConfig.internalId)!
-						)
-					) {
-						dp[key] = lastValidValues.get(sConfig.internalId)!
 					} else {
-						lastValidValues.delete(sConfig.internalId)
-						dp[key] = null
+						const canInterpolate =
+							lastValidValues.has(sConfig.internalId) &&
+							hasValidDataWithin5Seconds(
+								tsMillis,
+								tempSensorMapsForInterpolation.get(sConfig.internalId)!,
+								sortedUniqueTimestampMillis,
+								lastValidValues.get(sConfig.internalId)!
+							)
+						if (sConfig.internalId === 'esc_mah' || sConfig.internalId === 'esc_v') {
+							// Log for these specific series when valToProcess is initially null/undefined
+							console.log(
+								`[ESC Interpolate Debug ts=${tsMillis}, series=${sConfig.internalId}] valToProcess: ${valToProcess}, canInterpolate: ${canInterpolate}, lastValid: ${lastValidValues.get(sConfig.internalId)}`
+							)
+						}
+						if (canInterpolate) {
+							dp[key] = lastValidValues.get(sConfig.internalId)!
+						} else {
+							lastValidValues.delete(sConfig.internalId)
+							dp[key] = null
+						}
 					}
 				} else if (sConfig.internalId === 'gps_speed') {
 					// gps_speed for display is gps_speed_kmh, already handled
@@ -228,6 +276,7 @@ export const chartFormatters = {
 				const prevTsMillis = sortedUniqueTimestampMillis[i - 1]
 				const prevDp = dataPointsMap.get(prevTsMillis)
 
+				// Wh/km calculation pre-conditions
 				if (
 					prevDp &&
 					currentDp.esc_mah !== null &&
@@ -260,7 +309,8 @@ export const chartFormatters = {
 						)
 						const distanceKm = distanceM / 1000
 
-						if (distanceKm > 0) {
+						if (distanceM > 0.01) {
+							// Check if distance in meters is greater than 1cm
 							currentDp.wh_per_km = applyRangeChecks('wh_per_km', energyWh / distanceKm)
 						} else {
 							currentDp.wh_per_km = null
@@ -318,6 +368,7 @@ export const chartFormatters = {
 					else if (config.internalId === 'w_per_speed') value = dp.w_per_speed
 					else if (config.internalId === 'gps_speed')
 						value = dp.gps_speed_kmh // Display km/h
+					else if (config.internalId === 'gps_hdg') value = dp.gps_hdg
 					else if (config.internalId === 'mc_i') value = dp.mc_i
 					else if (config.sensorType === 'esc')
 						value = dp[`esc_${config.dataKey}` as keyof AggregatedDataPoint] as number | null

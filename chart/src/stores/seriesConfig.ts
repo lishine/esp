@@ -36,6 +36,7 @@ export const CANONICAL_SERIES_CONFIG = [
 		decimals: 2,
 		yAxisIndex: 2,
 	},
+	{ displayName: 'Heading', internalId: 'gps_hdg', sensorType: 'gps', dataKey: 'hdg', unit: '°', decimals: 0 },
 ] as const
 
 export interface SeriesConfig {
