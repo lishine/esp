@@ -8,7 +8,7 @@ import type { LogEntry, GpsValues } from '../stores/types'
  * @param lon2 Longitude of the second point in degrees.
  * @returns Distance in meters.
  */
-function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
+export function haversineDistance(lat1: number, lon1: number, lat2: number, lon2: number): number {
 	const R = 6371e3 // Earth's radius in meters
 	const φ1 = (lat1 * Math.PI) / 180 // φ, λ in radians
 	const φ2 = (lat2 * Math.PI) / 180

@@ -18,6 +18,24 @@ export const CANONICAL_SERIES_CONFIG = [
 	{ displayName: 'Throttle', internalId: 'th_val', sensorType: 'th', dataKey: 'value', unit: '', decimals: 0 },
 	{ displayName: 'V', internalId: 'esc_v', sensorType: 'esc', dataKey: 'v', unit: 'V', decimals: 2 },
 	{ displayName: 'mAh', internalId: 'esc_mah', sensorType: 'esc', dataKey: 'mah', unit: 'mAh', decimals: 0 },
+	{
+		displayName: 'Wh/km',
+		internalId: 'wh_per_km',
+		sensorType: 'calculated',
+		dataKey: 'wh_per_km',
+		unit: 'Wh/km',
+		decimals: 2,
+		yAxisIndex: 1,
+	},
+	{
+		displayName: 'W/speed',
+		internalId: 'w_per_speed',
+		sensorType: 'calculated',
+		dataKey: 'w_per_speed',
+		unit: 'W/(km/h)',
+		decimals: 2,
+		yAxisIndex: 2,
+	},
 ] as const
 
 export interface SeriesConfig {
@@ -27,6 +45,7 @@ export interface SeriesConfig {
 	dataKey: string
 	unit: string
 	decimals: number
+	yAxisIndex?: number
 }
 
 export type CanonicalSeriesConfig = (typeof CANONICAL_SERIES_CONFIG)[number]

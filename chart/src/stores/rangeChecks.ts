@@ -26,6 +26,10 @@ export const applyRangeChecks = (internalId: string, value: number | null): numb
 		} else {
 			checkedValue = value
 		}
+	} else if (internalId === 'wh_per_km') {
+		if (checkedValue < 0 || checkedValue > 1000) checkedValue = null // Max 1000 Wh/km
+	} else if (internalId === 'w_per_speed') {
+		if (checkedValue < 0 || checkedValue > 500) checkedValue = null // Max 500 W/(km/h)
 	}
 	return checkedValue
 }
