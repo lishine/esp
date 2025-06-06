@@ -290,12 +290,6 @@ export const chartFormatters = {
 			}
 		})
 
-		console.log(
-			'Sample gpsSpeedMap entries (km/h, before calculateEfficiencySeries):',
-			// Array.from(gpsSpeedMap.entries()).slice(0, 10)
-			// Log dp.gps_speed from dataPointsMap directly for a sample:
-			sortedUniqueTimestampMillis.slice(0, 10).map((ts) => dataPointsMap.get(ts)?.gps_speed)
-		)
 		// Call the new calculation function
 		const { whPerKmMap, wPerSpeedMap } = calculateEfficiencySeries(
 			{ escVMap, escIMap, escMahMap, gpsLatMap, gpsLonMap, gpsSpeedMap },
@@ -351,7 +345,6 @@ export const chartFormatters = {
 			})
 		})
 
-		console.log('------ Aggregated DataPoints Map:', dataPointsMap)
 		console.log('------ Final Series for ECharts:', finalSeries)
 		console.timeEnd('getChartFormattedData')
 		return { series: finalSeries }

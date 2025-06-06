@@ -1,5 +1,5 @@
-export const BATTERY_CURRENT_THRESHOLD_AMPS = 3
-export const MIN_SPEED_ON_FOIL = 8 // km/h
+export const BATTERY_CURRENT_THRESHOLD_AMPS = 10
+export const MIN_SPEED_ON_FOIL = 10 // km/h
 
 import { defineStore } from 'pinia'
 import type {
@@ -17,6 +17,7 @@ import { chartFormatters } from './chartFormatters'
 import { applyRangeChecks } from './rangeChecks'
 import { calculateSessionDistance } from '../utils/gpsDistance'
 import { calculateTimeOnFoil } from '../utils/timeOnFoil'
+import { calculateGroupAggregates } from '../utils/calcGroups'
 
 export const useSessionDataStore = defineStore('sessionData', {
 	state: (): SessionState => {
@@ -457,10 +458,16 @@ export const useSessionDataStore = defineStore('sessionData', {
 			const nullifiedEntries = applyDataNullification(finalFilteredAndValidatedEntries)
 			const speedNullifiedEntries = applySpeedNullification(nullifiedEntries)
 
+			if (speedNullifiedEntries && speedNullifiedEntries.length > 0) {
+				const groupAggregates = calculateGroupAggregates(speedNullifiedEntries)
+				console.log('Calculated Group Aggregates by Orchestrator:', groupAggregates)
+			}
+
 			console.log({ nullifiedEntries: nullifiedEntries })
+			console.log({ speedNullifiedEntries: speedNullifiedEntries })
 
 			const chartData = chartFormatters.getChartFormattedData.call({
-				logEntries: nullifiedEntries,
+				logEntries: speedNullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
 			})
 
 			this.totalGpsDistance = calculateSessionDistance(speedNullifiedEntries)
