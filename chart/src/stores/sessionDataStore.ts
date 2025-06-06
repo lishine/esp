@@ -477,7 +477,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			console.log({ speedNullifiedEntries: speedNullifiedEntries })
 
 			const chartData = chartFormatters.getChartFormattedData.call({
-				logEntries: speedNullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
+				logEntries: nullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
 			})
 
 			this.totalGpsDistance = calculateSessionDistance(speedNullifiedEntries)
