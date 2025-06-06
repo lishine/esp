@@ -1,9 +1,9 @@
 import type { LogEntry, ChartSeriesData, FormattedChartData, GpsValues, EscValues, DsValues } from './types'
 import { CANONICAL_SERIES_CONFIG } from './seriesConfig'
 import type { SeriesConfig } from './seriesConfig' // Import SeriesConfig for casting
-import { haversineDistance } from '../utils/gpsDistance'
+// import { haversineDistance } from '../utils/gpsDistance' // Removed as it's no longer used
 import { applyRangeChecks } from './rangeChecks'
-import { calculateEfficiencySeries } from '../utils/calcSeries' // Added import
+// import { calculateEfficiencySeries } from '../utils/calcSeries' // Removed import
 
 // Interface to hold all relevant data for a single timestamp
 interface AggregatedDataPoint {
@@ -27,9 +27,7 @@ interface AggregatedDataPoint {
 	mc_i?: number | null // Motor current after multiplication
 	// Raw Throttle value
 	th_val?: number | null
-	// Calculated values
-	wh_per_km?: number | null
-	w_per_speed?: number | null
+	// Calculated values (wh_per_km and w_per_speed removed)
 }
 
 export interface ChartFormatterContext {
@@ -107,10 +105,10 @@ export const chartFormatters = {
 		// This loop also handles filling gaps for up to 5 seconds
 		const tempSensorMapsForInterpolation = new Map<string, Map<number, number | null>>()
 		CANONICAL_SERIES_CONFIG.forEach((config) => {
-			if (config.sensorType !== 'calculated') {
-				// only for non-calculated direct sensor values initially
-				tempSensorMapsForInterpolation.set(config.internalId, new Map<number, number | null>())
-			}
+			// if (config.sensorType !== 'calculated') { // 'calculated' type removed from config
+			// only for non-calculated direct sensor values initially
+			tempSensorMapsForInterpolation.set(config.internalId, new Map<number, number | null>())
+			// }
 		})
 		// No longer need separate temp maps for raw_gps_lat/lon with the new approach
 
@@ -118,19 +116,19 @@ export const chartFormatters = {
 			const dp = getOrCreateDataPoint(dataPointsMap, tsMillis)
 			// Populate temp maps for interpolation logic
 			CANONICAL_SERIES_CONFIG.forEach((config) => {
-				if (config.sensorType !== 'calculated') {
-					const map = tempSensorMapsForInterpolation.get(config.internalId)!
-					let val: number | null | undefined = undefined
-					if (config.sensorType === 'esc')
-						val = dp[`esc_${config.dataKey}` as keyof AggregatedDataPoint] as number | null
-					else if (config.internalId === 'gps_speed')
-						val = dp.gps_speed // Now in km/h
-					else if (config.sensorType === 'ds')
-						val = dp[`ds_${config.dataKey}` as keyof AggregatedDataPoint] as number | null
-					else if (config.internalId === 'mc_i') val = dp.mc_i_raw
-					else if (config.internalId === 'th_val') val = dp.th_val
-					map.set(tsMillis, typeof val === 'number' ? val : null)
-				}
+				// if (config.sensorType !== 'calculated') { // 'calculated' type removed from config
+				const map = tempSensorMapsForInterpolation.get(config.internalId)!
+				let val: number | null | undefined = undefined
+				if (config.sensorType === 'esc')
+					val = dp[`esc_${config.dataKey}` as keyof AggregatedDataPoint] as number | null
+				else if (config.internalId === 'gps_speed')
+					val = dp.gps_speed // Now in km/h
+				else if (config.sensorType === 'ds')
+					val = dp[`ds_${config.dataKey}` as keyof AggregatedDataPoint] as number | null
+				else if (config.internalId === 'mc_i') val = dp.mc_i_raw
+				else if (config.internalId === 'th_val') val = dp.th_val
+				map.set(tsMillis, typeof val === 'number' ? val : null)
+				// }
 			})
 			// No longer need to populate separate temp maps for raw_gps_lat/lon
 		})
@@ -212,9 +210,9 @@ export const chartFormatters = {
 			// Interpolate other direct sensor values (excluding gps components now handled above and calculated series)
 			CANONICAL_SERIES_CONFIG.forEach((sConfig) => {
 				if (
-					sConfig.internalId !== 'mc_i' && // mc_i is handled separately
+					sConfig.internalId !== 'mc_i' // && // mc_i is handled separately
 					// gps_speed is now handled by this generic loop
-					sConfig.sensorType !== 'calculated'
+					// sConfig.sensorType !== 'calculated' // 'calculated' type removed from config
 				) {
 					const key = sConfig.internalId as keyof AggregatedDataPoint
 					let valToProcess: number | null | undefined = undefined
@@ -263,48 +261,48 @@ export const chartFormatters = {
 			})
 		})
 
-		// 4. Prepare data maps for calculateEfficiencySeries
-		const escVMap = new Map<number, number | null>()
-		const escIMap = new Map<number, number | null>()
-		const escMahMap = new Map<number, number | null>()
-		const gpsLatMap = new Map<number, number | null>()
-		const gpsLonMap = new Map<number, number | null>()
-		const gpsSpeedMap = new Map<number, number | null>() // This will be in km/h, interpolated
+		// 4. Prepare data maps for calculateEfficiencySeries - REMOVED
+		// const escVMap = new Map<number, number | null>()
+		// const escIMap = new Map<number, number | null>()
+		// const escMahMap = new Map<number, number | null>()
+		// const gpsLatMap = new Map<number, number | null>()
+		// const gpsLonMap = new Map<number, number | null>()
+		// const gpsSpeedMap = new Map<number, number | null>() // This will be in km/h, interpolated
 
-		sortedUniqueTimestampMillis.forEach((tsMillis) => {
-			const dp = dataPointsMap.get(tsMillis)
-			if (dp) {
-				escVMap.set(tsMillis, dp.esc_v ?? null)
-				escIMap.set(tsMillis, dp.esc_i ?? null) // Assuming esc_i is battery current after any processing
-				escMahMap.set(tsMillis, dp.esc_mah ?? null)
-				gpsLatMap.set(tsMillis, dp.gps_lat ?? null)
-				gpsLonMap.set(tsMillis, dp.gps_lon ?? null)
-				gpsSpeedMap.set(tsMillis, dp.gps_speed ?? null)
-			} else {
-				escVMap.set(tsMillis, null)
-				escIMap.set(tsMillis, null)
-				escMahMap.set(tsMillis, null)
-				gpsLatMap.set(tsMillis, null)
-				gpsLonMap.set(tsMillis, null)
-				gpsSpeedMap.set(tsMillis, null)
-			}
-		})
+		// sortedUniqueTimestampMillis.forEach((tsMillis) => {
+		// 	const dp = dataPointsMap.get(tsMillis)
+		// 	if (dp) {
+		// 		escVMap.set(tsMillis, dp.esc_v ?? null)
+		// 		escIMap.set(tsMillis, dp.esc_i ?? null) // Assuming esc_i is battery current after any processing
+		// 		escMahMap.set(tsMillis, dp.esc_mah ?? null)
+		// 		gpsLatMap.set(tsMillis, dp.gps_lat ?? null)
+		// 		gpsLonMap.set(tsMillis, dp.gps_lon ?? null)
+		// 		gpsSpeedMap.set(tsMillis, dp.gps_speed ?? null)
+		// 	} else {
+		// 		escVMap.set(tsMillis, null)
+		// 		escIMap.set(tsMillis, null)
+		// 		escMahMap.set(tsMillis, null)
+		// 		gpsLatMap.set(tsMillis, null)
+		// 		gpsLonMap.set(tsMillis, null)
+		// 		gpsSpeedMap.set(tsMillis, null)
+		// 	}
+		// })
 
-		// Call the new calculation function
-		const { whPerKmMap, wPerSpeedMap } = calculateEfficiencySeries(
-			{ escVMap, escIMap, escMahMap, gpsLatMap, gpsLonMap, gpsSpeedMap },
-			sortedUniqueTimestampMillis,
-			haversineDistance
-		)
+		// Call the new calculation function - REMOVED
+		// const { whPerKmMap, wPerSpeedMap } = calculateEfficiencySeries(
+		// 	{ escVMap, escIMap, escMahMap, gpsLatMap, gpsLonMap, gpsSpeedMap },
+		// 	sortedUniqueTimestampMillis,
+		// 	haversineDistance
+		// )
 
 		// 5. Format data for ECharts
 		const finalSeries: ChartSeriesData[] = []
 		CANONICAL_SERIES_CONFIG.forEach((config) => {
 			// Filter out series if their sensorType was not found at all in logEntries (initial filter)
 			// For 'calculated' series, they depend on other sensors, so we don't filter them here based on sensorName.
-			// They will just have null data if dependencies are missing.
+			// They will just have null data if dependencies are missing. - 'calculated' type removed
 			if (
-				config.sensorType !== 'calculated' &&
+				// config.sensorType !== 'calculated' && // 'calculated' type removed from config
 				!this.logEntries.some((logEntry) => logEntry.n === config.sensorType)
 			) {
 				return
@@ -317,14 +315,16 @@ export const chartFormatters = {
 
 				if (dp) {
 					// dp might still be useful for other non-calculated series
-					if (config.internalId === 'wh_per_km') {
-						value = applyRangeChecks('wh_per_km', whPerKmMap.get(tsMillis) ?? null)
-					} else if (config.internalId === 'w_per_speed') {
-						value = applyRangeChecks('w_per_speed', wPerSpeedMap.get(tsMillis) ?? null)
-					} else if (config.internalId === 'gps_speed') {
+					// Removed wh_per_km and w_per_speed
+					if (config.internalId === 'gps_speed') {
 						value = dp.gps_speed // Display km/h, already calculated and interpolated
-					} else if (config.internalId === 'gps_hdg') value = dp.gps_hdg
-					else if (config.internalId === 'mc_i') value = dp.mc_i
+					} else if (config.internalId === 'gps_hdg') {
+						// Apply range check for heading here, after interpolation
+						value =
+							dp.gps_hdg !== null && dp.gps_hdg !== undefined
+								? applyRangeChecks('gps_hdg', dp.gps_hdg)
+								: null
+					} else if (config.internalId === 'mc_i') value = dp.mc_i
 					else if (config.sensorType === 'esc')
 						value = dp[`esc_${config.dataKey}` as keyof AggregatedDataPoint] as number | null
 					else if (config.sensorType === 'ds')

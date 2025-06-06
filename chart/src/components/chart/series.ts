@@ -22,8 +22,8 @@ export const SERIES_COLORS: Record<SeriesColorKey, string> = {
 	RPM: 'green',
 	Throttle: '#03fcca',
 	mAh: 'magenta',
-	'Wh/km': 'black',
-	'W/(km/h)': 'red',
+	// 'Wh/km': 'black', // Removed
+	// 'W/(km/h)': 'red', // Removed
 	// Add other displayNames from CANONICAL_SERIES_CONFIG if they have specific colors
 	// and are not covered by the initial set. For now, only these are explicitly colored.
 	// 'TAmbient', 'TAlum', 'TMosfet', 'Heading' could be added if needed.

@@ -19,25 +19,6 @@ export const CANONICAL_SERIES_CONFIG = [
 	{ displayName: 'V', internalId: 'esc_v', sensorType: 'esc', dataKey: 'v', unit: 'V', decimals: 2 },
 	{ displayName: 'mAh', internalId: 'esc_mah', sensorType: 'esc', dataKey: 'mah', unit: 'mAh', decimals: 0 },
 	{
-		displayName: 'Wh/km',
-		internalId: 'wh_per_km',
-		sensorType: 'calculated',
-		dataKey: 'wh_per_km',
-		unit: 'Wh/km',
-		decimals: 2,
-		yAxisIndex: 1,
-	},
-	{
-		displayName: 'W/(km/h)',
-		internalId: 'w_per_speed',
-		sensorType: 'calculated',
-		dataKey: 'w_per_speed',
-		unit: 'W/(km/h)',
-		decimals: 2,
-		yAxisIndex: 1, // Temporarily put on same axis as Wh/km for testing
-		color: '#FF8C00', // DarkOrange for W/(km/h)
-	},
-	{
 		displayName: 'Heading',
 		internalId: 'gps_hdg',
 		sensorType: 'gps',
