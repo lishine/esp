@@ -101,163 +101,146 @@ export const chartFormatters = {
 			}
 		})
 
-		// 3. Interpolate and perform initial calculations (like mc_i, gps_speed_kmh)
-		// This loop also handles filling gaps for up to 5 seconds
-		const tempSensorMapsForInterpolation = new Map<string, Map<number, number | null>>()
-		CANONICAL_SERIES_CONFIG.forEach((config) => {
-			// if (config.sensorType !== 'calculated') { // 'calculated' type removed from config
-			// only for non-calculated direct sensor values initially
-			tempSensorMapsForInterpolation.set(config.internalId, new Map<number, number | null>())
-			// }
-		})
-		// No longer need separate temp maps for raw_gps_lat/lon with the new approach
-
-		sortedUniqueTimestampMillis.forEach((tsMillis) => {
-			const dp = getOrCreateDataPoint(dataPointsMap, tsMillis)
-			// Populate temp maps for interpolation logic
-			CANONICAL_SERIES_CONFIG.forEach((config) => {
-				// if (config.sensorType !== 'calculated') { // 'calculated' type removed from config
-				const map = tempSensorMapsForInterpolation.get(config.internalId)!
-				let val: number | null | undefined = undefined
-				if (config.sensorType === 'esc')
-					val = dp[`esc_${config.dataKey}` as keyof AggregatedDataPoint] as number | null
-				else if (config.internalId === 'gps_speed')
-					val = dp.gps_speed // Now in km/h
-				else if (config.sensorType === 'ds')
-					val = dp[`ds_${config.dataKey}` as keyof AggregatedDataPoint] as number | null
-				else if (config.internalId === 'mc_i') val = dp.mc_i_raw
-				else if (config.internalId === 'th_val') val = dp.th_val
-				map.set(tsMillis, typeof val === 'number' ? val : null)
-				// }
-			})
-			// No longer need to populate separate temp maps for raw_gps_lat/lon
-		})
-
-		// Apply interpolation and special calculations
-		const lastValidValues = new Map<string, number | null>() // Stores last known good value for each series for interpolation
-		const lastValidGpsDataTimestamp = new Map<string, number>() // Tracks last timestamp with any GPS data for gps_speed interpolation
-
+		// 3a. Perform initial direct calculations (e.g., mc_i from mc_i_raw)
+		// This ensures that values are prepared before attempting linear interpolation.
 		sortedUniqueTimestampMillis.forEach((tsMillis) => {
 			const dp = getOrCreateDataPoint(dataPointsMap, tsMillis)
 
-			// mc_i: current * 1.732
-			const mcRaw = dp.mc_i_raw
-			if (mcRaw !== null && mcRaw !== undefined) {
-				dp.mc_i = mcRaw * 1.732
-				lastValidValues.set('mc_i', dp.mc_i)
-			} else if (
-				lastValidValues.has('mc_i') &&
-				hasValidDataWithin5Seconds(
-					tsMillis,
-					tempSensorMapsForInterpolation.get('mc_i')!,
-					sortedUniqueTimestampMillis,
-					lastValidValues.get('mc_i')!
-				)
-			) {
-				dp.mc_i = lastValidValues.get('mc_i')!
+			// Calculate mc_i from mc_i_raw if available
+			if (dp.mc_i_raw !== null && dp.mc_i_raw !== undefined) {
+				dp.mc_i = dp.mc_i_raw * 1.732
 			} else {
-				lastValidValues.delete('mc_i') // Clear if no valid data in window
-				dp.mc_i = null
+				// If mc_i_raw is not available, ensure dp.mc_i is null to be a candidate for interpolation.
+				// This handles cases where mc_i might have been set by some other means or is undefined.
+				if (dp.mc_i === undefined || (dp.mc_i !== null && dp.mc_i_raw === undefined)) {
+					dp.mc_i = null
+				}
 			}
-
-			// gps_speed (now in km/h) will be handled by the generic interpolation loop later.
-			// We still need to manage lastValidGpsDataTimestamp for other GPS components.
-			if (
-				dp.gps_speed !== null &&
-				dp.gps_speed !== undefined &&
-				dp.gps_lat !== undefined &&
-				dp.gps_lon !== undefined
-			) {
-				lastValidGpsDataTimestamp.set('gps_speed', tsMillis) // Track timestamp of good GPS fix using 'gps_speed' key
-			}
-
-			const lastSeenGoodFixTs = lastValidGpsDataTimestamp.get('gps_speed') // Timestamp of last comprehensive GPS fix, now keyed by 'gps_speed'
-
-			// Interpolate gps_lat (aligned with gps_speed logic)
-			if (dp.gps_lat !== null && dp.gps_lat !== undefined) {
-				lastValidValues.set('gps_lat', dp.gps_lat)
-			} else if (lastValidValues.has('gps_lat') && lastSeenGoodFixTs && tsMillis - lastSeenGoodFixTs <= 5000) {
-				dp.gps_lat = lastValidValues.get('gps_lat')!
-			} else {
-				lastValidValues.delete('gps_lat')
-				dp.gps_lat = null
-			}
-
-			// Interpolate gps_lon (aligned with gps_speed_kmh logic)
-			if (dp.gps_lon !== null && dp.gps_lon !== undefined) {
-				lastValidValues.set('gps_lon', dp.gps_lon)
-			} else if (lastValidValues.has('gps_lon') && lastSeenGoodFixTs && tsMillis - lastSeenGoodFixTs <= 5000) {
-				dp.gps_lon = lastValidValues.get('gps_lon')!
-			} else {
-				lastValidValues.delete('gps_lon')
-				dp.gps_lon = null
-			}
-
-			// Interpolate gps_hdg (aligned with gps_speed_kmh logic)
-			if (dp.gps_hdg !== null && dp.gps_hdg !== undefined) {
-				lastValidValues.set('gps_hdg', dp.gps_hdg)
-			} else if (lastValidValues.has('gps_hdg') && lastSeenGoodFixTs && tsMillis - lastSeenGoodFixTs <= 5000) {
-				dp.gps_hdg = lastValidValues.get('gps_hdg')!
-			} else {
-				lastValidValues.delete('gps_hdg')
-				dp.gps_hdg = null
-			}
-			// Apply range check for heading after interpolation
-			if (dp.gps_hdg !== null) {
-				dp.gps_hdg = applyRangeChecks('gps_hdg', dp.gps_hdg)
-			}
-
-			// Interpolate other direct sensor values (excluding gps components now handled above and calculated series)
+			// gps_speed is already converted to km/h during initial aggregation (lines 80-84).
+			// Other direct, non-interpolating calculations would go here.
+			// Ensure all other potentially interpolated fields are null if not set by raw data
 			CANONICAL_SERIES_CONFIG.forEach((sConfig) => {
-				if (
-					sConfig.internalId !== 'mc_i' // && // mc_i is handled separately
-					// gps_speed is now handled by this generic loop
-					// sConfig.sensorType !== 'calculated' // 'calculated' type removed from config
-				) {
-					const key = sConfig.internalId as keyof AggregatedDataPoint
-					let valToProcess: number | null | undefined = undefined
+				const key = sConfig.internalId as keyof AggregatedDataPoint
+				if (dp[key] === undefined) {
+					dp[key] = null
+				}
+			})
+		})
 
-					if (sConfig.sensorType === 'esc')
-						valToProcess = dp[`esc_${sConfig.dataKey}` as keyof AggregatedDataPoint] as number | null
-					else if (sConfig.sensorType === 'ds')
-						valToProcess = dp[`ds_${sConfig.dataKey}` as keyof AggregatedDataPoint] as number | null
-					else if (sConfig.sensorType === 'th') valToProcess = dp.th_val
-					else if (sConfig.sensorType === 'gps' && sConfig.internalId === 'gps_speed') {
-						valToProcess = dp.gps_speed // Ensure gps_speed is picked up
-					}
+		// 3b. Apply Linear Interpolation
+		const MAX_INTERPOLATION_WINDOW_MS = 5000
 
-					if (sConfig.internalId === 'gps_speed') {
-						// console.log(`ts: ${tsMillis}, before gps_speed interp, dp.gps_speed: ${dp.gps_speed}, valToProcess: ${valToProcess}`);
-					}
+		CANONICAL_SERIES_CONFIG.forEach((sConfig) => {
+			const key = sConfig.internalId as keyof AggregatedDataPoint
 
-					if (valToProcess !== null && valToProcess !== undefined) {
-						dp[key] = valToProcess
-						lastValidValues.set(sConfig.internalId, valToProcess)
-					} else {
-						const canInterpolate =
-							lastValidValues.has(sConfig.internalId) &&
-							hasValidDataWithin5Seconds(
-								tsMillis,
-								tempSensorMapsForInterpolation.get(sConfig.internalId)!,
-								sortedUniqueTimestampMillis,
-								lastValidValues.get(sConfig.internalId)!
-							)
-						if (sConfig.internalId === 'esc_mah' || sConfig.internalId === 'esc_v') {
-							// Log for these specific series when valToProcess is initially null/undefined
-						}
-						if (canInterpolate) {
-							dp[key] = lastValidValues.get(sConfig.internalId)!
-						} else {
-							lastValidValues.delete(sConfig.internalId)
-							dp[key] = null
-						}
-					}
-					if (sConfig.internalId === 'gps_speed') {
-						// console.log(`ts: ${tsMillis}, after gps_speed interp, dp.gps_speed: ${dp.gps_speed}, lastValid: ${lastValidValues.get('gps_speed')}`);
+			// Collect all existing actual (non-null) data points for the current series
+			// from the dataPointsMap after initial aggregation and pre-calculations.
+			const existingData: { ts: number; val: number }[] = []
+			sortedUniqueTimestampMillis.forEach((ts) => {
+				const dp = dataPointsMap.get(ts)
+				if (dp) {
+					const val = dp[key] as number | null | undefined // Value could be from raw data or mc_i calculation
+					if (val !== null && val !== undefined) {
+						existingData.push({ ts, val })
 					}
 				}
-				// Removed else if for 'gps_speed' as it's now part of the main loop.
-				// The dp.gps_speed (now in km/h) is interpolated directly.
+			})
+
+			// If not enough data points for interpolation for this series,
+			// ensure all points for this series in dataPointsMap are null unless they have raw data.
+			if (existingData.length < 2) {
+				sortedUniqueTimestampMillis.forEach((tsMillis) => {
+					const dp = getOrCreateDataPoint(dataPointsMap, tsMillis)
+					// If a point has no raw data (is null or undefined at this stage)
+					// and there aren't enough points to interpolate, it remains null.
+					// If it has raw data (from existingData), it keeps it.
+					let hasRawForThisTs = false
+					if (existingData.length === 1 && existingData[0].ts === tsMillis) {
+						hasRawForThisTs = true
+					}
+					if (!hasRawForThisTs) {
+						dp[key] = null
+					} else if (dp[key] === undefined) {
+						// Should not happen if existingData[0].ts === tsMillis
+						dp[key] = null
+					}
+				})
+				return // Move to the next series config
+			}
+
+			let prevPointSearchIdx = 0 // Tracks the index in existingData for the previous known point
+
+			sortedUniqueTimestampMillis.forEach((tsMillis) => {
+				const dp = getOrCreateDataPoint(dataPointsMap, tsMillis)
+				const currentValue = dp[key]
+
+				// Advance prevPointSearchIdx to the latest point in existingData whose timestamp is <= tsMillis
+				// but only if it's not the last point in existingData.
+				while (
+					prevPointSearchIdx < existingData.length - 1 &&
+					existingData[prevPointSearchIdx + 1].ts <= tsMillis
+				) {
+					prevPointSearchIdx++
+				}
+
+				if (currentValue !== null && currentValue !== undefined) {
+					// Value already exists (from raw data or pre-calculation like mc_i),
+					// no interpolation needed for this specific point.
+					return // to next tsMillis for this series
+				}
+
+				// Current value is null or undefined, attempt to interpolate.
+				let t_prev: number | null = null
+				let v_prev: number | null = null
+				let t_next: number | null = null
+				let v_next: number | null = null
+
+				// Find Previous Data Point (t_prev, v_prev)
+				// Search backwards from current tsMillis in existingData
+				// The point existingData[prevPointSearchIdx] is a candidate if its ts < tsMillis
+				if (existingData[prevPointSearchIdx].ts < tsMillis) {
+					t_prev = existingData[prevPointSearchIdx].ts
+					v_prev = existingData[prevPointSearchIdx].val
+				} else if (prevPointSearchIdx > 0 && existingData[prevPointSearchIdx - 1].ts < tsMillis) {
+					// This case might occur if tsMillis is between existingData[prevPointSearchIdx-1] and existingData[prevPointSearchIdx]
+					// and existingData[prevPointSearchIdx].ts === tsMillis (but current value is null, which is odd)
+					// or if prevPointSearchIdx was advanced too far.
+					// Let's try the one before.
+					t_prev = existingData[prevPointSearchIdx - 1].ts
+					v_prev = existingData[prevPointSearchIdx - 1].val
+				}
+
+				// Find Next Data Point (t_next, v_next)
+				// Search forwards from current tsMillis in existingData
+				// The point existingData[prevPointSearchIdx + 1] is a candidate if its ts > tsMillis
+				if (
+					prevPointSearchIdx + 1 < existingData.length &&
+					existingData[prevPointSearchIdx + 1].ts > tsMillis
+				) {
+					t_next = existingData[prevPointSearchIdx + 1].ts
+					v_next = existingData[prevPointSearchIdx + 1].val
+				} else if (existingData[prevPointSearchIdx].ts > tsMillis) {
+					// This can happen if tsMillis is before the first data point in existingData,
+					// or if prevPointSearchIdx hasn't advanced yet.
+					t_next = existingData[prevPointSearchIdx].ts
+					v_next = existingData[prevPointSearchIdx].val
+				}
+
+				if (t_prev !== null && v_prev !== null && t_next !== null && v_next !== null) {
+					if (
+						t_next > t_prev && // Ensure t_next is strictly greater than t_prev
+						tsMillis > t_prev &&
+						tsMillis < t_next && // Ensure tsMillis is between t_prev and t_next
+						t_next - t_prev <= MAX_INTERPOLATION_WINDOW_MS
+					) {
+						const interpolatedValue = v_prev + (v_next - v_prev) * ((tsMillis - t_prev) / (t_next - t_prev))
+						dp[key] = interpolatedValue
+					} else {
+						dp[key] = null // Gap between t_prev and t_next too large, or tsMillis not between them
+					}
+				} else {
+					dp[key] = null // Not enough boundary points (t_prev or t_next missing relative to tsMillis)
+				}
 			})
 		})
 
@@ -351,32 +334,4 @@ export const chartFormatters = {
 	},
 }
 
-// Modified helper function to check if there's valid (non-null) data within the previous 5 seconds
-// Now it also considers the last valid value to avoid interpolating from a very old value if current direct value is null
-const hasValidDataWithin5Seconds = (
-	currentTimestamp: number,
-	sensorDataMap: Map<number, number | null>, // This map contains raw values for the specific sensor
-	sortedTimestamps: number[],
-	lastKnownGoodValue: number | null
-): boolean => {
-	if (lastKnownGoodValue === null) return false // If there was never a good value, don't interpolate
-
-	const fiveSecondsMs = 5000
-	const cutoffTime = currentTimestamp - fiveSecondsMs
-
-	// Check if the last known good value itself was recent enough
-	// This requires knowing the timestamp of lastKnownGoodValue, which is complex with current structure.
-	// Simpler: check if ANY data point for this sensor was recent.
-
-	for (let i = sortedTimestamps.length - 1; i >= 0; i--) {
-		const ts = sortedTimestamps[i]
-		if (ts >= currentTimestamp) continue
-		if (ts < cutoffTime) break
-
-		const value = sensorDataMap.get(ts) // Check raw data presence
-		if (value !== null && value !== undefined) {
-			return true // Found a recent raw data point for this sensor
-		}
-	}
-	return false // No recent raw data point found
-}
+// Removed hasValidDataWithin5Seconds helper function as it's no longer used with linear interpolation.
