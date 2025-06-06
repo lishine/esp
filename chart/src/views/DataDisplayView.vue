@@ -27,7 +27,7 @@ const sessionMetadata = computed((): SessionMetadata => {
 })
 const logEntries = computed(() => sessionDataStore.logEntries)
 const chartFormattedData = computed(() => sessionDataStore.getChartFormattedData)
-const visibleSeriesSet = computed(() => sessionDataStore.visibleSeries)
+const hiddenSeriesSet = computed(() => sessionDataStore.hiddenSeries)
 const totalGpsDistance = computed(() => sessionDataStore.getTotalGpsDistance) // Get total GPS distance
 const totalTimeOnFoil = computed(() => sessionDataStore.getTotalTimeOnFoil) // Get total time on foil
 
@@ -48,7 +48,7 @@ const dataZoomEnd = computed(() => sessionDataStore.dataZoomEnd)
 
 const { chartsHeight, chartOptions } = useChartOptions(
 	chartFormattedData,
-	visibleSeriesSet,
+	hiddenSeriesSet,
 	logEntries,
 	isMobile,
 	dataZoomStart,

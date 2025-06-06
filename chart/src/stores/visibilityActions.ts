@@ -3,9 +3,10 @@ import type { ChartSeriesData } from './types'
 import { CANONICAL_SERIES_CONFIG } from './seriesConfig'
 
 export interface VisibilityActionContext {
-	visibleSeries: Set<string>
+	hiddenSeries: Set<string> // Renamed from visibleSeries
 	logEntries: SessionState['logEntries']
 	getChartFormattedData: { series: ChartSeriesData[] }
+	// Action methods will be bound with this context
 	loadVisibilityPreferences: () => void
 	saveVisibilityPreferences: () => void
 	initializeDefaultVisibility: () => void
@@ -14,6 +15,7 @@ export interface VisibilityActionContext {
 	setSeriesVisibility: (seriesName: string, visible: boolean) => void
 }
 
+// Define the shape of the methods for strong typing
 type MethodSignatures = {
 	loadVisibilityPreferences: () => void
 	saveVisibilityPreferences: () => void
@@ -23,6 +25,7 @@ type MethodSignatures = {
 	setSeriesVisibility: (seriesName: string, visible: boolean) => void
 }
 
+// Ensures that 'this' context within actions matches VisibilityActionContext
 type VisibilityActions = {
 	[K in keyof MethodSignatures]: (
 		this: VisibilityActionContext,
@@ -30,110 +33,133 @@ type VisibilityActions = {
 	) => ReturnType<MethodSignatures[K]>
 }
 
+const OLD_LS_KEY_VISIBLE = 'espChartVisibleSeries'
+const NEW_LS_KEY_HIDDEN = 'espChartHiddenSeries'
+
 export const visibilityActions: VisibilityActions = {
 	loadVisibilityPreferences(this: VisibilityActionContext) {
-		if (typeof localStorage !== 'undefined') {
-			const storedVisibility = localStorage.getItem('espChartVisibleSeries')
-			if (storedVisibility) {
-				try {
-					const visibleArray = JSON.parse(storedVisibility)
-					this.visibleSeries = new Set(visibleArray)
-					console.log(
-						'[visibilityActions] Loaded from localStorage:',
-						visibleArray,
-						'Current visibleSeries:',
-						Array.from(this.visibleSeries)
-					)
-				} catch (e) {
-					console.error('Failed to parse visible series from localStorage:', e)
-					this.visibleSeries = new Set<string>()
-					console.log(
-						'[visibilityActions] Failed to parse localStorage, set to empty. Current visibleSeries:',
-						Array.from(this.visibleSeries)
+		if (typeof localStorage === 'undefined') {
+			this.hiddenSeries = new Set<string>()
+			console.log('[visibilityActions] localStorage not available, hiddenSeries set to empty (all visible).')
+			return
+		}
+
+		const storedOldVisible = localStorage.getItem(OLD_LS_KEY_VISIBLE)
+
+		if (storedOldVisible) {
+			console.log('[visibilityActions] Found old visibility key:', OLD_LS_KEY_VISIBLE)
+			try {
+				const previouslyVisibleArray = JSON.parse(storedOldVisible) as string[]
+				const previouslyVisibleSet = new Set(previouslyVisibleArray)
+
+				let allAvailableSeriesNames: string[]
+				if (this.getChartFormattedData && this.getChartFormattedData.series.length > 0) {
+					allAvailableSeriesNames = this.getChartFormattedData.series.map((s) => s.name)
+				} else {
+					allAvailableSeriesNames = CANONICAL_SERIES_CONFIG.map((c) => c.displayName)
+					console.warn(
+						'[visibilityActions] Migrating: Chart data not available, using CANONICAL_SERIES_CONFIG for all series names.'
 					)
 				}
-			} else {
-				this.visibleSeries = new Set<string>()
+
+				this.hiddenSeries = new Set<string>()
+				allAvailableSeriesNames.forEach((name) => {
+					if (!previouslyVisibleSet.has(name)) {
+						this.hiddenSeries.add(name)
+					}
+				})
+
 				console.log(
-					'[visibilityActions] No "espChartVisibleSeries" in localStorage, set to empty. Current visibleSeries:',
-					Array.from(this.visibleSeries)
+					'[visibilityActions] Migrated from old visible to new hidden. Previously visible:',
+					Array.from(previouslyVisibleSet),
+					'All available:',
+					allAvailableSeriesNames,
+					'Newly hidden:',
+					Array.from(this.hiddenSeries)
 				)
+
+				this.saveVisibilityPreferences() // Save under new key
+				localStorage.removeItem(OLD_LS_KEY_VISIBLE)
+				console.log('[visibilityActions] Removed old visibility key:', OLD_LS_KEY_VISIBLE)
+			} catch (e) {
+				console.error('Failed to parse or migrate old visible series from localStorage:', e)
+				this.hiddenSeries = new Set<string>() // Default to all visible on error
 			}
 		} else {
-			this.visibleSeries = new Set<string>()
-			console.log(
-				'[visibilityActions] localStorage not available, set to empty. Current visibleSeries:',
-				Array.from(this.visibleSeries)
-			)
+			const storedNewHidden = localStorage.getItem(NEW_LS_KEY_HIDDEN)
+			if (storedNewHidden) {
+				try {
+					const hiddenArray = JSON.parse(storedNewHidden) as string[]
+					this.hiddenSeries = new Set(hiddenArray)
+					console.log(
+						'[visibilityActions] Loaded hiddenSeries from new key:',
+						NEW_LS_KEY_HIDDEN,
+						Array.from(this.hiddenSeries)
+					)
+				} catch (e) {
+					console.error('Failed to parse hidden series from new key:', e)
+					this.hiddenSeries = new Set<string>()
+				}
+			} else {
+				this.hiddenSeries = new Set<string>()
+				console.log(
+					'[visibilityActions] No old or new visibility preferences found, hiddenSeries set to empty (all visible).'
+				)
+			}
 		}
 	},
 
 	saveVisibilityPreferences(this: VisibilityActionContext) {
 		if (typeof localStorage !== 'undefined') {
-			localStorage.setItem('espChartVisibleSeries', JSON.stringify(Array.from(this.visibleSeries)))
+			localStorage.setItem(NEW_LS_KEY_HIDDEN, JSON.stringify(Array.from(this.hiddenSeries)))
+			console.log('[visibilityActions] Saved hiddenSeries to localStorage:', Array.from(this.hiddenSeries))
 		}
 	},
 
 	initializeDefaultVisibility(this: VisibilityActionContext) {
+		// This function's original purpose was to set a default *visible* set.
+		// With the new logic, an empty hiddenSeries means all are visible by default.
+		// loadVisibilityPreferences handles the initial setup (including migration or empty set).
+		// This function can now ensure that if it's called, it explicitly sets to "all visible".
 		console.log(
-			'[visibilityActions] Attempting initializeDefaultVisibility. Current visibleSeries (start):',
-			Array.from(this.visibleSeries),
-			'logEntries count:',
-			this.logEntries.length
+			'[visibilityActions] initializeDefaultVisibility called. Current hiddenSeries (start):',
+			Array.from(this.hiddenSeries)
 		)
-		if (this.logEntries.length > 0 && this.visibleSeries.size === 0) {
-			console.log('[visibilityActions] Condition met: Initializing default visibility (visibleSeries.size is 0).')
-			const availableSeriesNamesInChartData = new Set(
-				this.getChartFormattedData.series.map((s: ChartSeriesData) => s.name)
-			)
-			console.log(
-				'[visibilityActions] Available series names in chart data for default init:',
-				Array.from(availableSeriesNamesInChartData)
-			)
-
-			CANONICAL_SERIES_CONFIG.forEach((config) => {
-				if (availableSeriesNamesInChartData.has(config.displayName)) {
-					this.visibleSeries.add(config.displayName)
-					console.log(`[visibilityActions] Default init: Added "${config.displayName}" to visibleSeries.`)
-				} else {
-					console.log(
-						`[visibilityActions] Default init: Did NOT add "${config.displayName}" as it's not in availableSeriesNamesInChartData.`
-					)
-				}
-			})
-			this.saveVisibilityPreferences()
-			console.log(
-				'[visibilityActions] Default visibility initialized. Current visibleSeries (end):',
-				Array.from(this.visibleSeries)
-			)
-		} else {
-			console.log(
-				'[visibilityActions] Condition NOT met for default init. Either no log entries or visibleSeries.size is not 0. Current visibleSeries.size:',
-				this.visibleSeries.size
-			)
-		}
+		this.hiddenSeries.clear() // Ensure all series are visible
+		this.saveVisibilityPreferences()
+		console.log(
+			'[visibilityActions] Default visibility set (all visible). Current hiddenSeries (end):',
+			Array.from(this.hiddenSeries)
+		)
 	},
 
 	toggleSeries(this: VisibilityActionContext, seriesName: string) {
-		const isVisible = this.visibleSeries.has(seriesName)
-		this.setSeriesVisibility(seriesName, !isVisible)
+		const isCurrentlyHidden = this.hiddenSeries.has(seriesName)
+		// If it's hidden, we want to make it visible (isCurrentlyHidden = true -> visible = true)
+		// If it's visible (not hidden), we want to make it hidden (isCurrentlyHidden = false -> visible = false)
+		this.setSeriesVisibility(seriesName, isCurrentlyHidden)
 	},
 
 	toggleAllSeries(this: VisibilityActionContext, visible: boolean) {
-		const allSeriesNames = this.getChartFormattedData.series.map((s: ChartSeriesData) => s.name)
 		if (visible) {
-			allSeriesNames.forEach((name: string) => this.visibleSeries.add(name))
+			// Make all series visible means clearing the hidden set
+			this.hiddenSeries.clear()
 		} else {
-			this.visibleSeries.clear()
+			// Make all series hidden means adding all available series to the hidden set
+			const allSeriesNames =
+				this.getChartFormattedData && this.getChartFormattedData.series.length > 0
+					? this.getChartFormattedData.series.map((s: ChartSeriesData) => s.name)
+					: CANONICAL_SERIES_CONFIG.map((c) => c.displayName)
+			allSeriesNames.forEach((name: string) => this.hiddenSeries.add(name))
 		}
 		this.saveVisibilityPreferences()
 	},
 
 	setSeriesVisibility(this: VisibilityActionContext, seriesName: string, visible: boolean) {
 		if (visible) {
-			this.visibleSeries.add(seriesName)
+			this.hiddenSeries.delete(seriesName) // To make it visible, remove from hidden
 		} else {
-			this.visibleSeries.delete(seriesName)
+			this.hiddenSeries.add(seriesName) // To make it hidden, add to hidden
 		}
 		this.saveVisibilityPreferences()
 	},

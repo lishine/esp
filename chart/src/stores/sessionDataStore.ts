@@ -45,7 +45,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			error: null,
 			userApiIp: storedUserApiIp,
 			useUserApiIp: storedUseUserApiIp,
-			visibleSeries: new Set<string>(),
+			hiddenSeries: new Set<string>(),
 			gitHubFiles: [],
 			isGitHubListLoading: false,
 			gitHubListError: null,
@@ -187,7 +187,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			console.log('Total entries: ' + entriesWithPreciseTimestamp.length.toString())
 
 			this.logEntries = entriesWithPreciseTimestamp
-			if (this.visibleSeries.size === 0 && this.logEntries.length > 0) {
+			if (this.hiddenSeries.size === 0 && this.logEntries.length > 0) {
 				this.initializeDefaultVisibility()
 			}
 
@@ -203,7 +203,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 	getters: {
 		getMetadata: (state): SessionMetadata | null => state.sessionMetadata,
 		getLogEntries: (state): LogEntry[] => state.logEntries,
-		getVisibleSeries: (state): string[] => Array.from(state.visibleSeries),
+		getHiddenSeries: (state): string[] => Array.from(state.hiddenSeries),
 		getTotalGpsDistance: (state): number => state.totalGpsDistance,
 		getTotalTimeOnFoil: (state): number => state.totalTimeOnFoil,
 		getFilteredLogEntries: (state): LogEntry[] => {

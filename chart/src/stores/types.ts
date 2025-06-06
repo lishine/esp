@@ -72,7 +72,7 @@ export interface SessionState {
 	error: string | null
 	userApiIp: string
 	useUserApiIp: boolean
-	visibleSeries: Set<string>
+	hiddenSeries: Set<string>
 	gitHubFiles: LogFileListItem[]
 	isGitHubListLoading: boolean
 	gitHubListError: string | null

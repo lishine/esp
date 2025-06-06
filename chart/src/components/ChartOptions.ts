@@ -15,7 +15,7 @@ import type { ChartSeriesData } from '../stores' // Keep this if ChartSeriesData
 
 export function useChartOptions(
 	chartFormattedData: ChartFormattedDataRef,
-	visibleSeriesSet: VisibleSeriesSetRef,
+	hiddenSeriesSet: VisibleSeriesSetRef, // Renamed from visibleSeriesSet
 	logEntries: LogEntriesRef,
 	isMobile: IsMobileRef,
 	dataZoomStart: Ref<number>, // Added
@@ -39,8 +39,8 @@ export function useChartOptions(
 		const yAxesConfig: YAxisConfig[] = defineYAxesConfig(finalMaxCurrent, finalMaxTemp, minTemp)
 
 		// currentVisibleSeries is used to determine which Y-axes should be active
-		const currentVisibleSeries = chartFormattedData.value.series.filter((s: ChartSeriesData) =>
-			visibleSeriesSet.value.has(s.name)
+		const currentVisibleSeries = chartFormattedData.value.series.filter(
+			(s: ChartSeriesData) => !hiddenSeriesSet.value.has(s.name) // Inverted logic
 		)
 
 		const visibleYAxisIds = calculateVisibleYAxisIds(currentVisibleSeries, yAxesConfig)
@@ -64,7 +64,7 @@ export function useChartOptions(
 				data: chartFormattedData.value.series.map((s: ChartSeriesData) => s.name), // All series names
 				selected: chartFormattedData.value.series.reduce(
 					(acc, series: ChartSeriesData) => {
-						acc[series.name] = visibleSeriesSet.value.has(series.name)
+						acc[series.name] = !hiddenSeriesSet.value.has(series.name) // Inverted logic
 						return acc
 					},
 					{} as Record<string, boolean>
@@ -149,7 +149,7 @@ export function useChartOptions(
 			legendOption.data = chartFormattedData.value.series.map((s: ChartSeriesData) => s.name)
 			legendOption.selected = chartFormattedData.value.series.reduce(
 				(acc, series: ChartSeriesData) => {
-					acc[series.name] = visibleSeriesSet.value.has(series.name)
+					acc[series.name] = !hiddenSeriesSet.value.has(series.name) // Inverted logic
 					return acc
 				},
 				{} as Record<string, boolean>
@@ -164,7 +164,7 @@ export function useChartOptions(
 				data: chartFormattedData.value.series.map((s: ChartSeriesData) => s.name),
 				selected: chartFormattedData.value.series.reduce(
 					(acc, series: ChartSeriesData) => {
-						acc[series.name] = visibleSeriesSet.value.has(series.name)
+						acc[series.name] = !hiddenSeriesSet.value.has(series.name) // Inverted logic
 						return acc
 					},
 					{} as Record<string, boolean>
