@@ -149,19 +149,24 @@ export const chartFormatters = {
 			// If not enough data points for interpolation for this series,
 			// ensure all points for this series in dataPointsMap are null unless they have raw data.
 			if (existingData.length < 2) {
+				// Handles 0 or 1 existing data points
+				const singlePointTs = existingData.length === 1 ? existingData[0].ts : null
+				// const singlePointVal = existingData.length === 1 ? existingData[0].val : null; // Value is already in dp if ts matches
+
 				sortedUniqueTimestampMillis.forEach((tsMillis) => {
 					const dp = getOrCreateDataPoint(dataPointsMap, tsMillis)
-					// If a point has no raw data (is null or undefined at this stage)
-					// and there aren't enough points to interpolate, it remains null.
-					// If it has raw data (from existingData), it keeps it.
-					let hasRawForThisTs = false
-					if (existingData.length === 1 && existingData[0].ts === tsMillis) {
-						hasRawForThisTs = true
-					}
-					if (!hasRawForThisTs) {
-						dp[key] = null
-					} else if (dp[key] === undefined) {
-						// Should not happen if existingData[0].ts === tsMillis
+					if (singlePointTs === tsMillis) {
+						// If there's one existing point and this is its timestamp,
+						// dp[key] should already hold existingData[0].val.
+						// If it was somehow undefined, it should take that value.
+						// If it was null (e.g. from pre-calc), it should take that value.
+						// This ensures the single point is preserved.
+						if (dp[key] === null || dp[key] === undefined) {
+							// Should ideally not be needed if existingData was built correctly
+							dp[key] = existingData.length === 1 ? existingData[0].val : null
+						}
+					} else {
+						// For all other timestamps, or if no existing data points, set to null.
 						dp[key] = null
 					}
 				})
@@ -195,51 +200,86 @@ export const chartFormatters = {
 				let t_next: number | null = null
 				let v_next: number | null = null
 
-				// Find Previous Data Point (t_prev, v_prev)
-				// Search backwards from current tsMillis in existingData
-				// The point existingData[prevPointSearchIdx] is a candidate if its ts < tsMillis
+				// prevPointSearchIdx is the index of the latest entry in existingData
+				// such that existingData[prevPointSearchIdx].ts <= tsMillis.
+
+				// Determine t_prev: the actual data point strictly before tsMillis
 				if (existingData[prevPointSearchIdx].ts < tsMillis) {
 					t_prev = existingData[prevPointSearchIdx].ts
 					v_prev = existingData[prevPointSearchIdx].val
-				} else if (prevPointSearchIdx > 0 && existingData[prevPointSearchIdx - 1].ts < tsMillis) {
-					// This case might occur if tsMillis is between existingData[prevPointSearchIdx-1] and existingData[prevPointSearchIdx]
-					// and existingData[prevPointSearchIdx].ts === tsMillis (but current value is null, which is odd)
-					// or if prevPointSearchIdx was advanced too far.
-					// Let's try the one before.
-					t_prev = existingData[prevPointSearchIdx - 1].ts
-					v_prev = existingData[prevPointSearchIdx - 1].val
+				} else {
+					// existingData[prevPointSearchIdx].ts === tsMillis (or tsMillis could be before the first point if prevPointSearchIdx is 0)
+					// We need the point strictly before tsMillis.
+					if (prevPointSearchIdx > 0) {
+						// If there's a point before existingData[prevPointSearchIdx]
+						// This point existingData[prevPointSearchIdx - 1] is guaranteed to be < existingData[prevPointSearchIdx].ts
+						// If existingData[prevPointSearchIdx].ts == tsMillis, then existingData[prevPointSearchIdx-1].ts < tsMillis
+						// If existingData[prevPointSearchIdx].ts > tsMillis (i.e. tsMillis is before first point), then this condition is still fine.
+						if (existingData[prevPointSearchIdx - 1].ts < tsMillis) {
+							// Double check it's strictly less
+							t_prev = existingData[prevPointSearchIdx - 1].ts
+							v_prev = existingData[prevPointSearchIdx - 1].val
+						}
+					}
+					// If prevPointSearchIdx is 0 and existingData[0].ts >= tsMillis, no t_prev exists.
 				}
 
-				// Find Next Data Point (t_next, v_next)
-				// Search forwards from current tsMillis in existingData
-				// The point existingData[prevPointSearchIdx + 1] is a candidate if its ts > tsMillis
-				if (
-					prevPointSearchIdx + 1 < existingData.length &&
-					existingData[prevPointSearchIdx + 1].ts > tsMillis
-				) {
+				// Determine t_next: the actual data point strictly after tsMillis
+				// existingData[prevPointSearchIdx].ts <= tsMillis
+				if (existingData[prevPointSearchIdx].ts === tsMillis) {
+					// If the floor point IS tsMillis, t_next is the one after it (if it exists)
+					if (prevPointSearchIdx + 1 < existingData.length) {
+						t_next = existingData[prevPointSearchIdx + 1].ts
+						v_next = existingData[prevPointSearchIdx + 1].val
+					}
+				} else {
+					// existingData[prevPointSearchIdx].ts < tsMillis
+					// t_next is also existingData[prevPointSearchIdx + 1] (if it exists),
+					// as it's the first point after existingData[prevPointSearchIdx]
+					if (prevPointSearchIdx + 1 < existingData.length) {
+						t_next = existingData[prevPointSearchIdx + 1].ts
+						v_next = existingData[prevPointSearchIdx + 1].val
+					}
+				}
+				// The above t_next logic can be simplified:
+				// The candidate for t_next is always existingData[prevPointSearchIdx + 1] if it exists
+				// OR existingData[prevPointSearchIdx] if tsMillis is before the first point and prevPointSearchIdx is 0.
+
+				// Refined t_next logic:
+				if (prevPointSearchIdx + 1 < existingData.length) {
+					// Standard case: point after floor
 					t_next = existingData[prevPointSearchIdx + 1].ts
 					v_next = existingData[prevPointSearchIdx + 1].val
+					// Ensure this t_next is strictly greater than tsMillis
+					if (t_next !== null && t_next <= tsMillis) {
+						// Should not happen if while loop for prevPointSearchIdx is correct
+						t_next = null
+						v_next = null
+					}
 				} else if (existingData[prevPointSearchIdx].ts > tsMillis) {
-					// This can happen if tsMillis is before the first data point in existingData,
-					// or if prevPointSearchIdx hasn't advanced yet.
+					// Case: tsMillis is before the very first point in existingData.
+					// prevPointSearchIdx is 0. existingData[0].ts > tsMillis.
+					// So, existingData[0] is t_next.
 					t_next = existingData[prevPointSearchIdx].ts
 					v_next = existingData[prevPointSearchIdx].val
 				}
+				// Otherwise, no t_next (e.g., tsMillis is after the last point).
 
 				if (t_prev !== null && v_prev !== null && t_next !== null && v_next !== null) {
+					// Ensure t_prev < tsMillis < t_next for valid interpolation range.
 					if (
-						t_next > t_prev && // Ensure t_next is strictly greater than t_prev
 						tsMillis > t_prev &&
-						tsMillis < t_next && // Ensure tsMillis is between t_prev and t_next
+						tsMillis < t_next &&
+						t_next - t_prev > 0 &&
 						t_next - t_prev <= MAX_INTERPOLATION_WINDOW_MS
 					) {
 						const interpolatedValue = v_prev + (v_next - v_prev) * ((tsMillis - t_prev) / (t_next - t_prev))
 						dp[key] = interpolatedValue
 					} else {
-						dp[key] = null // Gap between t_prev and t_next too large, or tsMillis not between them
+						dp[key] = null
 					}
 				} else {
-					dp[key] = null // Not enough boundary points (t_prev or t_next missing relative to tsMillis)
+					dp[key] = null
 				}
 			})
 		})
