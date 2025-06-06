@@ -82,4 +82,6 @@ export interface SessionState {
 	currentGitHubFileName: string | null
 	totalGpsDistance: number
 	totalTimeOnFoil: number
+	dataZoomStart: number // Percentage, e.g., 0
+	dataZoomEnd: number // Percentage, e.g., 100
 }

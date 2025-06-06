@@ -43,7 +43,17 @@ const currentGitHubFileName = computed(() => sessionDataStore.currentGitHubFileN
 const screenWidth = ref(window.innerWidth)
 const isMobile = computed(() => screenWidth.value < 1024)
 
-const { chartsHeight, chartOptions } = useChartOptions(chartFormattedData, visibleSeriesSet, logEntries, isMobile)
+const dataZoomStart = computed(() => sessionDataStore.dataZoomStart)
+const dataZoomEnd = computed(() => sessionDataStore.dataZoomEnd)
+
+const { chartsHeight, chartOptions } = useChartOptions(
+	chartFormattedData,
+	visibleSeriesSet,
+	logEntries,
+	isMobile,
+	dataZoomStart,
+	dataZoomEnd
+)
 
 // Function to load GitHub file based on route parameter
 const loadGitHubFileFromRouteParam = async () => {

@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, type Ref } from 'vue' // Added Ref
 import type { EChartsCoreOption as ECOption } from 'echarts/core'
 import { formatInTimeZone } from 'date-fns-tz'
 import type { ChartFormattedDataRef, VisibleSeriesSetRef, LogEntriesRef, IsMobileRef } from './chart/types'
@@ -17,7 +17,9 @@ export function useChartOptions(
 	chartFormattedData: ChartFormattedDataRef,
 	visibleSeriesSet: VisibleSeriesSetRef,
 	logEntries: LogEntriesRef,
-	isMobile: IsMobileRef
+	isMobile: IsMobileRef,
+	dataZoomStart: Ref<number>, // Added
+	dataZoomEnd: Ref<number> // Added
 ) {
 	const chartsHeight = computed(() => (isMobile.value ? '460px' : '600px'))
 
@@ -52,8 +54,13 @@ export function useChartOptions(
 			legend: {
 				// Initialize legend with all series data and current selection state
 				orient: 'horizontal' as const,
-				bottom: 10,
-				type: 'scroll' as const,
+				bottom: -5, // Position at the bottom
+				// type: 'scroll' as const, // Remove scroll to allow wrapping
+				left: 'center', // Center the legend block
+				// We can also use 'left' and 'right' to define width e.g. left: '10%', right: '10%'
+				// ECharts will attempt to wrap items if they exceed the legend's width.
+				// Default itemGap is 10. If more spacing is needed between items:
+				// itemGap: 15,
 				data: chartFormattedData.value.series.map((s: ChartSeriesData) => s.name), // All series names
 				selected: chartFormattedData.value.series.reduce(
 					(acc, series: ChartSeriesData) => {
@@ -93,8 +100,8 @@ export function useChartOptions(
 				{
 					type: 'slider',
 					xAxisIndex: [0],
-					start: 0,
-					end: 100,
+					start: dataZoomStart.value, // Use reactive value
+					end: dataZoomEnd.value, // Use reactive value
 					bottom: 50,
 					labelFormatter: (value: number) => {
 						const date = new Date(value)
@@ -109,8 +116,8 @@ export function useChartOptions(
 				{
 					type: 'inside',
 					xAxisIndex: [0],
-					start: 0,
-					end: 100,
+					start: dataZoomStart.value, // Use reactive value
+					end: dataZoomEnd.value, // Use reactive value
 				},
 			],
 		}

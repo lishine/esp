@@ -55,10 +55,20 @@ export const useSessionDataStore = defineStore('sessionData', {
 			currentGitHubFileName: null,
 			totalGpsDistance: 0,
 			totalTimeOnFoil: 0,
+			dataZoomStart: 0, // Default zoom start
+			dataZoomEnd: 100, // Default zoom end
 		}
 	},
 
 	actions: {
+		setDataZoomState(payload: { start?: number; end?: number }) {
+			if (typeof payload.start === 'number') {
+				this.dataZoomStart = payload.start
+			}
+			if (typeof payload.end === 'number') {
+				this.dataZoomEnd = payload.end
+			}
+		},
 		setUserApiIp(ip: string) {
 			this.userApiIp = ip.trim()
 			if (typeof localStorage !== 'undefined') {
