@@ -25,8 +25,8 @@ export function useChartOptions(
 		if (
 			!chartFormattedData.value ||
 			!chartFormattedData.value.series ||
-			chartFormattedData.value.series.length === 0 ||
-			!logEntries.value || // Added null check for logEntries.value
+			// Removed chartFormattedData.value.series.length === 0 here, will check later
+			!logEntries.value ||
 			logEntries.value.length === 0
 		) {
 			return null
@@ -36,6 +36,7 @@ export function useChartOptions(
 		const { finalMaxCurrent, finalMaxTemp, minTemp } = calculateDynamicMaxValues(logEntries.value)
 		const yAxesConfig: YAxisConfig[] = defineYAxesConfig(finalMaxCurrent, finalMaxTemp, minTemp)
 
+		// currentVisibleSeries is used to determine which Y-axes should be active
 		const currentVisibleSeries = chartFormattedData.value.series.filter((s: ChartSeriesData) =>
 			visibleSeriesSet.value.has(s.name)
 		)
@@ -49,10 +50,18 @@ export function useChartOptions(
 			title: { text: '' },
 			tooltip: tooltip, // Use the created tooltip object
 			legend: {
+				// Initialize legend with all series data and current selection state
 				orient: 'horizontal' as const,
 				bottom: 10,
 				type: 'scroll' as const,
-				data: [] as string[], // Explicitly define data here
+				data: chartFormattedData.value.series.map((s: ChartSeriesData) => s.name), // All series names
+				selected: chartFormattedData.value.series.reduce(
+					(acc, series: ChartSeriesData) => {
+						acc[series.name] = visibleSeriesSet.value.has(series.name)
+						return acc
+					},
+					{} as Record<string, boolean>
+				),
 			},
 			grid: {
 				left: '8%', // Adjusted for maximizing chart area
@@ -106,29 +115,63 @@ export function useChartOptions(
 			],
 		}
 
-		if (currentVisibleSeries.length === 0) {
+		// If there's truly no series data at all (e.g. no log file loaded or processed into series)
+		if (chartFormattedData.value.series.length === 0) {
 			return {
-				...baseChartOptions,
+				...baseChartOptions, // Retain most base options like grid, xAxis, dataZoom
 				legend: {
-					...(baseChartOptions.legend || {}), // Spread an empty object if legend is undefined
+					// Explicitly clear legend if no series data
+					...(baseChartOptions.legend || {}), // Keep structure but clear data/selected
 					data: [],
-				} as ECOption['legend'], // Assert the final type
-				series: [],
-				yAxis: [],
+					selected: {},
+				} as ECOption['legend'],
+				series: [], // No series data to plot
+				yAxis: [], // No yAxes needed (or default empty ones from base)
 			}
 		}
 
-		// The legend object and its data property are already defined in baseChartOptions
-		// So, we can directly assign to it.
-		if (baseChartOptions.legend && Array.isArray((baseChartOptions.legend as { data?: string[] }).data)) {
-			;(baseChartOptions.legend as { data: string[] }).data = currentVisibleSeries.map(
-				(s: ChartSeriesData) => s.name
+		// Ensure legend data and selected state are always up-to-date based on all available series
+		// and the current visibility state from the store. This is important if chartFormattedData.value.series
+		// or visibleSeriesSet.value changes, as baseChartOptions is computed.
+		if (
+			baseChartOptions.legend &&
+			typeof baseChartOptions.legend === 'object' &&
+			!Array.isArray(baseChartOptions.legend)
+		) {
+			const legendOption = baseChartOptions.legend as import('echarts/components').LegendComponentOption
+			legendOption.data = chartFormattedData.value.series.map((s: ChartSeriesData) => s.name)
+			legendOption.selected = chartFormattedData.value.series.reduce(
+				(acc, series: ChartSeriesData) => {
+					acc[series.name] = visibleSeriesSet.value.has(series.name)
+					return acc
+				},
+				{} as Record<string, boolean>
 			)
+		} else {
+			// Fallback if legend was somehow not an object (highly unlikely given initialization)
+			// This re-establishes the legend object correctly.
+			baseChartOptions.legend = {
+				orient: 'horizontal' as const,
+				bottom: 10,
+				type: 'scroll' as const,
+				data: chartFormattedData.value.series.map((s: ChartSeriesData) => s.name),
+				selected: chartFormattedData.value.series.reduce(
+					(acc, series: ChartSeriesData) => {
+						acc[series.name] = visibleSeriesSet.value.has(series.name)
+						return acc
+					},
+					{} as Record<string, boolean>
+				),
+			}
 		}
 
+		// visibleYAxisIds is correctly calculated based on currentVisibleSeries (series intended to be shown)
 		const finalYAxisOptions = buildYAxisOptions(yAxesConfig, visibleYAxisIds)
 		baseChartOptions.yAxis = finalYAxisOptions
-		baseChartOptions.series = buildSeriesOptions(currentVisibleSeries, yAxesConfig, finalYAxisOptions)
+
+		// IMPORTANT: Pass ALL series data to ECharts.
+		// Visibility is controlled by the `legend.selected` mapping.
+		baseChartOptions.series = buildSeriesOptions(chartFormattedData.value.series, yAxesConfig, finalYAxisOptions)
 
 		return baseChartOptions
 	})

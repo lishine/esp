@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useSessionDataStore } from '../stores'
 import VChart from 'vue-echarts'
 import { type EChartsCoreOption as ECOption, use } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption
 import { CanvasRenderer } from 'echarts/renderers'
@@ -31,6 +32,8 @@ use([
 	MarkPointComponent,
 ])
 
+const sessionDataStore = useSessionDataStore()
+
 // Define component props
 const props = withDefaults(
 	defineProps<{
@@ -51,6 +54,14 @@ const chartStyle = computed(() => ({
 	height: props.height,
 	width: props.width,
 }))
+
+const handleLegendSelectChanged = (params: { name: string; selected: Record<string, boolean> }) => {
+	// params.name is the series that was clicked
+	// params.selected is an object with the new selected status for ALL series
+	for (const seriesName in params.selected) {
+		sessionDataStore.setSeriesVisibility(seriesName, params.selected[seriesName])
+	}
+}
 </script>
 
 <template>
@@ -62,6 +73,7 @@ const chartStyle = computed(() => ({
 			:theme="props.theme"
 			autoresize
 			:style="{ height: '100%', width: '100%' }"
+			@legendselectchanged="handleLegendSelectChanged"
 		/>
 		<div v-else class="no-options-placeholder" :style="{ height: '100%', width: '100%' }">
 			<p>Chart options are being prepared or are not available.</p>
