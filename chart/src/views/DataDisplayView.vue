@@ -13,7 +13,7 @@ import { NGrid, NGi, NCard, NSpace, NSwitch, NDivider, NText } from 'naive-ui' /
 import type { UploadFileInfo } from 'naive-ui'
 import { GROUP_AVERAGE_SERIES_CONFIG } from '../components/groupAveragesChart/seriesConfig' // Updated import path
 import * as echarts from 'echarts/core' // Re-imported for explicit connect/disconnect
-import type { EChartsOption } from 'echarts' // Added EChartsOption for casting, removed EChartsType
+// import type { EChartsOption } from 'echarts' // EChartsOption is not used directly in this file after recent changes.
 
 const sessionDataStore = useSessionDataStore()
 const route = useRoute()
@@ -248,7 +248,7 @@ const handleGitHubFileClick = (file: LogFile) => {
 								v-if="showGroupAveragesMaster && chartOptionsGroupAverages"
 								ref="groupAveragesChartRef"
 								:options="chartOptionsGroupAverages"
-								height="250px"
+								height="375px"
 								width="100%"
 								theme="light"
 							/>

@@ -55,18 +55,48 @@ export function buildSeriesOptionsForGroupChart(
 				yAxisIndexToUse = 0
 			}
 
-			groupAggregates.forEach((segment) => {
-				if (segment.startTime) {
-					// Ensure startTime exists
-					const value = segment.metrics[config.dataKey]
-					if (value !== undefined && value !== null) {
-						seriesDataPoints.push([segment.startTime.getTime(), value])
-					} else {
-						// Add null to maintain point correspondence if a segment lacks this metric
-						seriesDataPoints.push([segment.startTime.getTime(), null])
-					}
-				}
+			// Ensure groupAggregates is sorted by startTime to correctly identify gaps.
+			const sortedGroupAggregates = [...groupAggregates].sort((a, b) => {
+				const timeA = a.startTime ? a.startTime.getTime() : 0
+				const timeB = b.startTime ? b.startTime.getTime() : 0
+				if (!a.startTime && !b.startTime) return 0
+				if (!a.startTime) return 1 // Sort groups without startTime to the end
+				if (!b.startTime) return -1
+				return timeA - timeB
 			})
+
+			for (let i = 0; i < sortedGroupAggregates.length; i++) {
+				const group = sortedGroupAggregates[i]
+
+				if (group.startTime && group.endTime) {
+					const metricValue = group.metrics[config.dataKey]
+
+					if (metricValue !== undefined && metricValue !== null) {
+						seriesDataPoints.push([group.startTime.getTime(), metricValue])
+						seriesDataPoints.push([group.endTime.getTime(), metricValue])
+					} else {
+						// Metric value is null/undefined for this group for this series
+						seriesDataPoints.push([group.startTime.getTime(), null])
+						seriesDataPoints.push([group.endTime.getTime(), null])
+					}
+
+					// Check for a time gap to the next group
+					if (i < sortedGroupAggregates.length - 1) {
+						const nextGroup = sortedGroupAggregates[i + 1]
+						// Ensure nextGroup times are valid before comparing
+						if (nextGroup.startTime && group.endTime.getTime() < nextGroup.startTime.getTime()) {
+							// Insert a null point at the current group's endTime if there's a gap before the next group.
+							// This explicitly tells ECharts to break the line here when connectNulls is false.
+							seriesDataPoints.push([group.endTime.getTime(), null])
+						}
+					}
+				} else {
+					console.warn(
+						`Group missing startTime or endTime, cannot plot segment for series "${config.displayName}". Group:`,
+						group
+					)
+				}
+			}
 
 			// Sort data points by time to ensure lines are drawn correctly
 			seriesDataPoints.sort((a, b) => a[0] - b[0])
@@ -77,7 +107,7 @@ export function buildSeriesOptionsForGroupChart(
 					type: 'line', // Could also be 'bar' if x-axis was categorical for segments
 					data: seriesDataPoints,
 					yAxisIndex: yAxisIndexToUse,
-					showSymbol: true, // Show symbols for distinct points
+					showSymbol: false, // Hide symbols as per feedback
 					smooth: false,
 					itemStyle: {
 						color: config.color,
