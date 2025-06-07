@@ -65,6 +65,12 @@ export interface SessionMetadata {
 	restart: string // Added restart field
 }
 
+export interface GroupAggregate {
+	groupName: string // e.g., "Full Session", "On Foil"
+	metrics: Record<string, number | null> // e.g., { avg_esc_i: 75.5, max_rpm: 12000 }
+	startTime?: Date // Add optional startTime
+	endTime?: Date // Add optional endTime
+}
 export interface SessionState {
 	sessionMetadata: SessionMetadata
 	logEntries: LogEntry[]
@@ -84,4 +90,7 @@ export interface SessionState {
 	totalTimeOnFoil: number
 	dataZoomStart: number // Percentage, e.g., 0
 	dataZoomEnd: number // Percentage, e.g., 100
+	groupAggregates: GroupAggregate[]
+	showGroupAveragesMaster: boolean
+	groupAverageSeriesVisibility: Record<string, boolean>
 }

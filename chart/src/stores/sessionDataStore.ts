@@ -10,7 +10,9 @@ import type {
 	GpsValues,
 	DsValues,
 	FormattedChartData,
+	GroupAggregate, // Added
 } from './types'
+import { GROUP_AVERAGE_SERIES_CONFIG } from '../components/groupAveragesChart/seriesConfig' // Updated import path
 import { visibilityActions } from './visibilityActions'
 import { fileActions } from './fileActions'
 import { chartFormatters } from './chartFormatters'
@@ -30,6 +32,41 @@ export const useSessionDataStore = defineStore('sessionData', {
 		if (typeof localStorage !== 'undefined') {
 			const useIpStr = localStorage.getItem('espChartUseUserApiIp')
 			storedUseUserApiIp = useIpStr === 'true'
+		}
+
+		let storedShowGroupAveragesMaster = true // Default to true
+		if (typeof localStorage !== 'undefined') {
+			const masterToggleStr = localStorage.getItem('espChartShowGroupAveragesMaster')
+			storedShowGroupAveragesMaster = masterToggleStr === 'true'
+		}
+
+		let storedGroupAverageSeriesVisibility: Record<string, boolean> = {}
+		let visibilityLoadedFromStorage = false
+		if (typeof localStorage !== 'undefined') {
+			const visibilityStr = localStorage.getItem('espChartGroupAverageSeriesVisibility')
+			if (visibilityStr) {
+				try {
+					const parsed = JSON.parse(visibilityStr)
+					// Basic validation: check if it's an object (though not deep validation)
+					if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+						storedGroupAverageSeriesVisibility = parsed
+						visibilityLoadedFromStorage = true
+					} else {
+						console.warn('Invalid groupAverageSeriesVisibility format in localStorage, using default.')
+					}
+				} catch (e) {
+					console.error('Failed to parse groupAverageSeriesVisibility from localStorage, using default.', e)
+					// storedGroupAverageSeriesVisibility remains {} from initialization, default will apply
+				}
+			}
+		}
+
+		// If not successfully loaded from storage, initialize with all true
+		if (!visibilityLoadedFromStorage) {
+			storedGroupAverageSeriesVisibility = {} // Reset to ensure clean default
+			GROUP_AVERAGE_SERIES_CONFIG.forEach((config) => {
+				storedGroupAverageSeriesVisibility[config.displayName] = true
+			})
 		}
 
 		return {
@@ -57,10 +94,34 @@ export const useSessionDataStore = defineStore('sessionData', {
 			totalTimeOnFoil: 0,
 			dataZoomStart: 0, // Default zoom start
 			dataZoomEnd: 100, // Default zoom end
+			groupAggregates: [],
+			showGroupAveragesMaster: storedShowGroupAveragesMaster,
+			groupAverageSeriesVisibility: storedGroupAverageSeriesVisibility,
 		}
 	},
 
 	actions: {
+		setGroupAggregates(aggregates: GroupAggregate[]) {
+			this.groupAggregates = aggregates
+		},
+		setShowGroupAveragesMaster(value: boolean) {
+			this.showGroupAveragesMaster = value
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem('espChartShowGroupAveragesMaster', String(value))
+			}
+		},
+		setGroupAverageSeriesVisibility(seriesName: string, isVisible: boolean) {
+			this.groupAverageSeriesVisibility = {
+				...this.groupAverageSeriesVisibility,
+				[seriesName]: isVisible,
+			}
+			if (typeof localStorage !== 'undefined') {
+				localStorage.setItem(
+					'espChartGroupAverageSeriesVisibility',
+					JSON.stringify(this.groupAverageSeriesVisibility)
+				)
+			}
+		},
 		setDataZoomState(payload: { start?: number; end?: number }) {
 			if (typeof payload.start === 'number') {
 				this.dataZoomStart = payload.start
@@ -206,6 +267,9 @@ export const useSessionDataStore = defineStore('sessionData', {
 		getHiddenSeries: (state): string[] => Array.from(state.hiddenSeries),
 		getTotalGpsDistance: (state): number => state.totalGpsDistance,
 		getTotalTimeOnFoil: (state): number => state.totalTimeOnFoil,
+		getGroupAggregates: (state): GroupAggregate[] => state.groupAggregates,
+		getShowGroupAveragesMaster: (state): boolean => state.showGroupAveragesMaster,
+		getGroupAverageSeriesVisibility: (state): Record<string, boolean> => state.groupAverageSeriesVisibility,
 		getFilteredLogEntries: (state): LogEntry[] => {
 			return state.logEntries // Simply return all log entries
 		},
@@ -469,16 +533,24 @@ export const useSessionDataStore = defineStore('sessionData', {
 			const speedNullifiedEntries = applySpeedNullification(nullifiedEntries)
 
 			if (speedNullifiedEntries && speedNullifiedEntries.length > 0) {
-				const groupAggregates = calculateGroupAggregates(speedNullifiedEntries)
-				console.log('Calculated Group Aggregates by Orchestrator:', groupAggregates)
+				const calculatedAggregates = calculateGroupAggregates(speedNullifiedEntries)
+				console.log('Calculated Group Aggregates:', calculatedAggregates)
+				// Directly update the state property for groupAggregates from within the getter
+				// This is consistent with how totalGpsDistance and totalTimeOnFoil are updated
+				state.groupAggregates = calculatedAggregates
+			} else {
+				console.log('[SessionDataStore] speedNullifiedEntries is empty, skipping group aggregate calculation.')
+				state.groupAggregates = [] // Ensure it's empty if no calculation happens
 			}
 
 			console.log({ nullifiedEntries: nullifiedEntries })
 			console.log({ speedNullifiedEntries: speedNullifiedEntries })
 
-			const chartData = chartFormatters.getChartFormattedData.call({
-				logEntries: nullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
-			})
+			// Pass showGroupAveragesMaster to chartFormatters
+			const chartData = chartFormatters.getChartFormattedData(
+				nullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
+				state.showGroupAveragesMaster
+			)
 
 			this.totalGpsDistance = calculateSessionDistance(speedNullifiedEntries)
 

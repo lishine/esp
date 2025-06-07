@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { onMounted, computed, ref, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router' // Import useRouter
+import { onMounted, computed, ref, watch, nextTick } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useSessionDataStore, type SessionMetadata, type LogFile } from '../stores'
 import SensorChart from '../components/SensorChart.vue'
+import GroupAveragesChart from '../components/groupAveragesChart/GroupAveragesChart.vue' // Updated import path
 import LoadingStates from '../components/LoadingStates.vue'
 import SessionInfo from '../components/SessionInfo.vue'
 import FileHandling from '../components/FileHandling.vue'
 import { useChartOptions } from '../components/ChartOptions'
-import { NGrid, NGi, NCard, NSpace } from 'naive-ui'
+import { useGroupAveragesChartOptions } from '../components/groupAveragesChart/useGroupAveragesChartOptions' // Updated import path
+import { NGrid, NGi, NCard, NSpace, NSwitch, NDivider, NText } from 'naive-ui' // Added NSwitch, NDivider, NText
 import type { UploadFileInfo } from 'naive-ui'
+import { GROUP_AVERAGE_SERIES_CONFIG } from '../components/groupAveragesChart/seriesConfig' // Updated import path
+import * as echarts from 'echarts/core' // Re-imported for explicit connect/disconnect
+import type { EChartsOption } from 'echarts' // Added EChartsOption for casting, removed EChartsType
 
 const sessionDataStore = useSessionDataStore()
 const route = useRoute()
-const router = useRouter() // Get router instance
+const router = useRouter()
 const isLoading = computed(() => sessionDataStore.isLoading)
 const error = computed(() => sessionDataStore.error)
 const sessionMetadata = computed((): SessionMetadata => {
@@ -28,8 +33,8 @@ const sessionMetadata = computed((): SessionMetadata => {
 const logEntries = computed(() => sessionDataStore.logEntries)
 const chartFormattedData = computed(() => sessionDataStore.getChartFormattedData)
 const hiddenSeriesSet = computed(() => sessionDataStore.hiddenSeries)
-const totalGpsDistance = computed(() => sessionDataStore.getTotalGpsDistance) // Get total GPS distance
-const totalTimeOnFoil = computed(() => sessionDataStore.getTotalTimeOnFoil) // Get total time on foil
+const totalGpsDistance = computed(() => sessionDataStore.getTotalGpsDistance)
+const totalTimeOnFoil = computed(() => sessionDataStore.getTotalTimeOnFoil)
 
 // GitHub related computed properties
 const gitHubFiles = computed(() => sessionDataStore.gitHubFiles)
@@ -46,7 +51,9 @@ const isMobile = computed(() => screenWidth.value < 1024)
 const dataZoomStart = computed(() => sessionDataStore.dataZoomStart)
 const dataZoomEnd = computed(() => sessionDataStore.dataZoomEnd)
 
-const { chartsHeight, chartOptions } = useChartOptions(
+// Main chart options
+const { chartsHeight, chartOptions: chartOptionsMain } = useChartOptions(
+	// Renamed chartOptions to chartOptionsMain
 	chartFormattedData,
 	hiddenSeriesSet,
 	logEntries,
@@ -55,27 +62,87 @@ const { chartsHeight, chartOptions } = useChartOptions(
 	dataZoomEnd
 )
 
+// Group Averages Chart options
+const groupAggregates = computed(() => sessionDataStore.getGroupAggregates)
+const groupAverageSeriesConfigConst = ref(GROUP_AVERAGE_SERIES_CONFIG) // Make it a ref for the composable
+const groupAverageSeriesVisibility = computed(() => sessionDataStore.getGroupAverageSeriesVisibility)
+const showGroupAveragesMaster = computed({
+	get: () => sessionDataStore.getShowGroupAveragesMaster,
+	set: (value) => sessionDataStore.setShowGroupAveragesMaster(value),
+})
+
+const { chartOptionsGroupAverages } = useGroupAveragesChartOptions(
+	groupAggregates,
+	groupAverageSeriesConfigConst, // Pass the ref
+	groupAverageSeriesVisibility,
+	dataZoomStart, // Share dataZoom state
+	dataZoomEnd // Share dataZoom state
+)
+
+const sensorChartRef = ref<InstanceType<typeof SensorChart> | null>(null)
+const groupAveragesChartRef = ref<InstanceType<typeof GroupAveragesChart> | null>(null)
+
+// const connectCharts = () => { // Explicit connect call might be redundant if 'group' property is used
+// 	const mainChartInstance = sensorChartRef.value?.getEchartsInstance()
+// 	const groupChartInstance = groupAveragesChartRef.value?.getEchartsInstance()
+//
+// 	if (mainChartInstance && groupChartInstance && showGroupAveragesMaster.value) {
+// 		echarts.connect([groupChartInstance, mainChartInstance])
+// 		console.log('ECharts instances connected via explicit call')
+// 	} else if (mainChartInstance && !showGroupAveragesMaster.value) {
+// 		const mainChartGroupId = mainChartInstance.group
+// 		if (mainChartGroupId && groupChartInstance && mainChartGroupId === groupChartInstance.group) {
+// 			// To disconnect, we might need to remove them from the group or connect to a different/null group.
+// 			// ECharts should handle this if the 'group' property is correctly managed in options.
+// 			// console.log('Attempting to disconnect charts due to master toggle OFF.');
+// 			// echarts.disconnect('groupSync'); // Disconnect the entire group
+// 		}
+// 	}
+// }
+
+// Watcher for chart readiness and visibility - now using explicit connect/disconnect
+watch(
+	[sensorChartRef, groupAveragesChartRef, showGroupAveragesMaster, chartOptionsMain, chartOptionsGroupAverages],
+	async () => {
+		await nextTick() // Ensure DOM is updated and refs are available
+
+		// Check if chart components are mounted before attempting to connect/disconnect
+		// This is important because getEchartsInstance() might be called on null refs initially
+		const mainChartReady = !!sensorChartRef.value?.getEchartsInstance()
+		const groupChartReady = !!groupAveragesChartRef.value?.getEchartsInstance()
+
+		if (showGroupAveragesMaster.value) {
+			// Connect if both charts are ready and master toggle is on
+			if (mainChartReady && groupChartReady) {
+				// console.log("Attempting to connect charts in group 'groupSync'")
+				echarts.connect('groupSync')
+			} else {
+				// console.log('Charts not ready for connection or groupAveragesChartRef is null')
+			}
+		} else {
+			// Disconnect the group if master toggle is off
+			// console.log("Attempting to disconnect charts in group 'groupSync'")
+			echarts.disconnect('groupSync')
+		}
+	},
+	{ immediate: true, deep: true }
+)
+
 // Function to load GitHub file based on route parameter
 const loadGitHubFileFromRouteParam = async () => {
 	const filenameFromRoute = route.params.filename as string
 	if (filenameFromRoute) {
 		sessionDataStore.isGitHubFileLoading = true
 		sessionDataStore.gitHubFileError = null
-
-		// Wait for the GitHub file list to be loaded if it's currently loading.
-		// fetchAndSetGitHubLogFilesList is called in onMounted.
 		while (sessionDataStore.isGitHubListLoading) {
 			await new Promise((resolve) => setTimeout(resolve, 100))
 		}
-
 		if (sessionDataStore.gitHubListError) {
 			sessionDataStore.gitHubFileError = `Cannot display file: GitHub file list failed to load. Error: ${sessionDataStore.gitHubListError}`
 			sessionDataStore.isGitHubFileLoading = false
 			return
 		}
-
 		const fileToLoad = sessionDataStore.gitHubFiles.find((f) => f.name === filenameFromRoute)
-
 		if (fileToLoad) {
 			await sessionDataStore.loadLogFileFromGitHub(fileToLoad)
 		} else {
@@ -87,12 +154,12 @@ const loadGitHubFileFromRouteParam = async () => {
 
 onMounted(async () => {
 	sessionDataStore.loadVisibilityPreferences()
-	// Initiates fetching the list. loadGitHubFileFromRouteParam will wait if needed.
 	sessionDataStore.fetchAndSetGitHubLogFilesList()
-	await loadGitHubFileFromRouteParam() // Load file if filename in route on initial mount
+	await loadGitHubFileFromRouteParam()
+
+	// The watcher with immediate: true handles the initial connection attempt.
 })
 
-// Watch for changes in the 'prev' query parameter
 watch(
 	() => route.query.prev,
 	(newPrevQuery, oldPrevQuery) => {
@@ -101,22 +168,19 @@ watch(
 			sessionDataStore.fetchSessionData(prevValue > 0 ? prevValue : undefined)
 		}
 	},
-	{ immediate: true } // Fetch data immediately on mount if 'prev' is present
+	{ immediate: true }
 )
 
-// Watch for changes in the filename route parameter
 watch(
 	() => route.params.filename,
 	async (newFilename, oldFilename) => {
 		if (newFilename && newFilename !== oldFilename) {
 			await loadGitHubFileFromRouteParam()
 		} else if (!newFilename && oldFilename && sessionDataStore.currentFileSource === 'github') {
-			// Navigated away from a GitHub file route (e.g., back to /)
-			// and the current data source was GitHub.
 			sessionDataStore.clearGitHubData()
 		}
 	},
-	{ immediate: false } // onMounted handles initial load
+	{ immediate: false }
 )
 
 const currentPrev = computed(() => {
@@ -137,18 +201,19 @@ const handleFileChange = async (options: {
 	const file = options.file.file
 	if (file) {
 		await sessionDataStore.handleFileUpload(file)
-		// After successful local file upload, navigate to root
 		if (!sessionDataStore.error) {
-			// Check if upload was successful
 			router.push('/')
 		}
 	}
 }
 
 const handleGitHubFileClick = (file: LogFile) => {
-	// Just navigate. The watcher on route.params.filename will handle loading.
 	router.push(`/github/${file.name}`)
 }
+
+// const handleGroupAverageSeriesToggle = (seriesName: string, value: boolean) => { // Removed unused function
+// 	sessionDataStore.setGroupAverageSeriesVisibility(seriesName, value)
+// }
 </script>
 
 <template>
@@ -165,8 +230,29 @@ const handleGitHubFileClick = (file: LogFile) => {
 			<n-grid :x-gap="12" :y-gap="8" :cols="'1 s:1 m:4 l:4 xl:4'">
 				<n-gi :span="'1 s:1 m:3 l:3 xl:3'">
 					<n-card style="margin-top: 0px">
-						<div v-if="chartFormattedData && chartFormattedData.series.length > 0 && !isGitHubFileLoading">
-							<sensor-chart :options="chartOptions" :height="chartsHeight" />
+						<!-- Group Averages Chart Toggles -->
+						<n-space align="center" style="margin-bottom: 10px">
+							<n-text>Show Group Averages:</n-text>
+							<n-switch v-model:value="showGroupAveragesMaster" />
+						</n-space>
+						<n-divider v-if="showGroupAveragesMaster" />
+
+						<div
+							v-if="
+								chartFormattedData &&
+								(chartFormattedData.series.length > 0 || showGroupAveragesMaster) &&
+								!isGitHubFileLoading
+							"
+						>
+							<group-averages-chart
+								v-if="showGroupAveragesMaster && chartOptionsGroupAverages"
+								ref="groupAveragesChartRef"
+								:options="chartOptionsGroupAverages"
+								height="250px"
+								width="100%"
+								theme="light"
+							/>
+							<sensor-chart ref="sensorChartRef" :options="chartOptionsMain" :height="chartsHeight" />
 						</div>
 						<div v-else-if="!isGitHubFileLoading && !isLoading && !error && !gitHubFileError">
 							<p>No chart data available. Upload a local file or select one from GitHub below.</p>
@@ -174,7 +260,7 @@ const handleGitHubFileClick = (file: LogFile) => {
 					</n-card>
 				</n-gi>
 				<n-gi :span="'1 s:1 m:1 l:1 xl:1'">
-					<!-- <series-toggle /> -->
+					<!-- Potential space for main chart series toggles or other controls -->
 				</n-gi>
 			</n-grid>
 

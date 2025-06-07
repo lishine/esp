@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue' // Added ref
+import { computed, ref, defineExpose } from 'vue' // Added ref, defineExpose
 import { useSessionDataStore } from '../stores'
 import VChart from 'vue-echarts'
-import { type EChartsCoreOption as ECOption, use, type EChartsType } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption, Added EChartsType
+import { type EChartsCoreOption as ECOption, use, type EChartsType } from 'echarts/core' // Changed EChartsOption to EChartsCoreOption, re-added EChartsType
 import { CanvasRenderer } from 'echarts/renderers'
 import { LineChart, BarChart } from 'echarts/charts' // Common chart types
 import {
@@ -34,7 +34,7 @@ use([
 ])
 
 const sessionDataStore = useSessionDataStore()
-const chartRef = ref<EChartsType | null>(null) // Typed chartRef
+const chartRef = ref<InstanceType<typeof VChart> | null>(null) // Use InstanceType
 
 // Define component props
 const props = withDefaults(
@@ -142,6 +142,16 @@ const handleDataZoom = (params: DataZoomEventParams) => {
 		}
 	}
 }
+
+const getEchartsInstance = (): EChartsType | undefined => {
+	// Assuming VChart instance has a .chart property which is the EChartsType instance
+	// This makes it consistent with GroupAveragesChart.vue
+	return chartRef.value?.chart
+}
+
+defineExpose({
+	getEchartsInstance,
+})
 </script>
 <template>
 	<div :style="chartStyle">

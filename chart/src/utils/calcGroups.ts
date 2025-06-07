@@ -1,27 +1,11 @@
-import type { LogEntry, EscValues, GpsValues } from '../stores/types'
+import type { LogEntry, EscValues, GpsValues, GroupAggregate } from '../stores/types' // Import correct GroupAggregate
 import { haversineDistance } from './gpsDistance'
 
 // --- Filtering and Formatting Function ---
 const MIN_DURATION_S = 15
 const MIN_MAH_DELTA = 100
 
-export interface GroupAggregate {
-	consumption: number | null // Rounded integer
-	distance: string | null // Formatted string "Xkm Ym"
-	avg_speed_kmh: number | null // 1 decimal place
-	avg_volt: number | null // 1 decimal place
-	avg_current: number | null // Rounded integer
-	'watt-hour_per_km': number | null // Rounded integer
-	watt_per_speed: number | null // Rounded integer
-	duration: string | null // Formatted string "mm:ss"
-	start_time: string | null
-	end_time: string | null
-	entry_count: number
-	avg_rpm: number | null // Rounded integer
-	avg_throttle: number | null // 1 decimal place
-	avg_motor_current: number | null // 1 decimal place
-	motor_battery_current_efficiency: number | null // 2 decimal places
-}
+// Removed local GroupAggregate definition (lines 8-24)
 
 // Internal type for raw calculations before formatting and filtering
 interface InternalGroupAggregateValues {
@@ -33,8 +17,10 @@ interface InternalGroupAggregateValues {
 	'watt-hour_per_km': number | null
 	watt_per_speed: number | null
 	duration: number | null
-	start_time: string | null
-	end_time: string | null
+	// start_time: string | null // Will use raw Date object
+	// end_time: string | null   // Will use raw Date object
+	rawStartTime: Date | null // Added for precise start time
+	rawEndTime: Date | null // Added for precise end time
 	entry_count: number
 	avg_rpm: number | null
 	avg_throttle: number | null
@@ -122,10 +108,12 @@ function processGroupToAggregate(group: LogEntry[]): InternalGroupAggregateValue
 
 	const duration_s_val =
 		(group[group.length - 1].preciseTimestamp.getTime() - group[0].preciseTimestamp.getTime()) / 1000 //Renamed
-	const formatTime = (date: Date) =>
-		date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-	const start_time_str_val = formatTime(group[0].preciseTimestamp) //Renamed
-	const end_time_str_val = formatTime(group[group.length - 1].preciseTimestamp) //Renamed
+	// const formatTime = (date: Date) =>
+	// 	date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+	// const start_time_str_val = formatTime(group[0].preciseTimestamp) //Renamed
+	// const end_time_str_val = formatTime(group[group.length - 1].preciseTimestamp) //Renamed
+	const rawStartTime_val = group[0].preciseTimestamp
+	const rawEndTime_val = group[group.length - 1].preciseTimestamp
 	const entry_count = group.length
 
 	const rpms = escEntriesInGroup
@@ -160,32 +148,16 @@ function processGroupToAggregate(group: LogEntry[]): InternalGroupAggregateValue
 		'watt-hour_per_km': calculated_wh_per_km_val,
 		watt_per_speed: calculated_w_per_speed_val,
 		duration: duration_s_val,
-		start_time: start_time_str_val,
-		end_time: end_time_str_val,
+		// start_time: start_time_str_val,
+		// end_time: end_time_str_val,
+		rawStartTime: rawStartTime_val,
+		rawEndTime: rawEndTime_val,
 		entry_count,
 		avg_rpm,
 		avg_throttle,
 		avg_motor_current,
 		motor_battery_current_efficiency,
 	}
-}
-
-// --- Formatting Helper Functions ---
-function formatDurationMMSS(totalSeconds: number | null): string | null {
-	if (totalSeconds === null || totalSeconds < 0) return null
-	const minutes = Math.floor(totalSeconds / 60)
-	const seconds = Math.floor(totalSeconds % 60)
-	return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-}
-
-function formatKmDeltaString(km: number | null): string | null {
-	if (km === null || km < 0) return null
-	const kilometers = Math.floor(km)
-	const meters = Math.round((km - kilometers) * 1000)
-	if (kilometers > 0) {
-		return `${kilometers}km ${meters}m`
-	}
-	return `${meters}m`
 }
 
 function filterAndFormatAggregates(rawAggregates: InternalGroupAggregateValues[]): GroupAggregate[] {
@@ -198,26 +170,30 @@ function filterAndFormatAggregates(rawAggregates: InternalGroupAggregateValues[]
 		)
 	})
 
-	return filtered.map((raw): GroupAggregate => {
+	return filtered.map((raw, index): GroupAggregate => {
+		// Added index for groupName
 		return {
-			consumption: raw.consumption !== null ? Math.round(raw.consumption) : null,
-			distance: formatKmDeltaString(raw.distance),
-			avg_speed_kmh: raw.avg_speed_kmh !== null ? parseFloat(raw.avg_speed_kmh.toFixed(1)) : null,
-			avg_volt: raw.avg_volt !== null ? parseFloat(raw.avg_volt.toFixed(1)) : null,
-			avg_current: raw.avg_current !== null ? Math.round(raw.avg_current) : null,
-			'watt-hour_per_km': raw['watt-hour_per_km'] !== null ? Math.round(raw['watt-hour_per_km']) : null,
-			watt_per_speed: raw.watt_per_speed !== null ? Math.round(raw.watt_per_speed) : null,
-			duration: formatDurationMMSS(raw.duration),
-			start_time: raw.start_time,
-			end_time: raw.end_time,
-			entry_count: raw.entry_count,
-			avg_rpm: raw.avg_rpm !== null ? Math.round(raw.avg_rpm) : null,
-			avg_throttle: raw.avg_throttle !== null ? parseFloat(raw.avg_throttle.toFixed(1)) : null,
-			avg_motor_current: raw.avg_motor_current !== null ? parseFloat(raw.avg_motor_current.toFixed(1)) : null,
-			motor_battery_current_efficiency:
-				raw.motor_battery_current_efficiency !== null
-					? parseFloat(raw.motor_battery_current_efficiency.toFixed(2))
-					: null,
+			groupName: `Segment ${index + 1}`, // Assign a generic groupName
+			startTime: raw.rawStartTime || undefined, // Pass Date object
+			endTime: raw.rawEndTime || undefined, // Pass Date object
+			metrics: {
+				consumption: raw.consumption !== null ? Math.round(raw.consumption) : null,
+				avg_speed_kmh: raw.avg_speed_kmh !== null ? parseFloat(raw.avg_speed_kmh.toFixed(1)) : null,
+				avg_volt: raw.avg_volt !== null ? parseFloat(raw.avg_volt.toFixed(1)) : null,
+				avg_current: raw.avg_current !== null ? Math.round(raw.avg_current) : null,
+				'watt-hour_per_km': raw['watt-hour_per_km'] !== null ? Math.round(raw['watt-hour_per_km']) : null,
+				watt_per_speed: raw.watt_per_speed !== null ? Math.round(raw.watt_per_speed) : null,
+				entry_count: raw.entry_count,
+				avg_rpm: raw.avg_rpm !== null ? Math.round(raw.avg_rpm) : null,
+				avg_throttle: raw.avg_throttle !== null ? parseFloat(raw.avg_throttle.toFixed(1)) : null,
+				avg_motor_current: raw.avg_motor_current !== null ? parseFloat(raw.avg_motor_current.toFixed(1)) : null,
+				motor_battery_current_efficiency:
+					raw.motor_battery_current_efficiency !== null
+						? parseFloat(raw.motor_battery_current_efficiency.toFixed(2))
+						: null,
+				distance_km: raw.distance,
+				duration_s: raw.duration,
+			},
 		}
 	})
 }

@@ -3,7 +3,7 @@ import { CANONICAL_SERIES_CONFIG } from './seriesConfig'
 import type { SeriesConfig } from './seriesConfig' // Import SeriesConfig for casting
 // import { haversineDistance } from '../utils/gpsDistance' // Removed as it's no longer used
 import { applyRangeChecks } from './rangeChecks'
-// import { calculateEfficiencySeries } from '../utils/calcSeries' // Removed import
+import { calculateMovingAverageForSeries } from '../utils/calcSeries' // Added for moving averages
 
 // Interface to hold all relevant data for a single timestamp
 interface AggregatedDataPoint {
@@ -30,10 +30,6 @@ interface AggregatedDataPoint {
 	// Calculated values (wh_per_km and w_per_speed removed)
 }
 
-export interface ChartFormatterContext {
-	logEntries: LogEntry[]
-}
-
 // Helper to get or create an AggregatedDataPoint for a timestamp
 const getOrCreateDataPoint = (map: Map<number, AggregatedDataPoint>, timestamp: number): AggregatedDataPoint => {
 	if (!map.has(timestamp)) {
@@ -43,8 +39,8 @@ const getOrCreateDataPoint = (map: Map<number, AggregatedDataPoint>, timestamp: 
 }
 
 export const chartFormatters = {
-	getChartFormattedData(this: ChartFormatterContext): FormattedChartData {
-		if (this.logEntries.length === 0) {
+	getChartFormattedData(logEntries: LogEntry[], showGroupAveragesMaster: boolean): FormattedChartData {
+		if (logEntries.length === 0) {
 			return { series: [] }
 		}
 
@@ -52,7 +48,7 @@ export const chartFormatters = {
 
 		// 1. Collect all unique preciseTimestamps and sort them
 		const uniqueTimestampMillis = new Set<number>()
-		this.logEntries.forEach((entry) => {
+		logEntries.forEach((entry) => {
 			uniqueTimestampMillis.add(entry.preciseTimestamp.getTime())
 		})
 		const sortedUniqueTimestampMillis = Array.from(uniqueTimestampMillis).sort((a, b) => a - b)
@@ -60,7 +56,7 @@ export const chartFormatters = {
 		// 2. Aggregate all sensor data into dataPointsMap
 		const dataPointsMap = new Map<number, AggregatedDataPoint>()
 
-		this.logEntries.forEach((entry) => {
+		logEntries.forEach((entry) => {
 			const tsMillis = entry.preciseTimestamp.getTime()
 			const dp = getOrCreateDataPoint(dataPointsMap, tsMillis)
 
@@ -326,7 +322,7 @@ export const chartFormatters = {
 			// They will just have null data if dependencies are missing. - 'calculated' type removed
 			if (
 				// config.sensorType !== 'calculated' && // 'calculated' type removed from config
-				!this.logEntries.some((logEntry) => logEntry.n === config.sensorType)
+				!logEntries.some((logEntry) => logEntry.n === config.sensorType)
 			) {
 				return
 			}
@@ -370,6 +366,31 @@ export const chartFormatters = {
 
 		console.log('------ Final Series for ECharts:', finalSeries)
 		console.timeEnd('getChartFormattedData')
+
+		if (showGroupAveragesMaster) {
+			console.time('calculateMovingAverages')
+			const averagedSeries = finalSeries.map((series) => {
+				if (series.data && series.data.length > 0) {
+					// Ensure data is Array<[Date, number | null]> as expected by calculateMovingAverageForSeries
+					const validDataForAverage = series.data.map((point) => {
+						// point is [Date, number | null]
+						if (point[0] instanceof Date && (typeof point[1] === 'number' || point[1] === null)) {
+							return point as [Date, number | null]
+						}
+						// Fallback for unexpected format, though ideally this shouldn't happen
+						return [new Date(point[0]), null] as [Date, number | null]
+					})
+					return {
+						...series,
+						data: calculateMovingAverageForSeries(validDataForAverage, 3000), // 3-second moving average
+					}
+				}
+				return series
+			})
+			console.timeEnd('calculateMovingAverages')
+			return { series: averagedSeries }
+		}
+
 		return { series: finalSeries }
 	},
 }

@@ -40,14 +40,12 @@ export const visibilityActions: VisibilityActions = {
 	loadVisibilityPreferences(this: VisibilityActionContext) {
 		if (typeof localStorage === 'undefined') {
 			this.hiddenSeries = new Set<string>()
-			console.log('[visibilityActions] localStorage not available, hiddenSeries set to empty (all visible).')
 			return
 		}
 
 		const storedOldVisible = localStorage.getItem(OLD_LS_KEY_VISIBLE)
 
 		if (storedOldVisible) {
-			console.log('[visibilityActions] Found old visibility key:', OLD_LS_KEY_VISIBLE)
 			try {
 				const previouslyVisibleArray = JSON.parse(storedOldVisible) as string[]
 				const previouslyVisibleSet = new Set(previouslyVisibleArray)
@@ -57,9 +55,6 @@ export const visibilityActions: VisibilityActions = {
 					allAvailableSeriesNames = this.getChartFormattedData.series.map((s) => s.name)
 				} else {
 					allAvailableSeriesNames = CANONICAL_SERIES_CONFIG.map((c) => c.displayName)
-					console.warn(
-						'[visibilityActions] Migrating: Chart data not available, using CANONICAL_SERIES_CONFIG for all series names.'
-					)
 				}
 
 				this.hiddenSeries = new Set<string>()
@@ -69,20 +64,9 @@ export const visibilityActions: VisibilityActions = {
 					}
 				})
 
-				console.log(
-					'[visibilityActions] Migrated from old visible to new hidden. Previously visible:',
-					Array.from(previouslyVisibleSet),
-					'All available:',
-					allAvailableSeriesNames,
-					'Newly hidden:',
-					Array.from(this.hiddenSeries)
-				)
-
 				this.saveVisibilityPreferences() // Save under new key
 				localStorage.removeItem(OLD_LS_KEY_VISIBLE)
-				console.log('[visibilityActions] Removed old visibility key:', OLD_LS_KEY_VISIBLE)
-			} catch (e) {
-				console.error('Failed to parse or migrate old visible series from localStorage:', e)
+			} catch {
 				this.hiddenSeries = new Set<string>() // Default to all visible on error
 			}
 		} else {
@@ -91,20 +75,12 @@ export const visibilityActions: VisibilityActions = {
 				try {
 					const hiddenArray = JSON.parse(storedNewHidden) as string[]
 					this.hiddenSeries = new Set(hiddenArray)
-					console.log(
-						'[visibilityActions] Loaded hiddenSeries from new key:',
-						NEW_LS_KEY_HIDDEN,
-						Array.from(this.hiddenSeries)
-					)
 				} catch (e) {
 					console.error('Failed to parse hidden series from new key:', e)
 					this.hiddenSeries = new Set<string>()
 				}
 			} else {
 				this.hiddenSeries = new Set<string>()
-				console.log(
-					'[visibilityActions] No old or new visibility preferences found, hiddenSeries set to empty (all visible).'
-				)
 			}
 		}
 	},
@@ -112,7 +88,6 @@ export const visibilityActions: VisibilityActions = {
 	saveVisibilityPreferences(this: VisibilityActionContext) {
 		if (typeof localStorage !== 'undefined') {
 			localStorage.setItem(NEW_LS_KEY_HIDDEN, JSON.stringify(Array.from(this.hiddenSeries)))
-			console.log('[visibilityActions] Saved hiddenSeries to localStorage:', Array.from(this.hiddenSeries))
 		}
 	},
 
@@ -121,16 +96,8 @@ export const visibilityActions: VisibilityActions = {
 		// With the new logic, an empty hiddenSeries means all are visible by default.
 		// loadVisibilityPreferences handles the initial setup (including migration or empty set).
 		// This function can now ensure that if it's called, it explicitly sets to "all visible".
-		console.log(
-			'[visibilityActions] initializeDefaultVisibility called. Current hiddenSeries (start):',
-			Array.from(this.hiddenSeries)
-		)
 		this.hiddenSeries.clear() // Ensure all series are visible
 		this.saveVisibilityPreferences()
-		console.log(
-			'[visibilityActions] Default visibility set (all visible). Current hiddenSeries (end):',
-			Array.from(this.hiddenSeries)
-		)
 	},
 
 	toggleSeries(this: VisibilityActionContext, seriesName: string) {
