@@ -1,5 +1,3 @@
-Using AP IP address: 192.168.4.1
-*** Sync required (files modified) ***
 {"device_description": "v0. 1600 foil. fone 90L. 6384 regular. 5M cable. regular PC 2 blade prop. 45d 12s3p bat", "fan_enabled": false, "date": "2025-06-11", "ds_associations": [{"name": "alum", "address": "28616435fba83f06"}, {"name": "ambient", "address": "28616435fa66d2d1"}, {"name": "mosfet", "address": "28616435c78a0192"}], "restart": "0304"}
 [{"t":"05-21-40"},{"n":"mc","v":0.6},{"n":"th","v":991}]
 [{"t":"05-21-41"},{"n":"ds","v":{"alum":28.6,"ambient":29.4,"mosfet":29.2}},{"n":"gps","v":{"seen":0,"active":0,"fix":false}}]

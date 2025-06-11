@@ -548,7 +548,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 			// Pass showGroupAveragesMaster to chartFormatters
 			const chartData = chartFormatters.getChartFormattedData(
-				nullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
+				finalFilteredAndValidatedEntries, // TODO: Should this be speedNullifiedEntries for chart?
 				state.showGroupAveragesMaster
 			)
 
