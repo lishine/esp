@@ -124,7 +124,6 @@ export function createTooltipFormatter(
 
 			// Add active group name
 			const sessionStore = useSessionDataStore()
-			const metadataGroups = sessionStore.sessionMetadata?.groups
 			let activeGroupNameFound: string | undefined = undefined
 
 			if (groupAggregates && groupAggregates.length > 0) {

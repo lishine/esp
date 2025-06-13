@@ -1,38 +1,38 @@
 export const GROUP_AVERAGE_SERIES_CONFIG = [
 	{
 		displayName: 'Avg Bat Current',
-		internalId: 'avg_current', // Match dataKey
+		internalId: 'avg_current',
 		dataKey: 'avg_current',
 		unit: 'A',
 		decimals: 0,
-		color: '#FF5733',
+		color: '#0000b3',
 		yAxisIndex: 0,
 	},
 	{
 		displayName: 'Avg Motor Current',
-		internalId: 'avg_motor_current', // Match dataKey
+		internalId: 'avg_motor_current',
 		dataKey: 'avg_motor_current',
 		unit: 'A',
 		decimals: 0,
-		color: '#33FF57',
+		color: '#8080ff',
 		yAxisIndex: 0,
 	},
 	{
 		displayName: 'Avg RPM',
-		internalId: 'avg_rpm', // Match dataKey
+		internalId: 'avg_rpm',
 		dataKey: 'avg_rpm',
-		unit: 'RPM', // Added unit
+		unit: 'RPM',
 		decimals: 0,
-		color: '#3357FF',
+		color: 'green',
 		yAxisIndex: 1,
 	},
 	{
 		displayName: 'Avg Speed',
-		internalId: 'avg_speed_kmh', // Match dataKey
+		internalId: 'avg_speed_kmh',
 		dataKey: 'avg_speed_kmh',
 		unit: 'km/h',
 		decimals: 1,
-		color: '#FF33A1',
+		color: '#fcad03',
 		yAxisIndex: 2,
 	},
 	{
@@ -41,7 +41,7 @@ export const GROUP_AVERAGE_SERIES_CONFIG = [
 		dataKey: 'avg_volt',
 		unit: 'V',
 		decimals: 1,
-		color: '#C70039',
+		color: 'grey',
 		yAxisIndex: 3,
 	},
 	{
@@ -50,7 +50,7 @@ export const GROUP_AVERAGE_SERIES_CONFIG = [
 		dataKey: 'avg_throttle',
 		unit: '',
 		decimals: 0,
-		color: '#FFC300',
+		color: '#03fcca',
 		yAxisIndex: 4,
 	},
 	{
@@ -59,7 +59,7 @@ export const GROUP_AVERAGE_SERIES_CONFIG = [
 		dataKey: 'motor_battery_current_efficiency',
 		unit: '',
 		decimals: 1,
-		color: '#581845',
+		color: '#E57373',
 		yAxisIndex: 6,
 	},
 	{
@@ -68,7 +68,7 @@ export const GROUP_AVERAGE_SERIES_CONFIG = [
 		dataKey: 'watt-hour_per_km',
 		unit: '',
 		decimals: 0,
-		color: '#DAF7A6',
+		color: '#660000',
 		yAxisIndex: 7,
 	},
 	{
@@ -77,27 +77,27 @@ export const GROUP_AVERAGE_SERIES_CONFIG = [
 		dataKey: 'watt_per_speed',
 		unit: '',
 		decimals: 0,
-		color: '#A6F7DA',
+		color: '#ff9933',
 		yAxisIndex: 8,
 	},
-	{
-		displayName: 'Distance',
-		internalId: 'distance_km',
-		dataKey: 'distance_km',
-		unit: 'km',
-		decimals: 2,
-		color: '#33FFBD',
-		yAxisIndex: 9,
-	},
-	{
-		displayName: 'Duration',
-		internalId: 'duration_s',
-		dataKey: 'duration_s',
-		unit: 's',
-		decimals: 0,
-		color: '#33D4FF',
-		yAxisIndex: 10,
-	},
+	// {
+	// 	displayName: 'Distance',
+	// 	internalId: 'distance_km',
+	// 	dataKey: 'distance_km',
+	// 	unit: 'km',
+	// 	decimals: 2,
+	// 	color: '#33FFBD',
+	// 	yAxisIndex: 9,
+	// },
+	// {
+	// 	displayName: 'Duration',
+	// 	internalId: 'duration_s',
+	// 	dataKey: 'duration_s',
+	// 	unit: 's',
+	// 	decimals: 0,
+	// 	color: '#33D4FF',
+	// 	yAxisIndex: 10,
+	// },
 ] as const
 
 export type GroupAverageSeriesConfig = (typeof GROUP_AVERAGE_SERIES_CONFIG)[number]
