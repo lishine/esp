@@ -114,7 +114,6 @@ export function useGroupAveragesChartOptions(
 			...series,
 			connectNulls: false, // Revert: Main series will use nulls for breaks
 		}))
-		console.log({ finalSeriesData: finalSeriesData })
 
 		// If finalYAxes is empty (e.g., all series are hidden), return null to avoid rendering issues.
 		if (!finalYAxes || (Array.isArray(finalYAxes) && finalYAxes.length === 0)) {

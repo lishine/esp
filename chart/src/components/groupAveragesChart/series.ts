@@ -120,7 +120,7 @@ export function buildSeriesOptionsForGroupChart(
 								lineStyle: {
 									width: 2, // Use a fixed width for connectors
 									color: config.color, // Use color from the series config
-									opacity: 0.3, // Desired opacity
+									opacity: 0.4, // Desired opacity
 								},
 								itemStyle: {
 									color: config.color, // Match item color with line color
@@ -152,7 +152,8 @@ export function buildSeriesOptionsForGroupChart(
 				data: mainSeriesDataPoints, // Use the 2D data points
 				yAxisIndex: yAxisIndexToUse,
 				showSymbol: false, // Hide symbols as per feedback
-				smooth: false,
+				smooth: 0.3,
+				smoothMonotone: 'x', // Ensure smooth lines
 				sampling: 'lttb', // Added sampling
 				itemStyle: {
 					color: config.color,
