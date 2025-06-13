@@ -52,8 +52,9 @@ export function createTooltipFormatter(
 
 			const firstPoint = params[0]
 			let tooltipHtml = ''
-			const timestampMillis = firstPoint.axisValue as number // Get the timestamp from the axis pointer
+			const timestampMillis = firstPoint.axisValue as number
 
+			// Time header
 			if (timestampMillis !== undefined && !isNaN(timestampMillis)) {
 				const xAxisDate = new Date(timestampMillis)
 				if (!isNaN(xAxisDate.getTime())) {
@@ -65,32 +66,46 @@ export function createTooltipFormatter(
 				tooltipHtml += '<div style="text-align: center;">Time N/A</div><br/>'
 			}
 
-			// Map seriesDisplayConfigs for quick lookup by seriesName (original name from ECharts params)
-			const displayConfigMap = new Map<string, TooltipSeriesDisplayConfig>()
-			seriesDisplayConfigs.forEach((config) => displayConfigMap.set(config.seriesName, config))
+			// Create a map from the ECharts params for easy access by seriesName, prioritizing entries with values.
+			const paramsMap = new Map<string, EChartTooltipParam>()
+			params.forEach((p: EChartTooltipParam) => {
+				// Ensure p.seriesName is a string before trying to use it as a map key
+				if (typeof p.seriesName === 'string') {
+					const existingParam = paramsMap.get(p.seriesName)
+					const pValue = Array.isArray(p.value) ? p.value[1] : p.value
+					const existingPValue =
+						existingParam &&
+						(Array.isArray(existingParam.value) ? existingParam.value[1] : existingParam.value)
 
-			params.forEach((param: EChartTooltipParam) => {
-				const config = displayConfigMap.get(param.seriesName)
-				if (!config) return // Skip if no display config for this series
+					if (!existingParam || (existingPValue === null && pValue !== null)) {
+						paramsMap.set(p.seriesName, p)
+					}
+				}
+			})
+
+			// Iterate over the display configurations specific to this chart
+			seriesDisplayConfigs.forEach((config) => {
+				const param = paramsMap.get(config.seriesName) // config.seriesName is the ECharts series name
 
 				let displayValue: string = '-'
 				let unitToShow = config.unit || ''
-				const marker = param.marker || ''
+				const marker = param?.marker || '' // Use marker from param if available
 
-				// param.value is typically [timestamp, value] for line/bar charts
-				// For 'axis' trigger, ECharts params usually contain value as an array [xVal, yVal]
-				// or just yVal if data is 1D. We expect [timestamp, actualValue].
-				const valueFromParam = Array.isArray(param.value) ? param.value[1] : param.value
-
-				if (
-					valueFromParam !== null &&
-					valueFromParam !== undefined &&
-					typeof valueFromParam === 'number' &&
-					!isNaN(valueFromParam)
-				) {
-					displayValue = valueFromParam.toFixed(config.decimals)
+				if (param) {
+					const valueFromParam = Array.isArray(param.value) ? param.value[1] : param.value
+					if (
+						valueFromParam !== null &&
+						valueFromParam !== undefined &&
+						typeof valueFromParam === 'number' &&
+						!isNaN(valueFromParam)
+					) {
+						displayValue = valueFromParam.toFixed(config.decimals)
+					} else {
+						unitToShow = '' // No unit if value is not valid or not a number
+					}
 				} else {
-					unitToShow = '' // No unit if value is not valid
+					// No data from ECharts params for this configured series at this point
+					unitToShow = ''
 				}
 				tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${marker}${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">${displayValue}${unitToShow ? ' ' + unitToShow : ''}</span></div>`
 			})
@@ -114,7 +129,7 @@ export function createTooltipFormatter(
 			if (chartTimeInSeconds !== -1 && groups) {
 				const activeGroupName = findActiveGroupName(chartTimeInSeconds, groups)
 				if (activeGroupName) {
-					tooltipHtml += `<div style="margin-top: 5px; text-align: center; font-weight: bold;">Group: ${activeGroupName}</div>`
+					tooltipHtml += `<div style="margin-top: 5px; text-align: center; font-weight: bold;">${activeGroupName}</div>`
 				}
 			}
 
