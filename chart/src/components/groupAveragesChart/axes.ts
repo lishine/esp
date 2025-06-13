@@ -31,7 +31,8 @@ export function buildYAxisOptionsForGroupChart(
 	visibleYAxisOriginalIndices: number[]
 ): YAXisComponentOption[] {
 	// Changed return type to use the local YAxisOption derived from EChartsOption
-	if (!yAxesConfigsWithCustomProps || yAxesConfigsWithCustomProps.length === 0) {
+	if (!yAxesConfigsWithCustomProps) {
+		// Check only if the array itself is undefined
 		return []
 	}
 
@@ -83,6 +84,38 @@ export function buildYAxisOptionsForGroupChart(
 				nameTextStyle: { ...config.nameTextStyle, color: config._color },
 			})
 		})
-	})
+	}) // Closes sortedOriginalIndices.forEach
+
+	// Define base for empty axes and add them if no other visible axes exist on a side
+	const emptyAxisBase: YAXisComponentOption = {
+		type: 'value',
+		show: true,
+		name: '',
+		min: 0,
+		max: 1, // Minimal default range
+		axisLabel: { show: true },
+		splitLine: { show: false },
+		axisLine: { show: true, onZero: false },
+		offset: 0,
+	}
+
+	const hasVisibleLeftAxis = returnedAxes.some((axis) => axis.position === 'left' && axis.show === true)
+	if (!hasVisibleLeftAxis) {
+		returnedAxes.push({
+			...emptyAxisBase,
+			id: 'emptyLeftAxis',
+			position: 'left',
+		})
+	}
+
+	const hasVisibleRightAxis = returnedAxes.some((axis) => axis.position === 'right' && axis.show === true)
+	if (!hasVisibleRightAxis) {
+		returnedAxes.push({
+			...emptyAxisBase,
+			id: 'emptyRightAxis',
+			position: 'right',
+		})
+	}
+
 	return returnedAxes // Cast removed as returnedAxes is now strongly typed
 }
