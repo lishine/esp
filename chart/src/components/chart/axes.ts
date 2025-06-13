@@ -122,6 +122,17 @@ export function defineYAxesConfig(finalMaxCurrent: number, finalMaxTemp: number,
 			axisLabel: { show: true },
 			nameTextStyle: { padding: [0, 0, 0, -35] },
 		},
+		{
+			id: 'hdgAxis',
+			name: 'Heading (°)',
+			position: 'right',
+			seriesNames: ['Heading'],
+			min: 0,
+			max: 360,
+			show: false,
+			axisLabel: { show: false },
+			nameTextStyle: { padding: [0, 0, 0, -35] },
+		},
 		{ id: 'yOther', show: false }, // Fallback hidden axis
 	]
 }
