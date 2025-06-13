@@ -131,7 +131,7 @@ export function useGroupAveragesChartOptions(
 			},
 			xAxis: {
 				type: 'time',
-				useUTC: true,
+				// useUTC: true, // Removed: ECharts handles UTC by default for time axis
 				axisLabel: {
 					show: true,
 					formatter: (value: number) => {
@@ -159,18 +159,18 @@ export function useGroupAveragesChartOptions(
 						unit: gasc.unit,
 						decimals: gasc.decimals,
 					})
-				)
-				// yAxesConfig and visibleYAxisIds are optional in the common formatter.
-				// Pass them if specific axis pointer label formatting is needed for GroupAveragesChart.
-				// For example, if you have `yAxesConfigForGroupChart` and `visibleYAxisIdsForGroupChart`:
-				// yAxesConfigForGroupChart,
-				// visibleYAxisIdsForGroupChart
-			),
+				),
+				{
+					// yAxesConfig: undefined, // Pass if needed
+					// visibleYAxisIds: undefined, // Pass if needed
+					groupAggregates: groupAggregates.value,
+				}
+			), // Ensure comma here
 			dataZoom: [
 				{
 					type: 'inside',
 					xAxisIndex: [0], // Zoom linked to the first x-axis
-					yAxisIndex: false, // Explicitly disable zooming on y-axes
+					yAxisIndex: undefined, // Correct way to disable y-axis zooming
 					start: dataZoomStart.value,
 					end: dataZoomEnd.value,
 					filterMode: 'none', // Changed to 'none'

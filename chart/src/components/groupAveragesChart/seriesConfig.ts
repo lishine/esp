@@ -48,19 +48,10 @@ export const GROUP_AVERAGE_SERIES_CONFIG = [
 		displayName: 'Avg Throttle',
 		internalId: 'avg_throttle',
 		dataKey: 'avg_throttle',
-		unit: '%',
+		unit: '',
 		decimals: 1,
 		color: '#FFC300',
 		yAxisIndex: 4,
-	},
-	{
-		displayName: 'Consumption',
-		internalId: 'consumption', // Assuming this is the key in metrics
-		dataKey: 'consumption', // Assuming this is the key in metrics
-		unit: 'Ah', // Assuming unit
-		decimals: 3,
-		color: '#900C3F',
-		yAxisIndex: 5,
 	},
 	{
 		displayName: 'Motor/Bat Current Efficiency',
