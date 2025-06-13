@@ -3,7 +3,9 @@ import { computed, type Ref } from 'vue'
 import type { EChartsOption } from 'echarts' // Import full EChartsOption
 // Removed unused TooltipComponentOption
 import { formatInTimeZone } from 'date-fns-tz'
-import type { GroupAggregate } from '@/stores/types'
+import type { GroupAggregate } from '@/stores/types' // Added MetadataGroup
+import { useSessionDataStore } from '@/stores/sessionDataStore' // Added sessionDataStore
+import { findActiveGroupName } from '@/utils/tooltipHelpers' // Added helpers
 import type { GroupAverageSeriesConfig } from './seriesConfig' // Updated import path
 import { buildYAxisOptionsForGroupChart, type YAxisConfig } from './axes'
 import { buildSeriesOptionsForGroupChart } from './series'
@@ -192,6 +194,27 @@ export function useGroupAveragesChartOptions(
 							tooltipText += `${param.marker} ${param.seriesName}: ${parseFloat(param.value[1] as string).toFixed(decimals)} ${config?.unit || ''}<br/>`
 						}
 					})
+
+					// Add active group name
+					const sessionStore = useSessionDataStore()
+					const metadataGroups = sessionStore.sessionMetadata?.groups
+
+					let chartTimeInSeconds = -1
+					// firstPoint.axisValue is the timestamp for the hovered point
+					if (typeof firstPoint.axisValue === 'number') {
+						const date = new Date(firstPoint.axisValue)
+						chartTimeInSeconds = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds()
+					}
+					// console.log(`[GroupAveragesTooltip] Time: ${time}, chartTimeInSeconds: ${chartTimeInSeconds}, metadataGroups:`, metadataGroups);
+
+					if (chartTimeInSeconds !== -1 && metadataGroups) {
+						const activeGroupName = findActiveGroupName(chartTimeInSeconds, metadataGroups)
+						// console.log(`[GroupAveragesTooltip] Active group name: ${activeGroupName}`);
+						if (activeGroupName) {
+							tooltipText += `<div style="margin-top: 5px; text-align: center; font-weight: bold;">Group: ${activeGroupName}</div>`
+						}
+					}
+
 					return tooltipText
 				},
 			},

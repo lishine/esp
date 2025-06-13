@@ -11,6 +11,7 @@ import type {
 	DsValues,
 	FormattedChartData,
 	GroupAggregate, // Added
+	MetadataGroup,
 } from './types'
 import { GROUP_AVERAGE_SERIES_CONFIG } from '../components/groupAveragesChart/seriesConfig' // Updated import path
 import { visibilityActions } from './visibilityActions'
@@ -70,6 +71,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 				ds_associations: [],
 				date: '',
 				restart: '',
+				groups: [], // Initialize groups
 			},
 			logEntries: [],
 			isLoading: false,
@@ -155,6 +157,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 					ds_associations: parsedFirstLine.ds_associations,
 					date: parsedFirstLine.date,
 					restart: parsedFirstLine.restart,
+					groups: parsedFirstLine.groups || [], // Parse groups, default to empty array if not present
 				}
 			} catch (e) {
 				console.error('Failed to parse session metadata:', e)

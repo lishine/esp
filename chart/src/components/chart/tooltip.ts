@@ -1,7 +1,8 @@
 import { formatInTimeZone } from 'date-fns-tz'
-import { CANONICAL_SERIES_CONFIG } from '../../stores'
+import { CANONICAL_SERIES_CONFIG, useSessionDataStore } from '../../stores'
 import type { EChartTooltipParam, ChartFormattedDataRef } from './types' // Import ChartFormattedDataRef
 import type { YAxisConfig } from './axes' // Assuming YAxisConfig will be defined in axes.ts
+import { findActiveGroupName, parseTimeToSeconds } from '@/utils/tooltipHelpers'
 
 export function createTooltipFormatter(
 	yAxesConfig: YAxisConfig[], // Pass yAxesConfig if needed for axis label formatting
@@ -108,6 +109,30 @@ export function createTooltipFormatter(
 
 				tooltipHtml += `<div style="display: flex; justify-content: space-between; width: 100%;"><span>${marker}${config.displayName}:</span><span style="font-weight: bold; margin-left: 10px;">${displayValue}${unitToShow ? ' ' + unitToShow : ''}</span></div>`
 			})
+
+			// Add active group name
+			const sessionStore = useSessionDataStore()
+			const groups = sessionStore.sessionMetadata?.groups
+
+			// Get current chart time in seconds
+			// Assuming firstPoint.axisValueLabel is "HH:mm:ss" or firstPoint.axisValue is a timestamp
+			let chartTimeInSeconds = -1
+			if (typeof firstPoint.axisValue === 'number') {
+				// Typically a timestamp
+				const date = new Date(firstPoint.axisValue)
+				chartTimeInSeconds = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds()
+			} else if (typeof firstPoint.axisValueLabel === 'string') {
+				// Check if it's a "HH:MM:SS" string
+				chartTimeInSeconds = parseTimeToSeconds(firstPoint.axisValueLabel)
+			}
+
+			if (chartTimeInSeconds !== -1 && groups) {
+				const activeGroupName = findActiveGroupName(chartTimeInSeconds, groups)
+				if (activeGroupName) {
+					tooltipHtml += `<div style="margin-top: 5px; text-align: center; font-weight: bold;">Group: ${activeGroupName}</div>`
+				}
+			}
+
 			return tooltipHtml
 		},
 	}

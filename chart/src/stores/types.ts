@@ -57,12 +57,18 @@ export interface DsAssociation {
 }
 
 // Structure for the session metadata (first line of data)
+export interface MetadataGroup {
+	t: string // Time e.g., "09:41:05"
+	n: string // Name e.g., "flipsky alum"
+}
+
 export interface SessionMetadata {
 	device_description: string
 	fan_enabled: boolean
 	ds_associations: DsAssociation[]
 	date: string // Added date field
 	restart: string // Added restart field
+	groups?: MetadataGroup[] // Added groups field
 }
 
 export interface GroupAggregate {

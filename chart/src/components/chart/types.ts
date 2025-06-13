@@ -6,6 +6,7 @@ export type EChartTooltipParam = {
 	marker?: string
 	color?: string
 	axisValue?: number | string | Date
+	axisValueLabel?: string // Added for formatted time string from axis
 }
 
 export type ChartFormattedDataRef = {
