@@ -81,48 +81,29 @@ class HTTPServer:
                 # readline should work for both plain and SSL sockets
                 request_line_bytes = client_socket.readline()
                 if not request_line_bytes:
-                    log(
-                        "SF: parse_request: No request line received. EXITING parse_request with None."
-                    )
                     return None
-                log(f"SF: parse_request: Raw request_line_bytes: {request_line_bytes}")
 
                 # Read header lines
                 while True:
                     # readline should work for both plain and SSL sockets
                     line = client_socket.readline()
                     if not line:  # Socket closed or error
-                        log(
-                            "SF: parse_request: Socket closed or error while reading headers. EXITING parse_request with None."
-                        )
                         return None  # Or raise an error
                     if line == b"\r\n":  # End of headers
                         break
                     header_lines_bytes.append(line)
-                log(f"SF: parse_request: Raw header_lines_bytes: {header_lines_bytes}")
             except Exception as e_read_headers:
-                log(
-                    f"SF: parse_request: Exception while reading headers ({'SSL' if is_ssl else 'HTTP'}): {e_read_headers}. EXITING parse_request with None."
-                )
                 import sys
 
                 sys.print_exception(e_read_headers)
                 return None
 
             request_line_str = request_line_bytes.decode("utf-8").strip()
-            log(f"SF: parse_request: request_line_str: {request_line_str}")
             method, full_path, http_version = request_line_str.split(" ", 2)
-            log(
-                f"SF: parse_request: Parsed method='{method}', full_path='{full_path}', http_version='{http_version}'"
-            )
-
             # Split path and query string
             path_parts = full_path.split("?", 1)
             path = path_parts[0]
             query_string = path_parts[1] if len(path_parts) > 1 else ""
-            log(
-                f"SF: parse_request: Parsed path='{path}', query_string='{query_string}'"
-            )
 
             # Parse query parameters
             query_params = {}
@@ -161,8 +142,7 @@ class HTTPServer:
                         else:
                             query_params[param] = True  # Flag parameters
                 except Exception as e:
-                    log(f"Error parsing query parameters in parse_request: {str(e)}")
-
+                    pass
             # Parse headers
             headers = {}
             for line_bytes in header_lines_bytes:
@@ -172,44 +152,24 @@ class HTTPServer:
                     headers[key.strip()] = value.strip()
 
             content_length = int(headers.get("Content-Length", "0"))
-            log(f"SF: parse_request: Content-Length: {content_length}")
             body = b""
             if content_length > 0:
                 bytes_read = 0
                 while bytes_read < content_length:
                     chunk = client_socket.read(min(content_length - bytes_read, 4096))
                     if not chunk:
-                        log(
-                            "SF: parse_request: Socket closed or error while reading request body."
-                        )
                         break  # from while bytes_read < content_length
                     body += chunk
                     bytes_read += len(chunk)
-                log(
-                    f"SF: parse_request: Raw body ({bytes_read}/{content_length} bytes): {body[:200]}{'...' if len(body) > 200 else ''}"
-                )  # Log first 200 bytes
-
-                if bytes_read < content_length:
-                    log(
-                        f"SF: parse_request: Incomplete request body. Expected {content_length}, got {bytes_read}."
-                    )
-                    # Depending on strictness, could return None or raise an error here.
-                    # For now, we proceed with the body received.
 
             request = Request(method, path, query_string, query_params, headers, body)
             request.client_addr = client_addr
-            log(
-                f"SF: parse_request: Created Request object: method={request.method}, path={request.path}, qs='{request.query_string}', cl={headers.get('Content-Length')}, body_len={len(request.body) if request.body else 0}. EXITING parse_request."
-            )
             return request
         except Exception as e:
             log(f"SF: Error parsing request: {e}. EXITING parse_request with None.")
             return None
 
     def send_response(self, client_socket, response, is_ssl):  # Added is_ssl
-        log(
-            f"SF: ENTER send_response for {response.status} to {'SSL client' if is_ssl else 'HTTP client'}"
-        )
         try:
             status_text = {
                 200: "OK",
@@ -266,60 +226,33 @@ class HTTPServer:
             sys.print_exception(e)  # Add this for full traceback
 
     def handle_client(self, client_socket, addr, is_ssl):  # Added is_ssl
-        log(f"SF: ENTER handle_client for {addr} (SSL: {is_ssl})")
         try:
-            log(f"SF: Calling parse_request for {addr} (SSL: {is_ssl})")
             request = self.parse_request(client_socket, addr, is_ssl)  # Pass is_ssl
-            log(f"SF: parse_request returned for {addr}. Type: {type(request)}")
             if request:
-                log(
-                    f"SF: Request object for {addr}: method={request.method}, path={request.path}, body_len={len(request.body) if request.body else 0}"
-                )
+                pass
             else:  # request is None
-                log(
-                    f"SF: No request object from parse_request for {addr}, closing socket and returning. EXITING handle_client."
-                )
                 if client_socket:
                     client_socket.close()  # Ensure closed if parse failed early
                 return
 
             # Run before_request handlers
             for br_handler in self.before_request_handlers:
-                log(f"SF: Running before_request handler for {addr}")
                 result = br_handler(request)
                 if result and isinstance(
                     result, Response
                 ):  # If a handler returns a Response
-                    log(
-                        f"SF: before_request handler returned a Response for {addr}. Sending."
-                    )
                     self.send_response(client_socket, result, is_ssl)  # Pass is_ssl
-                    log(
-                        f"SF: Exiting handle_client for {addr} after before_request response."
-                    )
                     # client_socket is closed in send_response's finally or here if send_response fails
                     return
 
             response = None
             result = None  # Initialize result here to satisfy Pylance and ensure it's always defined
-            log(
-                f"SF: Looking for route handler for path '{request.path}' (method: {request.method}) for {addr}"
-            )
             handler_info = self.routes.get(request.path)
 
             if handler_info and request.method in handler_info["methods"]:
-                log(
-                    f"SF: Found exact route handler for '{request.path}' for {addr}. Calling handler."
-                )
                 try:
                     result = handler_info["handler"](request)
-                    log(
-                        f"Exact route handler for '{request.path}' returned for {addr}. Result type: {type(result)}"
-                    )
                 except Exception as e_handler_exc:
-                    log(
-                        f"CRITICAL: Exception in exact route handler for '{request.path}' for {addr}: {e_handler_exc}"
-                    )
                     import sys
 
                     sys.print_exception(e_handler_exc)
@@ -350,14 +283,8 @@ class HTTPServer:
                         and request.path.startswith(route_prefix_path)
                         and request.method in route_info_prefix["methods"]
                     ):
-                        log(
-                            f"Found prefix route handler for '{request.path}' (prefix: '{route_prefix_path}') for {addr}. Calling."
-                        )
                         try:
                             result = route_info_prefix["handler"](request)
-                            log(
-                                f"Prefix route handler for '{request.path}' returned for {addr}. Result type: {type(result)}"
-                            )
                             found_prefix = True
                             if isinstance(result, Response):
                                 response = result
@@ -370,9 +297,6 @@ class HTTPServer:
                                 )
                             break
                         except Exception as e_prefix_handler_exc:
-                            log(
-                                f"CRITICAL: Exception in prefix route handler for '{request.path}' for {addr}: {e_prefix_handler_exc}"
-                            )
                             import sys
 
                             sys.print_exception(e_prefix_handler_exc)
@@ -384,30 +308,17 @@ class HTTPServer:
                             break
 
                 if not found_prefix:
-                    log(f"No route found for '{request.path}' for {addr}.")
                     response = Response(body="Not Found", status=HTTP_NOT_FOUND)
 
             if response is None:  # Should ideally be set by logic above
-                log(
-                    f"Response object is None for '{request.path}' for {addr}. Defaulting to 500."
-                )
                 response = Response(
                     body="Internal Server Error: Handler did not produce a response.",
                     status=HTTP_INTERNAL_ERROR,
                 )
 
-            log(
-                f"Calling send_response for {addr} (SSL: {is_ssl}) with status {response.status} for path '{request.path}'"
-            )
             self.send_response(client_socket, response, is_ssl)  # Pass is_ssl
-            log(
-                f"send_response finished for {addr} (SSL: {is_ssl}) for path '{request.path}'"
-            )
 
         except Exception as e_handle_client:
-            log(
-                f"CRITICAL: Unhandled Exception in handle_client for {addr}: {e_handle_client}"
-            )
             import sys
 
             sys.print_exception(e_handle_client)
@@ -440,15 +351,11 @@ class HTTPServer:
                         f"Failed to send final error response in handle_client for {addr} (SSL: {is_ssl}): {e_send_final_error}"
                     )
         finally:
-            log(f"Finally block in handle_client for {addr}. Closing client socket.")
             try:
                 if client_socket:
                     client_socket.close()
             except Exception as e_final_close:
-                log(
-                    f"Error during final client_socket.close() for {addr}: {e_final_close}"
-                )
-            log(f"Finished handle_client for {addr}")
+                pass
 
     def run(self, port=None, ssl_context=None):  # Added ssl_context parameter
         if port is not None:
