@@ -248,7 +248,7 @@ const handleGitHubFileClick = (file: LogFile) => {
 								v-if="showGroupAveragesMaster && chartOptionsGroupAverages"
 								ref="groupAveragesChartRef"
 								:options="chartOptionsGroupAverages"
-								height="375px"
+								height="400px"
 								width="100%"
 								theme="light"
 							/>

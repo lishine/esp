@@ -1,5 +1,5 @@
 export const BATTERY_CURRENT_THRESHOLD_AMPS = 10
-export const MIN_SPEED_ON_FOIL = 10 // km/h
+export const MIN_SPEED_ON_FOIL = 8 // km/h
 
 import { defineStore } from 'pinia'
 import type {
@@ -353,25 +353,33 @@ export const useSessionDataStore = defineStore('sessionData', {
 			}
 
 			let finalFilteredAndValidatedEntries: LogEntry[]
+			let effectiveFilterStartTimeMs: number
+			let effectiveFilterEndTimeMs: number
 
 			if (!firstRelevantEntry || !lastRelevantEntry) {
 				console.warn(
 					'Could not determine dynamic time range based on battery current threshold after range validation. Displaying full time range.'
 				)
 				finalFilteredAndValidatedEntries = rangeValidatedEntries // Use rangeValidatedEntries if filtering fails
+				effectiveFilterStartTimeMs = firstLogEntryTimestamp
+				effectiveFilterEndTimeMs = lastLogEntryTimestamp
 			} else {
 				const firstRelevantTimestamp = firstRelevantEntry.preciseTimestamp.getTime()
 				const lastRelevantTimestamp = lastRelevantEntry.preciseTimestamp.getTime()
 
 				// Calculate start and end times, ensuring they are within the overall log entry range
-				const startTimeMs = Math.max(firstRelevantTimestamp - 30 * 1000, firstLogEntryTimestamp)
-				const endTimeMs = Math.min(lastRelevantTimestamp + 30 * 1000, lastLogEntryTimestamp)
+				const calculatedStartTimeMs = Math.max(firstRelevantTimestamp - 30 * 1000, firstLogEntryTimestamp)
+				const calculatedEndTimeMs = Math.min(lastRelevantTimestamp + 30 * 1000, lastLogEntryTimestamp)
+
+				effectiveFilterStartTimeMs = calculatedStartTimeMs
+				effectiveFilterEndTimeMs = calculatedEndTimeMs
 
 				// Filter entries based on the calculated time range
 				finalFilteredAndValidatedEntries = rangeValidatedEntries.filter(
 					// Filter rangeValidatedEntries
 					(entry) =>
-						entry.preciseTimestamp.getTime() >= startTimeMs && entry.preciseTimestamp.getTime() <= endTimeMs
+						entry.preciseTimestamp.getTime() >= effectiveFilterStartTimeMs &&
+						entry.preciseTimestamp.getTime() <= effectiveFilterEndTimeMs
 				)
 			}
 			console.log(
@@ -532,6 +540,47 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 			const nullifiedEntries = applyDataNullification(finalFilteredAndValidatedEntries)
 			const speedNullifiedEntries = applySpeedNullification(nullifiedEntries)
+			// // --- BEGIN REFINED DEBUG LOG ---
+			// console.log(
+			// 	'[DEBUG] Time window for finalFilteredAndValidatedEntries: Start:',
+			// 	isFinite(effectiveFilterStartTimeMs) ? new Date(effectiveFilterStartTimeMs).toISOString() : 'N/A',
+			// 	'End:',
+			// 	isFinite(effectiveFilterEndTimeMs) ? new Date(effectiveFilterEndTimeMs).toISOString() : 'N/A'
+			// )
+			// if (speedNullifiedEntries.length > 0) {
+			// 	console.log(
+			// 		'[DEBUG] speedNullifiedEntries actual range: First entry.t:',
+			// 		speedNullifiedEntries[0].t,
+			// 		'preciseTimestamp:',
+			// 		speedNullifiedEntries[0].preciseTimestamp.toISOString(),
+			// 		'Last entry.t:',
+			// 		speedNullifiedEntries[speedNullifiedEntries.length - 1].t,
+			// 		'preciseTimestamp:',
+			// 		speedNullifiedEntries[speedNullifiedEntries.length - 1].preciseTimestamp.toISOString()
+			// 	)
+			// } else {
+			// 	console.log('[DEBUG] speedNullifiedEntries is empty.')
+			// }
+
+			// const debugStartTimeStr = '07-58-19'
+			// const debugEndTimeStr = '07-58-26'
+			// console.log(
+			// 	`[DEBUG] Logging speedNullifiedEntries with entry.t between ${debugStartTimeStr} and ${debugEndTimeStr}:`
+			// )
+			// const entriesInTargetRange = speedNullifiedEntries.filter(
+			// 	(entry) => entry.t >= debugStartTimeStr && entry.t <= debugEndTimeStr
+			// )
+
+			// if (entriesInTargetRange.length > 0) {
+			// 	entriesInTargetRange.forEach((entry) => {
+			// 		console.log('[DEBUG Entry]', JSON.parse(JSON.stringify(entry)))
+			// 	})
+			// } else {
+			// 	console.log(
+			// 		`[DEBUG] No entries found in speedNullifiedEntries with entry.t between ${debugStartTimeStr} and ${debugEndTimeStr}.`
+			// 	)
+			// }
+			// // --- END REFINED DEBUG LOG ---
 
 			if (speedNullifiedEntries && speedNullifiedEntries.length > 0) {
 				const calculatedAggregates = calculateGroupAggregates(speedNullifiedEntries)
@@ -549,7 +598,8 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 			// Pass showGroupAveragesMaster to chartFormatters
 			const chartData = chartFormatters.getChartFormattedData(
-				nullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
+				// nullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
+				speedNullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
 				// finalFilteredAndValidatedEntries, // TODO: Should this be speedNullifiedEntries for chart?
 				state.showGroupAveragesMaster
 			)

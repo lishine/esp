@@ -1,4 +1,11 @@
-{"device_description": "v0. 1600 foil. fone 90L. 6384 regular. 5M cable. props I>10 Speed>10 groups: flipsky alum,2fdwide,2fdsmall,3fd controlled and the rest. 45d 12s3p bat", "fan_enabled": true, "date": "2025-06-05", "ds_associations": [{"name": "alum", "address": "28616435fba83f06"}, {"name": "ambient", "address": "28616435fa66d2d1"}, {"name": "mosfet", "address": "28616435c78a0192"}], "restart": "0284"}
+{"device_description": "esc 12200 Sequre. v0. 1600 foil. fone 90L. 6384 regular. 5M cable. 45d 12s3p bat", "groups":  [
+    { "t": "09:41:05", "n": "flipsky alum" },
+    { "t": "10:12:20", "n": "2fdwide" },
+    { "t": "10:13:44", "n": "2fdwide" },
+    { "t": "10:15:01", "n": "2fdwide" },
+    { "t": "10:43:18", "n": "2fdsmall" },
+    { "t": "10:57:45", "n": "3fd" }
+  ],  "fan_enabled": true, "date": "2025-06-05", "ds_associations": [{"name": "alum", "address": "28616435fba83f06"}, {"name": "ambient", "address": "28616435fa66d2d1"}, {"name": "mosfet", "address": "28616435c78a0192"}], "restart": "0284"}
 [{"t":"06-33-57"},{"n":"mc","v":0.4},{"n":"th","v":992}]
 [{"t":"06-33-58"},{"n":"esc","v":{"rpm":0,"mah":545,"t":32,"i":0.64,"v":50.5}},{"n":"ds","v":{"alum":31.0,"ambient":32.6,"mosfet":32.1}},{"n":"gps","v":{"lon":34.70427,"seen":9,"fix":true,"speed":0.147,"lat":31.93531,"alt":-1.1,"hdg":0.0,"active":10}}]
 [{"t":"06-33-59"},{"n":"gps","v":{"lon":34.70427,"seen":9,"fix":true,"speed":0.386,"lat":31.93531,"alt":-1.4,"hdg":0.0,"active":9}}]
