@@ -585,7 +585,10 @@ export const useSessionDataStore = defineStore('sessionData', {
 			// // --- END REFINED DEBUG LOG ---
 
 			if (speedNullifiedEntries && speedNullifiedEntries.length > 0) {
-				const calculatedAggregates = calculateGroupAggregates(speedNullifiedEntries)
+				const calculatedAggregates = calculateGroupAggregates(
+					speedNullifiedEntries,
+					state.sessionMetadata.groups // Pass metadataGroups
+				)
 				console.log('Calculated Group Aggregates:', calculatedAggregates)
 				// Directly update the state property for groupAggregates from within the getter
 				// This is consistent with how totalGpsDistance and totalTimeOnFoil are updated

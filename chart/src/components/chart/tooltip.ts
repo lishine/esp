@@ -1,5 +1,6 @@
 import { formatInTimeZone } from 'date-fns-tz'
 import { useSessionDataStore } from '../../stores'
+import type { GroupAggregate } from '../../stores/types' // Added GroupAggregate, removed MetadataGroup
 import type { EChartTooltipParam } from './types'
 import type { YAxisConfig } from './axes' // Assuming YAxisConfig will be defined in axes.ts
 import { findActiveGroupName, parseTimeToSeconds } from '@/utils/tooltipHelpers'
@@ -12,15 +13,24 @@ export interface TooltipSeriesDisplayConfig {
 	decimals: number
 }
 
+export interface CreateTooltipFormatterOptions {
+	yAxesConfig?: YAxisConfig[]
+	visibleYAxisIds?: Set<string>
+	groupAggregates?: ReadonlyArray<GroupAggregate>
+}
+
 export function createTooltipFormatter(
 	seriesDisplayConfigs: TooltipSeriesDisplayConfig[],
-	yAxesConfig?: YAxisConfig[], // Optional: Pass yAxesConfig if needed for axis label formatting
-	visibleYAxisIds?: Set<string> // Optional: Pass visibleYAxisIds if needed
+	options?: CreateTooltipFormatterOptions
 ) {
+	const yAxesConfig = options?.yAxesConfig
+	const visibleYAxisIds = options?.visibleYAxisIds
+	const groupAggregates = options?.groupAggregates
+
 	return {
-		trigger: 'axis', // Explicitly set trigger type
+		trigger: 'axis' as const, // Explicitly set trigger type
 		axisPointer: {
-			type: 'cross',
+			type: 'cross' as const, // Explicitly type 'cross'
 			label: {
 				padding: [3, 10, 3, 10],
 				formatter: (params: { axisDimension?: string; axisIndex?: number; value: number | string | Date }) => {
@@ -47,7 +57,9 @@ export function createTooltipFormatter(
 				},
 			},
 		},
-		formatter: (params: EChartTooltipParam[]): string => {
+		formatter: (paramsUntyped: unknown): string => {
+			// Maintain compatibility with ECharts' expected formatter signature
+			const params = paramsUntyped as EChartTooltipParam[]
 			if (!Array.isArray(params) || params.length === 0) return ''
 
 			const firstPoint = params[0]
@@ -112,25 +124,55 @@ export function createTooltipFormatter(
 
 			// Add active group name
 			const sessionStore = useSessionDataStore()
-			const groups = sessionStore.sessionMetadata?.groups
+			const metadataGroups = sessionStore.sessionMetadata?.groups
+			let activeGroupNameFound: string | undefined = undefined
 
-			// Get current chart time in seconds
-			// Assuming firstPoint.axisValueLabel is "HH:mm:ss" or firstPoint.axisValue is a timestamp
-			let chartTimeInSeconds = -1
-			if (typeof firstPoint.axisValue === 'number') {
-				// Typically a timestamp
-				const date = new Date(firstPoint.axisValue)
-				chartTimeInSeconds = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds()
-			} else if (typeof firstPoint.axisValueLabel === 'string') {
-				// Check if it's a "HH:MM:SS" string
-				chartTimeInSeconds = parseTimeToSeconds(firstPoint.axisValueLabel)
+			if (groupAggregates && groupAggregates.length > 0) {
+				// Use GroupAggregate data if provided (for GroupAveragesChart)
+				const validGroupAggregates = groupAggregates.filter(
+					(g): g is Required<Pick<GroupAggregate, 'startTime' | 'endTime' | 'groupName'>> & GroupAggregate =>
+						g.startTime instanceof Date &&
+						g.endTime instanceof Date &&
+						typeof g.groupName === 'string' && // Ensure groupName exists
+						!isNaN(g.startTime.getTime()) &&
+						!isNaN(g.endTime.getTime())
+				)
+
+				if (validGroupAggregates.length > 0) {
+					const sortedGroupAggregates = [...validGroupAggregates].sort(
+						(a, b) => a.startTime.getTime() - b.startTime.getTime()
+					)
+
+					for (const aggGroup of sortedGroupAggregates) {
+						if (
+							timestampMillis >= aggGroup.startTime.getTime() &&
+							timestampMillis <= aggGroup.endTime.getTime() // Inclusive end time
+						) {
+							activeGroupNameFound = aggGroup.groupName // Use the groupName from GroupAggregate
+							break
+						}
+					}
+				}
 			}
 
-			if (chartTimeInSeconds !== -1 && groups) {
-				const activeGroupName = findActiveGroupName(chartTimeInSeconds, groups)
-				if (activeGroupName) {
-					tooltipHtml += `<div style="margin-top: 5px; text-align: center; font-weight: bold;">${activeGroupName}</div>`
+			// Fallback for charts that don't pass groupAggregates or if no match found above
+			if (!activeGroupNameFound) {
+				const fallbackMetadataGroups = sessionStore.sessionMetadata?.groups // Use a different name or directly use sessionStore
+				let chartTimeInSeconds = -1
+				if (typeof timestampMillis === 'number') {
+					const date = new Date(timestampMillis)
+					chartTimeInSeconds = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds()
+				} else if (typeof firstPoint.axisValueLabel === 'string') {
+					chartTimeInSeconds = parseTimeToSeconds(firstPoint.axisValueLabel)
 				}
+
+				if (chartTimeInSeconds !== -1 && fallbackMetadataGroups && fallbackMetadataGroups.length > 0) {
+					activeGroupNameFound = findActiveGroupName(chartTimeInSeconds, fallbackMetadataGroups)
+				}
+			}
+
+			if (activeGroupNameFound) {
+				tooltipHtml += `<div style="margin-top: 5px; text-align: center; font-weight: bold;">${activeGroupNameFound}</div>`
 			}
 
 			return tooltipHtml

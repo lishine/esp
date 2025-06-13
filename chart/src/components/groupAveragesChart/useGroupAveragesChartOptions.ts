@@ -161,11 +161,12 @@ export function useGroupAveragesChartOptions(
 					})
 				),
 				{
-					// yAxesConfig: undefined, // Pass if needed
-					// visibleYAxisIds: undefined, // Pass if needed
+					// Pass options object as the second argument
+					// yAxesConfig: yAxesConfig, // Pass if needed for specific y-axis label formatting in tooltip
+					// visibleYAxisIds: visibleYAxisIds, // Pass if needed
 					groupAggregates: groupAggregates.value,
 				}
-			), // Ensure comma here
+			),
 			dataZoom: [
 				{
 					type: 'inside',

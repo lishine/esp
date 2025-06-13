@@ -1,11 +1,9 @@
-import type { LogEntry, EscValues, GpsValues, GroupAggregate } from '../stores/types' // Import correct GroupAggregate
+import type { LogEntry, EscValues, GpsValues, GroupAggregate, MetadataGroup } from '../stores/types' // Import correct GroupAggregate and MetadataGroup
 import { haversineDistance } from './gpsDistance'
 
 // --- Filtering and Formatting Function ---
 const MIN_DURATION_S = 25
 const MIN_MAH_DELTA = 100
-
-// Removed local GroupAggregate definition (lines 8-24)
 
 // Internal type for raw calculations before formatting and filtering
 interface InternalGroupAggregateValues {
@@ -17,8 +15,6 @@ interface InternalGroupAggregateValues {
 	'watt-hour_per_km': number | null
 	watt_per_speed: number | null
 	duration: number | null
-	// start_time: string | null // Will use raw Date object
-	// end_time: string | null   // Will use raw Date object
 	rawStartTime: Date | null // Added for precise start time
 	rawEndTime: Date | null // Added for precise end time
 	entry_count: number
@@ -59,9 +55,9 @@ function processGroupToAggregate(group: LogEntry[]): InternalGroupAggregateValue
 		}
 	}
 
-	const mah_delta_val = firstMah !== null && lastMah !== null ? lastMah - firstMah : null // Renamed to avoid conflict
+	const mah_delta_val = firstMah !== null && lastMah !== null ? lastMah - firstMah : null
 
-	let km_delta_val: number | null = 0 // Renamed to avoid conflict
+	let km_delta_val: number | null = 0
 	if (gpsEntriesInGroup.length < 2) {
 		km_delta_val = null
 	} else {
@@ -78,21 +74,21 @@ function processGroupToAggregate(group: LogEntry[]): InternalGroupAggregateValue
 		.map((e) => (e.v as GpsValues).speed)
 		.filter((s) => s !== null && s !== undefined) as number[]
 	const avg_speed_kmh =
-		speedsKmhRaw.length > 0 ? (speedsKmhRaw.reduce((a, b) => a + b, 0) / speedsKmhRaw.length) * 1.852 : null // Assuming speed is in knots
+		speedsKmhRaw.length > 0 ? (speedsKmhRaw.reduce((a, b) => a + b, 0) / speedsKmhRaw.length) * 1.852 : null
 
 	const voltages = escEntriesInGroup
 		.map((e) => (e.v as EscValues).v)
 		.filter((v) => v !== null && v !== undefined) as number[]
-	const avg_v_val = voltages.length > 0 ? voltages.reduce((a, b) => a + b, 0) / voltages.length : null // Renamed
+	const avg_v_val = voltages.length > 0 ? voltages.reduce((a, b) => a + b, 0) / voltages.length : null
 
 	const currents = escEntriesInGroup
 		.map((e) => (e.v as EscValues).i)
 		.filter((iVal) => iVal !== null && iVal !== undefined) as number[]
-	const avg_i_val = currents.length > 0 ? currents.reduce((a, b) => a + b, 0) / currents.length : null //Renamed
+	const avg_i_val = currents.length > 0 ? currents.reduce((a, b) => a + b, 0) / currents.length : null
 
 	const total_energy_Wh_group =
 		avg_v_val !== null && mah_delta_val !== null ? (avg_v_val * mah_delta_val) / 1000 : null
-	const calculated_wh_per_km_val = //Renamed
+	const calculated_wh_per_km_val =
 		km_delta_val !== null &&
 		km_delta_val > 0 &&
 		total_energy_Wh_group !== null &&
@@ -101,17 +97,13 @@ function processGroupToAggregate(group: LogEntry[]): InternalGroupAggregateValue
 			: null
 
 	const avg_power_W_group = avg_v_val !== null && avg_i_val !== null ? avg_v_val * avg_i_val : null
-	const calculated_w_per_speed_val = //Renamed
+	const calculated_w_per_speed_val =
 		avg_speed_kmh !== null && avg_speed_kmh > 0 && avg_power_W_group !== null
 			? avg_power_W_group / avg_speed_kmh
 			: null
 
 	const duration_s_val =
-		(group[group.length - 1].preciseTimestamp.getTime() - group[0].preciseTimestamp.getTime()) / 1000 //Renamed
-	// const formatTime = (date: Date) =>
-	// 	date.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-	// const start_time_str_val = formatTime(group[0].preciseTimestamp) //Renamed
-	// const end_time_str_val = formatTime(group[group.length - 1].preciseTimestamp) //Renamed
+		(group[group.length - 1].preciseTimestamp.getTime() - group[0].preciseTimestamp.getTime()) / 1000
 	const rawStartTime_val = group[0].preciseTimestamp
 	const rawEndTime_val = group[group.length - 1].preciseTimestamp
 	const entry_count = group.length
@@ -148,8 +140,6 @@ function processGroupToAggregate(group: LogEntry[]): InternalGroupAggregateValue
 		'watt-hour_per_km': calculated_wh_per_km_val,
 		watt_per_speed: calculated_w_per_speed_val,
 		duration: duration_s_val,
-		// start_time: start_time_str_val,
-		// end_time: end_time_str_val,
 		rawStartTime: rawStartTime_val,
 		rawEndTime: rawEndTime_val,
 		entry_count,
@@ -160,7 +150,10 @@ function processGroupToAggregate(group: LogEntry[]): InternalGroupAggregateValue
 	}
 }
 
-function filterAndFormatAggregates(rawAggregates: InternalGroupAggregateValues[]): GroupAggregate[] {
+function filterAndFormatAggregates(
+	rawAggregates: InternalGroupAggregateValues[],
+	metadataGroups?: ReadonlyArray<MetadataGroup>
+): GroupAggregate[] {
 	if (rawAggregates.length === 0) {
 		return []
 	}
@@ -168,7 +161,6 @@ function filterAndFormatAggregates(rawAggregates: InternalGroupAggregateValues[]
 	const aggregatesToFormat: InternalGroupAggregateValues[] = []
 
 	if (rawAggregates.length > 0) {
-		// Process all but the last aggregate with filtering
 		const otherRawAggregates = rawAggregates.slice(0, -1)
 		const filteredOthers = otherRawAggregates.filter((agg) => {
 			return (
@@ -179,17 +171,41 @@ function filterAndFormatAggregates(rawAggregates: InternalGroupAggregateValues[]
 			)
 		})
 		aggregatesToFormat.push(...filteredOthers)
-
-		// Always add the last raw aggregate, regardless of filtering
 		aggregatesToFormat.push(rawAggregates[rawAggregates.length - 1])
 	}
 
 	return aggregatesToFormat.map((raw, index): GroupAggregate => {
-		// Added index for groupName
+		let groupName = `Segment ${index + 1}` // Default name
+
+		if (metadataGroups && metadataGroups.length > 0 && raw.rawStartTime && raw.rawEndTime) {
+			const aggStartTimeMs = raw.rawStartTime.getTime()
+			const aggEndTimeMs = raw.rawEndTime.getTime()
+
+			for (const metaGroup of metadataGroups) {
+				if (metaGroup.t) {
+					const [h, m, s] = metaGroup.t.split(':').map(Number)
+					// Get local date components from raw.rawStartTime
+					const year = raw.rawStartTime.getFullYear()
+					const month = raw.rawStartTime.getMonth() // 0-indexed
+					const day = raw.rawStartTime.getDate()
+
+					// Construct new Date object using local components from raw.rawStartTime for date
+					// and h, m, s from metaGroup.t for time. This creates a local Date object.
+					const metaGroupPointDate = new Date(year, month, day, h, m, s)
+					const metaGroupPointInTimeMs = metaGroupPointDate.getTime() // Get its UTC ms equivalent for comparison
+
+					if (metaGroupPointInTimeMs >= aggStartTimeMs && metaGroupPointInTimeMs < aggEndTimeMs) {
+						groupName = metaGroup.n
+						break
+					}
+				}
+			}
+		}
+
 		return {
-			groupName: `Segment ${index + 1}`, // Assign a generic groupName
-			startTime: raw.rawStartTime || undefined, // Pass Date object
-			endTime: raw.rawEndTime || undefined, // Pass Date object
+			groupName,
+			startTime: raw.rawStartTime || undefined,
+			endTime: raw.rawEndTime || undefined,
 			metrics: {
 				consumption: raw.consumption !== null ? Math.round(raw.consumption) : null,
 				avg_speed_kmh: raw.avg_speed_kmh !== null ? parseFloat(raw.avg_speed_kmh.toFixed(1)) : null,
@@ -212,7 +228,10 @@ function filterAndFormatAggregates(rawAggregates: InternalGroupAggregateValues[]
 	})
 }
 
-export function calculateGroupAggregates(entriesToGroup: LogEntry[]): GroupAggregate[] {
+export function calculateGroupAggregates(
+	entriesToGroup: LogEntry[],
+	metadataGroups?: ReadonlyArray<MetadataGroup>
+): GroupAggregate[] {
 	const groups: LogEntry[][] = []
 	if (entriesToGroup.length === 0) {
 		return []
@@ -275,5 +294,5 @@ export function calculateGroupAggregates(entriesToGroup: LogEntry[]): GroupAggre
 			rawAggregatedResults.push(aggregate)
 		}
 	}
-	return filterAndFormatAggregates(rawAggregatedResults)
+	return filterAndFormatAggregates(rawAggregatedResults, metadataGroups)
 }
