@@ -161,16 +161,30 @@ function processGroupToAggregate(group: LogEntry[]): InternalGroupAggregateValue
 }
 
 function filterAndFormatAggregates(rawAggregates: InternalGroupAggregateValues[]): GroupAggregate[] {
-	const filtered = rawAggregates.filter((agg) => {
-		return (
-			agg.duration !== null &&
-			agg.duration >= MIN_DURATION_S &&
-			agg.consumption !== null &&
-			agg.consumption >= MIN_MAH_DELTA
-		)
-	})
+	if (rawAggregates.length === 0) {
+		return []
+	}
 
-	return filtered.map((raw, index): GroupAggregate => {
+	const aggregatesToFormat: InternalGroupAggregateValues[] = []
+
+	if (rawAggregates.length > 0) {
+		// Process all but the last aggregate with filtering
+		const otherRawAggregates = rawAggregates.slice(0, -1)
+		const filteredOthers = otherRawAggregates.filter((agg) => {
+			return (
+				agg.duration !== null &&
+				agg.duration >= MIN_DURATION_S &&
+				agg.consumption !== null &&
+				agg.consumption >= MIN_MAH_DELTA
+			)
+		})
+		aggregatesToFormat.push(...filteredOthers)
+
+		// Always add the last raw aggregate, regardless of filtering
+		aggregatesToFormat.push(rawAggregates[rawAggregates.length - 1])
+	}
+
+	return aggregatesToFormat.map((raw, index): GroupAggregate => {
 		// Added index for groupName
 		return {
 			groupName: `Segment ${index + 1}`, // Assign a generic groupName
