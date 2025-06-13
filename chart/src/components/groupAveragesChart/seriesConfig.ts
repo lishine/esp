@@ -63,7 +63,7 @@ export const GROUP_AVERAGE_SERIES_CONFIG = [
 		yAxisIndex: 5,
 	},
 	{
-		displayName: 'Motor/Bat Efficiency',
+		displayName: 'Motor/Bat Current Efficiency',
 		internalId: 'motor_battery_current_efficiency',
 		dataKey: 'motor_battery_current_efficiency',
 		unit: '%',
@@ -106,15 +106,6 @@ export const GROUP_AVERAGE_SERIES_CONFIG = [
 		decimals: 0,
 		color: '#33D4FF',
 		yAxisIndex: 10,
-	},
-	{
-		displayName: 'Entry Count',
-		internalId: 'entry_count',
-		dataKey: 'entry_count',
-		unit: '',
-		decimals: 0,
-		color: '#8E44AD',
-		yAxisIndex: 11,
 	},
 ] as const
 

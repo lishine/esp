@@ -40,33 +40,27 @@ export const useSessionDataStore = defineStore('sessionData', {
 			storedShowGroupAveragesMaster = masterToggleStr === 'true'
 		}
 
-		let storedGroupAverageSeriesVisibility: Record<string, boolean> = {}
-		let visibilityLoadedFromStorage = false
+		let storedHiddenGroupAverageSeries = new Set<string>()
 		if (typeof localStorage !== 'undefined') {
-			const visibilityStr = localStorage.getItem('espChartGroupAverageSeriesVisibility')
-			if (visibilityStr) {
+			const hiddenStr = localStorage.getItem('espChartHiddenGroupAverageSeries')
+			if (hiddenStr) {
 				try {
-					const parsed = JSON.parse(visibilityStr)
-					// Basic validation: check if it's an object (though not deep validation)
-					if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-						storedGroupAverageSeriesVisibility = parsed
-						visibilityLoadedFromStorage = true
+					const parsedArray = JSON.parse(hiddenStr)
+					if (Array.isArray(parsedArray)) {
+						storedHiddenGroupAverageSeries = new Set(parsedArray.filter((item) => typeof item === 'string'))
 					} else {
-						console.warn('Invalid groupAverageSeriesVisibility format in localStorage, using default.')
+						console.warn(
+							'Invalid espChartHiddenGroupAverageSeries format in localStorage, using default (all visible).'
+						)
 					}
 				} catch (e) {
-					console.error('Failed to parse groupAverageSeriesVisibility from localStorage, using default.', e)
-					// storedGroupAverageSeriesVisibility remains {} from initialization, default will apply
+					console.error(
+						'Failed to parse espChartHiddenGroupAverageSeries from localStorage, using default (all visible).',
+						e
+					)
+					// storedHiddenGroupAverageSeries remains new Set()
 				}
 			}
-		}
-
-		// If not successfully loaded from storage, initialize with all true
-		if (!visibilityLoadedFromStorage) {
-			storedGroupAverageSeriesVisibility = {} // Reset to ensure clean default
-			GROUP_AVERAGE_SERIES_CONFIG.forEach((config) => {
-				storedGroupAverageSeriesVisibility[config.displayName] = true
-			})
 		}
 
 		return {
@@ -96,7 +90,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 			dataZoomEnd: 100, // Default zoom end
 			groupAggregates: [],
 			showGroupAveragesMaster: storedShowGroupAveragesMaster,
-			groupAverageSeriesVisibility: storedGroupAverageSeriesVisibility,
+			hiddenGroupAverageSeries: storedHiddenGroupAverageSeries,
 		}
 	},
 
@@ -111,14 +105,15 @@ export const useSessionDataStore = defineStore('sessionData', {
 			}
 		},
 		setGroupAverageSeriesVisibility(seriesName: string, isVisible: boolean) {
-			this.groupAverageSeriesVisibility = {
-				...this.groupAverageSeriesVisibility,
-				[seriesName]: isVisible,
+			if (isVisible) {
+				this.hiddenGroupAverageSeries.delete(seriesName)
+			} else {
+				this.hiddenGroupAverageSeries.add(seriesName)
 			}
 			if (typeof localStorage !== 'undefined') {
 				localStorage.setItem(
-					'espChartGroupAverageSeriesVisibility',
-					JSON.stringify(this.groupAverageSeriesVisibility)
+					'espChartHiddenGroupAverageSeries',
+					JSON.stringify(Array.from(this.hiddenGroupAverageSeries))
 				)
 			}
 		},
@@ -269,7 +264,13 @@ export const useSessionDataStore = defineStore('sessionData', {
 		getTotalTimeOnFoil: (state): number => state.totalTimeOnFoil,
 		getGroupAggregates: (state): GroupAggregate[] => state.groupAggregates,
 		getShowGroupAveragesMaster: (state): boolean => state.showGroupAveragesMaster,
-		getGroupAverageSeriesVisibility: (state): Record<string, boolean> => state.groupAverageSeriesVisibility,
+		getGroupAverageSeriesVisibility(state): Record<string, boolean> {
+			const visibility: Record<string, boolean> = {}
+			GROUP_AVERAGE_SERIES_CONFIG.forEach((config) => {
+				visibility[config.displayName] = !state.hiddenGroupAverageSeries.has(config.displayName)
+			})
+			return visibility
+		},
 		getFilteredLogEntries: (state): LogEntry[] => {
 			return state.logEntries // Simply return all log entries
 		},

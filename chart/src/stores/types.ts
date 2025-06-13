@@ -92,5 +92,6 @@ export interface SessionState {
 	dataZoomEnd: number // Percentage, e.g., 100
 	groupAggregates: GroupAggregate[]
 	showGroupAveragesMaster: boolean
-	groupAverageSeriesVisibility: Record<string, boolean>
+	// groupAverageSeriesVisibility: Record<string, boolean> // Replaced by hiddenGroupAverageSeries
+	hiddenGroupAverageSeries: Set<string> // Stores names of hidden group average series
 }

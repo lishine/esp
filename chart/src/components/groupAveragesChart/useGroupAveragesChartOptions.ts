@@ -103,7 +103,7 @@ export function useGroupAveragesChartOptions(
 		const seriesData = buildSeriesOptionsForGroupChart(
 			groupAggregates.value,
 			groupAverageSeriesConfigRef.value,
-			groupAverageSeriesVisibility.value,
+			// groupAverageSeriesVisibility.value, // Removed argument
 			finalYAxes
 		)
 

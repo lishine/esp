@@ -50,12 +50,10 @@ const chartOption = computed(() => props.options as EChartsOption | undefined)
 const sessionDataStore = useSessionDataStore()
 const chartRef = ref<InstanceType<typeof VChart> | null>(null) // Changed to VChart instance type
 
-function handleLegendSelectChanged(params: { name: string; selected: Record<string, boolean> }) {
-	// params.name is the name of the series clicked
-	// params.selected is an object where keys are series names and values are their selected state
-	if (params.name && params.selected) {
-		const isVisible = params.selected[params.name]
-		sessionDataStore.setGroupAverageSeriesVisibility(params.name, isVisible)
+function handleLegendSelectChanged(params: { selected: Record<string, boolean> }) {
+	// params.selected is an object where keys are series display names and values are their new boolean visibility status
+	for (const seriesName in params.selected) {
+		sessionDataStore.setGroupAverageSeriesVisibility(seriesName, params.selected[seriesName])
 	}
 }
 
