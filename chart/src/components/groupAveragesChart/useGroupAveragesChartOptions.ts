@@ -109,18 +109,19 @@ export function useGroupAveragesChartOptions(
 			finalYAxes
 		)
 
-		// Add connectNulls: false to each series
+		// Data now includes a segmentType. Set connectNulls to true.
 		const finalSeriesData = seriesData.map((series) => ({
 			...series,
-			connectNulls: true,
+			connectNulls: false, // Revert: Main series will use nulls for breaks
 		}))
+		console.log({ finalSeriesData: finalSeriesData })
 
 		// If finalYAxes is empty (e.g., all series are hidden), return null to avoid rendering issues.
 		if (!finalYAxes || (Array.isArray(finalYAxes) && finalYAxes.length === 0)) {
 			return null
 		}
 
-		const optionsObject = {
+		const optionsObject: EChartsOption = {
 			group: 'groupSync', // Added for explicit connection
 			grid: {
 				left: '8%',
@@ -173,10 +174,12 @@ export function useGroupAveragesChartOptions(
 					yAxisIndex: false, // Explicitly disable zooming on y-axes
 					start: dataZoomStart.value,
 					end: dataZoomEnd.value,
+					filterMode: 'none', // Changed to 'none'
 				},
 			],
+			// visualMap component removed
 		}
-		return optionsObject as EChartsOption // Cast to full EChartsOption
+		return optionsObject // Cast to full EChartsOption
 	})
 
 	// Log the final computed options

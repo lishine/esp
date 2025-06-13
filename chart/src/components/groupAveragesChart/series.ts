@@ -25,7 +25,7 @@ export function buildSeriesOptionsForGroupChart(
 
 	groupAverageSeriesConfig.forEach((config) => {
 		// if (groupAverageSeriesVisibility[config.displayName]) { // REMOVED: Series objects are always created
-		const seriesDataPoints: Array<[number, number | null]> = []
+		const mainSeriesDataPoints: Array<[number, number | null]> = [] // Renamed for clarity, back to 2D
 		let yAxisIndexToUse = -1
 
 		// Attempt to find the yAxisIndex based on internalId matching an axis id
@@ -70,22 +70,67 @@ export function buildSeriesOptionsForGroupChart(
 				const metricValue = group.metrics[config.dataKey]
 
 				if (metricValue !== undefined && metricValue !== null) {
-					seriesDataPoints.push([group.startTime.getTime(), metricValue])
-					seriesDataPoints.push([group.endTime.getTime(), metricValue])
+					mainSeriesDataPoints.push([group.startTime.getTime(), metricValue])
+					mainSeriesDataPoints.push([group.endTime.getTime(), metricValue])
 				} else {
 					// Metric value is null/undefined for this group for this series
-					seriesDataPoints.push([group.startTime.getTime(), null])
-					seriesDataPoints.push([group.endTime.getTime(), null])
+					mainSeriesDataPoints.push([group.startTime.getTime(), null])
+					mainSeriesDataPoints.push([group.endTime.getTime(), null])
 				}
 
-				// Check for a time gap to the next group
+				// Check for a time gap to the next group to insert a null point in the main series
+				// and create a separate connector series.
 				if (i < sortedGroupAggregates.length - 1) {
 					const nextGroup = sortedGroupAggregates[i + 1]
-					// Ensure nextGroup times are valid before comparing
-					if (nextGroup.startTime && group.endTime.getTime() < nextGroup.startTime.getTime()) {
-						// Insert a null point at the current group's endTime if there's a gap before the next group.
-						// This explicitly tells ECharts to break the line here when connectNulls is false.
-						seriesDataPoints.push([group.endTime.getTime(), null])
+					if (
+						nextGroup.startTime &&
+						group.endTime &&
+						group.endTime.getTime() < nextGroup.startTime.getTime()
+					) {
+						// Gap detected. Add a null point to the current main series to break it.
+						mainSeriesDataPoints.push([group.endTime.getTime(), null])
+
+						// Create a new series for the connector line.
+						const currentGroupMetricValue = group.metrics[config.dataKey]
+						const nextGroupMetricValue = nextGroup.metrics[config.dataKey]
+
+						// Only create a connector if both points are valid numbers.
+						// Or, decide if you want to draw connectors to/from null points.
+						// For now, let's assume we only connect valid points, or extend from a valid point to a null start of next.
+						// If currentGroupMetricValue is null/undefined, the connector would start from nowhere.
+						// If nextGroupMetricValue is null/undefined, the connector would end nowhere.
+						// A simple connector:
+						if (
+							currentGroupMetricValue !== undefined &&
+							currentGroupMetricValue !== null &&
+							nextGroupMetricValue !== undefined &&
+							nextGroupMetricValue !== null
+						) {
+							const connectorSeries: EchartsSeriesOption = {
+								name: `${config.displayName}_connector_${i}`, // Unique name, won't show in legend by default
+								type: 'line',
+								data: [
+									[group.endTime.getTime(), currentGroupMetricValue],
+									[nextGroup.startTime.getTime(), nextGroupMetricValue],
+								],
+								yAxisIndex: yAxisIndexToUse,
+								showSymbol: false,
+								smooth: false,
+								sampling: 'lttb', // Added sampling
+								lineStyle: {
+									width: 2, // Use a fixed width for connectors
+									color: config.color, // Use color from the series config
+									opacity: 0.3, // Desired opacity
+								},
+								itemStyle: {
+									color: config.color, // Match item color with line color
+								},
+								silent: true, // Makes the series not respond to mouse events, good for connectors
+								legendHoverLink: false, // Optional: disable legend hover effect
+								animation: false, // Optional: disable animation for connectors
+							}
+							seriesOutput.push(connectorSeries)
+						}
 					}
 				}
 			} else {
@@ -96,19 +141,19 @@ export function buildSeriesOptionsForGroupChart(
 			}
 		}
 
-		// Sort data points by time to ensure lines are drawn correctly
-		seriesDataPoints.sort((a, b) => a[0] - b[0])
+		// Sort data points by time to ensure lines are drawn correctly for the main series
+		mainSeriesDataPoints.sort((a, b) => a[0] - b[0])
 
-		// Always create the series object. Its visibility will be controlled by legend.selected.
-		// We still might not push it if there are no data points, to avoid ECharts errors with empty series.
-		if (seriesDataPoints.length > 0) {
+		// Always create the main series object. Its visibility will be controlled by legend.selected.
+		if (mainSeriesDataPoints.length > 0) {
 			seriesOutput.push({
 				name: config.displayName,
-				type: 'line', // Could also be 'bar' if x-axis was categorical for segments
-				data: seriesDataPoints,
+				type: 'line',
+				data: mainSeriesDataPoints, // Use the 2D data points
 				yAxisIndex: yAxisIndexToUse,
 				showSymbol: false, // Hide symbols as per feedback
 				smooth: false,
+				sampling: 'lttb', // Added sampling
 				itemStyle: {
 					color: config.color,
 				},
