@@ -3,9 +3,9 @@ import { computed, type Ref } from 'vue'
 import type { EChartsOption } from 'echarts' // Import full EChartsOption
 // Removed unused TooltipComponentOption
 import { formatInTimeZone } from 'date-fns-tz'
-import type { GroupAggregate } from '@/stores/types' // Added MetadataGroup
-import { useSessionDataStore } from '@/stores/sessionDataStore' // Added sessionDataStore
-import { findActiveGroupName } from '@/utils/tooltipHelpers' // Added helpers
+import type { GroupAggregate } from '@/stores/types'
+// Removed useSessionDataStore and findActiveGroupName as they are now used in common tooltip
+import { createTooltipFormatter, type TooltipSeriesDisplayConfig } from '../chart/tooltip' // Import common tooltip
 import type { GroupAverageSeriesConfig } from './seriesConfig' // Updated import path
 import { buildYAxisOptionsForGroupChart, type YAxisConfig } from './axes'
 import { buildSeriesOptionsForGroupChart } from './series'
@@ -151,75 +151,22 @@ export function useGroupAveragesChartOptions(
 				data: groupAverageSeriesConfigRef.value.map((s) => s.displayName),
 				selected: groupAverageSeriesVisibility.value,
 			},
-			tooltip: {
-				trigger: 'axis',
-				axisPointer: {
-					type: 'cross',
-					label: {
-						show: true, // General visibility for axis pointer labels
-						formatter: (params: AxisPointerLabelFormatterParams) => {
-							// params contains value, axisDimension, axisIndex, seriesData etc.
-							if (params.axisDimension === 'y') {
-								return '' // Hide label for y-axis
-							}
-							// For x-axis, ECharts will use its default time formatting if params.value is returned.
-							// Or, you can format it explicitly here:
-							// if (params.axisDimension === 'x' && typeof params.value === 'number') {
-							// return formatInTimeZone(new Date(params.value), 'Asia/Jerusalem', 'HH:mm:ss');
-							// }
-							return typeof params.value === 'number'
-								? formatInTimeZone(new Date(params.value), 'Asia/Jerusalem', 'HH:mm:ss')
-								: String(params.value) // Fallback for other types
-						},
-					},
-				},
-				formatter: (prms: EChartTooltipFormatterParams | EChartTooltipFormatterParams[]) => {
-					const paramsArray = Array.isArray(prms) ? prms : [prms]
-					if (paramsArray.length === 0) return ''
-
-					const firstPoint = paramsArray[0]
-					if (!firstPoint || firstPoint.axisValue == null || typeof firstPoint.axisValue !== 'number') {
-						return ''
-					}
-
-					const time = formatInTimeZone(new Date(firstPoint.axisValue), 'Asia/Jerusalem', 'HH:mm:ss.SSS')
-					let tooltipText = `${time}<br/>`
-
-					paramsArray.forEach((param: EChartTooltipFormatterParams) => {
-						if (param.seriesName && param.value && Array.isArray(param.value) && param.value[1] != null) {
-							const config = groupAverageSeriesConfigRef.value.find(
-								(c: GroupAverageSeriesConfig) => c.displayName === param.seriesName
-							)
-							const decimals = config ? config.decimals : 2
-							tooltipText += `${param.marker} ${param.seriesName}: ${parseFloat(param.value[1] as string).toFixed(decimals)} ${config?.unit || ''}<br/>`
-						}
+			tooltip: createTooltipFormatter(
+				groupAverageSeriesConfigRef.value.map(
+					(gasc: GroupAverageSeriesConfig): TooltipSeriesDisplayConfig => ({
+						seriesName: gasc.displayName, // Assuming ECharts series name matches displayName for this chart
+						displayName: gasc.displayName,
+						unit: gasc.unit,
+						decimals: gasc.decimals,
 					})
-
-					// Add active group name
-					const sessionStore = useSessionDataStore()
-					const metadataGroups = sessionStore.sessionMetadata?.groups
-
-					let chartTimeInSeconds = -1
-					// firstPoint.axisValue is the timestamp for the hovered point
-					if (typeof firstPoint.axisValue === 'number') {
-						const date = new Date(firstPoint.axisValue)
-						chartTimeInSeconds = date.getHours() * 3600 + date.getMinutes() * 60 + date.getSeconds()
-					}
-					// console.log(`[GroupAveragesTooltip] Time: ${time}, chartTimeInSeconds: ${chartTimeInSeconds}, metadataGroups:`, metadataGroups);
-
-					if (chartTimeInSeconds !== -1 && metadataGroups) {
-						const activeGroupName = findActiveGroupName(chartTimeInSeconds, metadataGroups)
-						// console.log(`[GroupAveragesTooltip] Active group name: ${activeGroupName}`);
-						if (activeGroupName) {
-							tooltipText += `<div style="margin-top: 5px; text-align: center; font-weight: bold;">Group: ${activeGroupName}</div>`
-						}
-					}
-
-					return tooltipText
-				},
-			},
+				)
+				// yAxesConfig and visibleYAxisIds are optional in the common formatter.
+				// Pass them if specific axis pointer label formatting is needed for GroupAveragesChart.
+				// For example, if you have `yAxesConfigForGroupChart` and `visibleYAxisIdsForGroupChart`:
+				// yAxesConfigForGroupChart,
+				// visibleYAxisIdsForGroupChart
+			),
 			dataZoom: [
-				// Slider dataZoom removed as per requirement
 				{
 					type: 'inside',
 					xAxisIndex: [0], // Zoom linked to the first x-axis
@@ -245,21 +192,4 @@ export function useGroupAveragesChartOptions(
 	return {
 		chartOptionsGroupAverages,
 	}
-}
-
-interface EChartTooltipFormatterParams {
-	seriesName?: string
-	value?: [number, number | string | null] | number | string | null // value[1] is accessed
-	marker?: string
-	axisValue?: number | string
-	// Not using other properties like componentType, seriesType, seriesIndex, dataIndex, data, color, name
-}
-
-// Interface for the axisPointer label formatter params
-interface AxisPointerLabelFormatterParams {
-	value: number | string // The value of the axis
-	axisDimension: 'x' | 'y' | 'z' | 'radius' | 'angle' // Dimension of the axis
-	axisIndex: number // Index of the axis
-	// seriesData: Array<{ componentType: string, seriesType: string, seriesIndex: number, dataIndex: number, data: any, value: any, color: string, name: string, marker: string }>
-	// Add other properties if needed based on ECharts documentation for this formatter
 }

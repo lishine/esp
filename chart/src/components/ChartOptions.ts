@@ -2,7 +2,8 @@ import { computed, type Ref } from 'vue' // Added Ref
 import type { EChartsCoreOption as ECOption } from 'echarts/core'
 import { formatInTimeZone } from 'date-fns-tz'
 import type { ChartFormattedDataRef, VisibleSeriesSetRef, LogEntriesRef, IsMobileRef } from './chart/types'
-import { createTooltipFormatter } from './chart/tooltip'
+import { createTooltipFormatter, type TooltipSeriesDisplayConfig } from './chart/tooltip'
+import { CANONICAL_SERIES_CONFIG, type CanonicalSeriesConfig } from '../stores/seriesConfig' // Corrected import and added type
 import {
 	calculateDynamicMaxValues,
 	defineYAxesConfig,
@@ -45,8 +46,18 @@ export function useChartOptions(
 
 		const visibleYAxisIds = calculateVisibleYAxisIds(currentVisibleSeries, yAxesConfig)
 
-		// Now create the tooltip object with the necessary context, passing chartFormattedData
-		const tooltip = createTooltipFormatter(yAxesConfig, visibleYAxisIds, chartFormattedData)
+		// Prepare seriesDisplayConfigs for the tooltip
+		const sensorChartDisplayConfigs: TooltipSeriesDisplayConfig[] = CANONICAL_SERIES_CONFIG.map(
+			(csc: CanonicalSeriesConfig): TooltipSeriesDisplayConfig => ({
+				seriesName: csc.displayName, // ECharts series.name is typically set to displayName
+				displayName: csc.displayName,
+				unit: csc.unit,
+				decimals: csc.decimals,
+			})
+		)
+
+		// Now create the tooltip object with the necessary context
+		const tooltip = createTooltipFormatter(sensorChartDisplayConfigs, yAxesConfig, visibleYAxisIds)
 
 		const baseChartOptions: ECOption = {
 			title: { text: '' },
