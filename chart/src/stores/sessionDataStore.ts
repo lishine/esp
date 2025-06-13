@@ -11,7 +11,6 @@ import type {
 	DsValues,
 	FormattedChartData,
 	GroupAggregate, // Added
-	MetadataGroup,
 } from './types'
 import { GROUP_AVERAGE_SERIES_CONFIG } from '../components/groupAveragesChart/seriesConfig' // Updated import path
 import { visibilityActions } from './visibilityActions'

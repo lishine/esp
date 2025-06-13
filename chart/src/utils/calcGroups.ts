@@ -2,7 +2,7 @@ import type { LogEntry, EscValues, GpsValues, GroupAggregate } from '../stores/t
 import { haversineDistance } from './gpsDistance'
 
 // --- Filtering and Formatting Function ---
-const MIN_DURATION_S = 15
+const MIN_DURATION_S = 25
 const MIN_MAH_DELTA = 100
 
 // Removed local GroupAggregate definition (lines 8-24)
