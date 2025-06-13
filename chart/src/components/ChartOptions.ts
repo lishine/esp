@@ -57,7 +57,7 @@ export function useChartOptions(
 		)
 
 		// Now create the tooltip object with the necessary context
-		const tooltip = createTooltipFormatter(sensorChartDisplayConfigs, yAxesConfig, visibleYAxisIds)
+		const tooltip = createTooltipFormatter(sensorChartDisplayConfigs, { yAxesConfig, visibleYAxisIds })
 
 		const baseChartOptions: ECOption = {
 			title: { text: '' },
