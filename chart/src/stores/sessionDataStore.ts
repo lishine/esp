@@ -614,8 +614,10 @@ export const useSessionDataStore = defineStore('sessionData', {
 			this.totalTimeOnFoil = calculateTimeOnFoil(speedNullifiedEntries)
 			console.log('speed nullified distance', calculateSessionDistance(speedNullifiedEntries))
 			console.log('current nullified distance', calculateSessionDistance(nullifiedEntries))
+			console.log('total distance', calculateSessionDistance(finalFilteredAndValidatedEntries))
 			console.log('speed nullified time', calculateTimeOnFoil(speedNullifiedEntries) / 60)
 			console.log('current nullified time', calculateTimeOnFoil(nullifiedEntries) / 60)
+			console.log('total time', calculateTimeOnFoil(finalFilteredAndValidatedEntries) / 60)
 			// console.log(this.totalTimeOnFoil, 'seconds on foil')
 
 			return chartData
