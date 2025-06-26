@@ -156,6 +156,7 @@ export const useSessionDataStore = defineStore('sessionData', {
 					ds_associations: parsedFirstLine.ds_associations,
 					date: parsedFirstLine.date,
 					restart: parsedFirstLine.restart,
+					calibration_factor: parsedFirstLine.calibration_factor,
 					groups: parsedFirstLine.groups || [], // Parse groups, default to empty array if not present
 				}
 			} catch (e) {
