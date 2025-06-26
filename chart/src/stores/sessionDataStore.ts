@@ -603,8 +603,8 @@ export const useSessionDataStore = defineStore('sessionData', {
 
 			// Pass showGroupAveragesMaster to chartFormatters
 			const chartData = chartFormatters.getChartFormattedData(
-				// nullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
-				speedNullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
+				nullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
+				// speedNullifiedEntries, // TODO: Should this be speedNullifiedEntries for chart?
 				// finalFilteredAndValidatedEntries, // TODO: Should this be speedNullifiedEntries for chart?
 				state.showGroupAveragesMaster
 			)
@@ -612,7 +612,11 @@ export const useSessionDataStore = defineStore('sessionData', {
 			this.totalGpsDistance = calculateSessionDistance(speedNullifiedEntries)
 
 			this.totalTimeOnFoil = calculateTimeOnFoil(speedNullifiedEntries)
-			console.log(this.totalTimeOnFoil, 'seconds on foil')
+			console.log('speed nullified distance', calculateSessionDistance(speedNullifiedEntries))
+			console.log('current nullified distance', calculateSessionDistance(nullifiedEntries))
+			console.log('speed nullified time', calculateTimeOnFoil(speedNullifiedEntries) / 60)
+			console.log('current nullified time', calculateTimeOnFoil(nullifiedEntries) / 60)
+			// console.log(this.totalTimeOnFoil, 'seconds on foil')
 
 			return chartData
 		},
