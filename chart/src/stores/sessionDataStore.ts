@@ -294,6 +294,20 @@ export const useSessionDataStore = defineStore('sessionData', {
 						t: applyRangeChecks('esc_t', escValues.t),
 						mah: applyRangeChecks('esc_mah', escValues.mah),
 					}
+
+					// Apply calibration factors if they exist
+					const calibrationFactors = state.sessionMetadata.calibration_factor
+					if (calibrationFactors) {
+						if (typeof calibrationFactors.esc_current === 'number' && validatedEntry.v.i !== null) {
+							validatedEntry.v.i *= calibrationFactors.esc_current
+						}
+						if (typeof calibrationFactors.esc_current === 'number' && validatedEntry.v.mah !== null) {
+							validatedEntry.v.mah *= calibrationFactors.esc_current
+						}
+						if (typeof calibrationFactors.esc_voltage === 'number' && validatedEntry.v.v !== null) {
+							validatedEntry.v.v *= calibrationFactors.esc_voltage
+						}
+					}
 				} else if (validatedEntry.n === 'gps') {
 					const gpsValues = validatedEntry.v as GpsValues
 					const originalSpeed = gpsValues.speed !== undefined ? gpsValues.speed : null

@@ -69,6 +69,7 @@ export interface SessionMetadata {
 	date: string // Added date field
 	restart: string // Added restart field
 	groups?: MetadataGroup[] // Added groups field
+	calibration_factor?: { esc_current?: number; esc_voltage?: number } // Added calibration factors
 }
 
 export interface GroupAggregate {

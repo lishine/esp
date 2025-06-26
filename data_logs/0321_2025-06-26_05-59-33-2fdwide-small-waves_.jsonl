@@ -1,4 +1,4 @@
-{"device_description": "v0. 1600 foil. fone 90L. 6384 regular. 5M cable. 2fdwide small waves. 45d 12s3p bat", "fan_enabled": false, "date": "2025-06-26", "ds_associations": [{"name": "alum", "address": "28616435fba83f06"}, {"name": "ambient", "address": "28616435fa66d2d1"}, {"name": "mosfet", "address": "28616435c78a0192"}], "restart": "0321"}
+{"device_description": "v0. 1600 foil. fone 90L. 6384 regular. 5M cable. 2fdwide small waves. 45d 12s3p bat", "fan_enabled": false, "date": "2025-06-26", "ds_associations": [{"name": "alum", "address": "28616435fba83f06"}, {"name": "ambient", "address": "28616435fa66d2d1"}, {"name": "mosfet", "address": "28616435c78a0192"}], "restart": "0321", "calibration_factor": {"esc_current": 0.723, "esc_voltage": 1.021}}
 [{"t":"05-33-25"},{"n":"mc","v":0.4},{"n":"th","v":992},{"n":"esc","v":{"rpm":0,"mah":0,"t":30,"i":0.04,"v":49.86}}]
 [{"t":"05-33-26"},{"n":"ds","v":{"alum":31.2,"ambient":29.5,"mosfet":28.6}},{"n":"gps","v":{"seen":0,"active":0,"fix":false}}]
 [{"t":"05-33-29"},{"n":"ds","v":{"alum":31.2,"ambient":29.5,"mosfet":28.8}}]
